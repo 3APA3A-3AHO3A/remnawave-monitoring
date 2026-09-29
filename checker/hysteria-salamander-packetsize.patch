@@ -13,7 +13,7 @@ index bf466c8..588d138 100644
  	// WireGuard fields (Server/Port hold the peer endpoint).
  	WGPrivateKey    string
 diff --git a/subscription/parser.go b/subscription/parser.go
-index f23afc8..e4029c9 100644
+index f23afc8..e9073a8 100644
 --- a/subscription/parser.go
 +++ b/subscription/parser.go
 @@ -184,11 +184,13 @@ type libXrayMask struct {
@@ -39,15 +39,20 @@ index f23afc8..e4029c9 100644
  	Port          int
  	Name          string
  	Encryption    string
-@@ -987,6 +990,7 @@ func (p *Parser) parseOriginalLinks(rawData []byte) map[string]*originalLinkData
- 				Path:          data.Path,
+@@ -988,6 +991,12 @@ func (p *Parser) parseOriginalLinks(rawData []byte) map[string]*originalLinkData
  				Host:          data.Host,
  				AllowInsecure: data.AllowInsecure,
-+				FinalMask:     data.FinalMask,
  			}
++			// Hysteria2 (UDP) often shares host:port with a VLESS/Trojan (TCP)
++			// link on the same node, so its finalmask is stored under its own
++			// key — otherwise the TCP link overwrites it.
++			if data.FinalMask != "" && (strings.HasPrefix(line, "hysteria2://") || strings.HasPrefix(line, "hy2://")) {
++				result[hysteriaMaskKey(key)] = &originalLinkData{FinalMask: data.FinalMask}
++			}
  		}
  	}
-@@ -1026,6 +1030,7 @@ func (p *Parser) parseShareLink(link string) *parsedLink {
+ 
+@@ -1026,6 +1035,7 @@ func (p *Parser) parseShareLink(link string) *parsedLink {
  	result.Path = query.Get("path")
  	result.Host = query.Get("host")
  	result.AllowInsecure = query.Get("allowInsecure") == "1" || query.Get("allowInsecure") == "true"
@@ -55,7 +60,7 @@ index f23afc8..e4029c9 100644
  
  	return result
  }
-@@ -1403,6 +1408,7 @@ func (p *Parser) convertOutbound(raw json.RawMessage, index int, originalData ma
+@@ -1403,6 +1413,7 @@ func (p *Parser) convertOutbound(raw json.RawMessage, index int, originalData ma
  					var sal libXraySalamander
  					if err := json.Unmarshal(*mask.Settings, &sal); err == nil {
  						pc.HysteriaObfsPassword = sal.Password
@@ -63,19 +68,21 @@ index f23afc8..e4029c9 100644
  					} else {
  						logger.Debug("Failed to parse salamander settings: %v", err)
  					}
-@@ -1421,6 +1427,11 @@ func (p *Parser) convertOutbound(raw json.RawMessage, index int, originalData ma
- 		if orig.AllowInsecure {
- 			pc.AllowInsecure = true
- 		}
-+		// libXray ignores the "fm" (finalmask) query of hysteria2:// links, so
-+		// Salamander packetSize is lost; take it from the original link.
-+		if pc.Protocol == "hysteria" && orig.FinalMask != "" {
-+			applyHysteriaFinalMask(pc, orig.FinalMask)
-+		}
+@@ -1412,6 +1423,13 @@ func (p *Parser) convertOutbound(raw json.RawMessage, index int, originalData ma
  	}
  
- 	if err := pc.Validate(); err != nil {
-@@ -1548,3 +1559,45 @@ func (p *Parser) parseSingleConfigFile(data []byte, startIndex int) ([]*models.P
+ 	key := fmt.Sprintf("%s:%d", pc.Server, pc.Port)
++	// libXray ignores the "fm" (finalmask) query of hysteria2:// links, so
++	// Salamander packetSize is lost; take it from the original link.
++	if pc.Protocol == "hysteria" {
++		if orig, ok := originalData[hysteriaMaskKey(key)]; ok {
++			applyHysteriaFinalMask(pc, orig.FinalMask)
++		}
++	}
+ 	if orig, ok := originalData[key]; ok {
+ 		if pc.Encryption == "" || pc.Encryption == "none" {
+ 			if orig.Encryption != "" {
+@@ -1548,3 +1566,49 @@ func (p *Parser) parseSingleConfigFile(data []byte, startIndex int) ([]*models.P
  
  	return nil, fmt.Errorf("unsupported config format")
  }
@@ -120,6 +127,10 @@ index f23afc8..e4029c9 100644
 +			pc.HysteriaObfsPacketSize = ps
 +		}
 +	}
++}
++
++func hysteriaMaskKey(hostPort string) string {
++	return "hysteria2|" + hostPort
 +}
 diff --git a/xray/config.go b/xray/config.go
 index 6b3f404..182d440 100644
