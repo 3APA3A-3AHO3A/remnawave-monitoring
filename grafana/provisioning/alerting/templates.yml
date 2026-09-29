@@ -11,13 +11,19 @@ templates:
 
       {{ define "rwmon.message" -}}
       {{ if gt (len .Alerts.Firing) 0 -}}
+      {{ if eq (index .Alerts.Firing 0).Labels.alertname "DatasourceError" "DatasourceNoData" -}}
+      ⚠️ <b>Ошибка в самом мониторинге</b>: правило «{{ (index .Alerts.Firing 0).Labels.rulename }}» не может выполниться и сейчас ничего не проверяет. Смотрите Grafana → Оповещение → Правила.
+      {{- else -}}
       🔴 <b>{{ or (index .Alerts.Firing 0).Annotations.summary (index .Alerts.Firing 0).Labels.alertname }}</b>
       {{ range .Alerts.Firing }}• {{ template "rwmon.target" . }} — с {{ .StartsAt.UTC.Format "02.01 15:04" }} UTC
       {{ end }}{{ with (index .Alerts.Firing 0).Annotations.description }}
       <i>{{ . }}</i>
-      {{ end }}{{ end -}}
+      {{ end }}{{ end }}{{ end -}}
       {{ if gt (len .Alerts.Resolved) 0 -}}
+      {{ if eq (index .Alerts.Resolved 0).Labels.alertname "DatasourceError" "DatasourceNoData" -}}
+      🟢 Правило «{{ (index .Alerts.Resolved 0).Labels.rulename }}» снова работает
+      {{- else -}}
       🟢 <b>Восстановлено: {{ or (index .Alerts.Resolved 0).Annotations.summary (index .Alerts.Resolved 0).Labels.alertname }}</b>
       {{ range .Alerts.Resolved }}• {{ template "rwmon.target" . }} — {{ .StartsAt.UTC.Format "02.01 15:04" }} → {{ .EndsAt.UTC.Format "15:04" }} UTC
-      {{ end }}{{ end -}}
+      {{ end }}{{ end }}{{ end -}}
       {{- end }}
