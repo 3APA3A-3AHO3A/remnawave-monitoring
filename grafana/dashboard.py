@@ -335,17 +335,22 @@ def build():
         target('max by (site) (probe_success{kind="http"})', 'B', instant=True, fmt='table'),
         target('max by (site) (rwmon_site_response_seconds)', 'C', instant=True, fmt='table'),
         target('max by (site) (rwmon_site_cert_expiry_timestamp_seconds - time())', 'D', instant=True, fmt='table'),
+        target('max by (site) (rwmon_site_status_code)', 'E', instant=True, fmt='table'),
     ], [
         {'id': 'merge', 'options': {}},
         {'id': 'organize', 'options': {
             'excludeByName': {'Time': True},
-            'indexByName': {'site': 0, 'Value #A': 1, 'Value #B': 2, 'Value #C': 3, 'Value #D': 4},
-            'renameByName': {'site': 'Сайт', 'Value #A': 'открывается', 'Value #B': 'из РФ',
+            'indexByName': {'site': 0, 'Value #A': 1, 'Value #B': 2, 'Value #E': 3, 'Value #C': 4, 'Value #D': 5},
+            'renameByName': {'site': 'Сайт', 'Value #A': 'открывается', 'Value #B': 'из РФ', 'Value #E': 'код',
                              'Value #C': 'ответ', 'Value #D': 'сертификат'}}},
     ], [
         *[by_name(n, custom__width=90, custom__align='center', mappings=OK_MAP,
                   custom__cellOptions={'type': 'color-background', 'mode': 'basic'})
           for n in ('открывается', 'из РФ')],
+        by_name('код', decimals=0, custom__width=55, custom__cellOptions={'type': 'color-text'},
+                thresholds={'mode': 'absolute', 'steps': [{'color': RED, 'value': None},
+                                                          {'color': 'text', 'value': 200},
+                                                          {'color': RED, 'value': 400}]}),
         by_name('ответ', unit='s', decimals=2, custom__width=70),
         by_name('сертификат', unit='dtdurations', decimals=0, custom__cellOptions={'type': 'color-text'},
                 thresholds={'mode': 'absolute', 'steps': [{'color': RED, 'value': None},

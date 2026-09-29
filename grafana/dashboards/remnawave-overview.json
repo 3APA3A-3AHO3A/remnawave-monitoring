@@ -2040,6 +2040,18 @@
           "range": false,
           "instant": true,
           "format": "table"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (site) (rwmon_site_status_code)",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
         }
       ],
       "transformations": [
@@ -2057,13 +2069,15 @@
               "site": 0,
               "Value #A": 1,
               "Value #B": 2,
-              "Value #C": 3,
-              "Value #D": 4
+              "Value #E": 3,
+              "Value #C": 4,
+              "Value #D": 5
             },
             "renameByName": {
               "site": "Сайт",
               "Value #A": "открывается",
               "Value #B": "из РФ",
+              "Value #E": "код",
               "Value #C": "ответ",
               "Value #D": "сертификат"
             }
@@ -2194,6 +2208,48 @@
                 "value": {
                   "type": "color-background",
                   "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "код"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 55
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "text",
+                      "value": 200
+                    },
+                    {
+                      "color": "red",
+                      "value": 400
+                    }
+                  ]
                 }
               }
             ]
