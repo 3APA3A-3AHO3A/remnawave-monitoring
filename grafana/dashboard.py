@@ -7,8 +7,9 @@ Grafana читает только готовый JSON; этот файл ей н
   переменные «Панель», «Нода», «Аутбаунд»;
   6 цифр сверху; таблица нод (всё про ноду в одной строке);
   «Сейчас не работает», состояние панелей и сайтов;
-  три общих графика (по панелям); маленький график сети на каждую ноду;
-  свёрнутые блоки «Нода подробно», «Проверки хостов», «Проба из РФ», «GeoCheck».
+  три общих графика (по панелям); «Каждая нода отдельно» — карточка на ноду;
+  свёрнутые блоки «Сравнение нод» (все ноды на одном графике), «Проверки хостов»,
+  «Проба из РФ», «GeoCheck».
 """
 import json
 import os
@@ -241,13 +242,13 @@ def build():
     ], [
         by_name('Панель', custom__width=105, color={'mode': 'fixed', 'fixedColor': GREY},
                 custom__cellOptions={'type': 'color-text'}),
-        by_name('Нода', custom__minWidth=130),
+        by_name('Нода', custom__minWidth=140),
         by_name('Связь', custom__width=60, custom__cellOptions={'type': 'color-text'}, custom__align='center',
                 mappings=[{'type': 'value', 'options': {'1': {'text': 'да', 'color': GREEN},
                                                         '0': {'text': 'нет', 'color': RED}}}]),
         by_name('Онлайн', decimals=0, custom__width=70, custom__align='right'),
         by_name('онлайн за период', custom__cellOptions={'type': 'sparkline', 'hideValue': True},
-                color={'mode': 'fixed', 'fixedColor': GREEN}, custom__minWidth=120),
+                color={'mode': 'fixed', 'fixedColor': GREEN}, custom__width=170),
         *[by_name(n, custom__width=72, custom__align='center', mappings=OK_MAP,
                   custom__cellOptions={'type': 'color-background', 'mode': 'basic'})
           for n in ('Подкл.', 'WARP', 'Psiphon', 'Из РФ')],
@@ -322,12 +323,15 @@ def build():
             'renameByName': {'panel_title': 'Панель', 'Value #A': 'API', 'version': 'версия',
                              'Value #D': 'польз.', 'Value #C': 'трафик'}}},
     ], [
-        by_name('API', custom__width=55, custom__cellOptions={'type': 'color-background'},
+        by_name('Панель', custom__minWidth=90),
+        by_name('версия', custom__width=65),
+        by_name('API', custom__width=50, custom__cellOptions={'type': 'color-background'},
                 mappings=[{'type': 'value', 'options': {'1': {'text': 'OK', 'color': GREEN},
                                                         '0': {'text': 'НЕТ', 'color': RED}}}]),
         by_name('трафик', mappings=[{'type': 'value', 'options': {'1': {'text': 'точный'},
                                                                   '0': {'text': '≈ из API'}}}]),
-        by_name('польз.', decimals=0),
+        by_name('польз.', decimals=0, custom__width=60),
+        by_name('трафик', custom__width=75),
     ], desc='Трафик «из API» округлён панелью — для точного укажите metrics_url в config.toml'))
 
     p.append(table('Сайты', {'h': 8, 'w': 8, 'x': 16, 'y': y}, [
@@ -382,47 +386,71 @@ def build():
              'Если запросы есть, а ответов нет — аутбаунд сломан'))
     y += 8
 
-    # 5. Сеть по нодам: маленький график на каждую ноду (повторяется по переменной «Нода»)
+    # 5. Каждая нода отдельно: карточка на ноду — сеть сервера и клиенты
     one = f'topk by (panel, node_uuid) (1, rwmon_node_info{{{F}, node=~"$node"}})'
     one_by = f'* on (panel, node_uuid) group_left (node) {one}'
-    p.append({'id': _next(), 'type': 'row', 'title': 'Сеть по нодам', 'collapsed': False,
+    p.append({'id': _next(), 'type': 'row', 'title': 'Каждая нода отдельно', 'collapsed': False,
               'gridPos': {'h': 1, 'w': 24, 'x': 0, 'y': y}, 'panels': []})
-    small = timeseries('$node', {'h': 7, 'w': 6, 'x': 0, 'y': y + 1}, [
+    card = timeseries('$node', {'h': 6, 'w': 6, 'x': 0, 'y': y + 1}, [
         target(f'sum by (node) ((rwmon_node_network_rx_bytes_per_second{{{F}}} * 8) {one_by})', 'A', 'RX'),
         target(f'sum by (node) ((rwmon_node_network_tx_bytes_per_second{{{F}}} * 8) {one_by})', 'B', 'TX'),
-        target(f'sum by (tag) ((rate(rwmon_node_outbound_download_bytes{{tag=~"$outbound", {F}}}[5m]) * 8) '
-               f'{one_by})', 'C', '{{tag}}'),
-    ], 'bps', fill=20, overrides=[
+        target(f'sum by (node) (rwmon_node_online_users{{{F}}} {one_by})', 'C', 'клиенты'),
+    ], 'bps', fill=25, overrides=[
         by_name('RX', color={'mode': 'fixed', 'fixedColor': GREEN}),
         by_name('TX', color={'mode': 'fixed', 'fixedColor': YELLOW}, custom__transform='negative-Y'),
-        by_regex('^(?!RX$|TX$).*', custom__fillOpacity=0, custom__lineStyle={'fill': 'dash', 'dash': [6, 4]}),
-    ], desc='Сеть сервера ноды: вверх — принято (RX), вниз — отправлено (TX). Пунктиром — сколько '
-            'пришло из выбранных аутбаундов (WARP, Psiphon)')
-    small.update({'repeat': 'node', 'repeatDirection': 'h', 'maxPerRow': 4})
-    small['options']['tooltip'] = {'mode': 'multi', 'sort': 'none'}
-    p.append(small)
-    y += 8
+        by_name('клиенты', unit='none', decimals=0, color={'mode': 'fixed', 'fixedColor': 'text'},
+                custom__axisPlacement='right', custom__fillOpacity=0, custom__lineWidth=1,
+                custom__axisSoftMin=0, min=0),
+    ], desc='Сеть сервера ноды: вверх (зелёным) — принято, вниз (жёлтым) — отправлено. '
+            'Белая линия и правая шкала — сколько клиентов на ноде. Показываются ноды, выбранные вверху в «Нода».')
+    card.update({'repeat': 'node', 'repeatDirection': 'h', 'maxPerRow': 4})
+    card['options']['legend'] = {'showLegend': False, 'displayMode': 'hidden', 'placement': 'bottom', 'calcs': []}
+    card['options']['tooltip'] = {'mode': 'multi', 'sort': 'none'}
+    card['fieldConfig']['defaults']['custom']['lineWidth'] = 1
+    p.append(card)
+    y += 7
 
-    # 6. Нода подробно
+    # 6. Сравнение нод: все выбранные ноды на одном графике — видно, какая выделяется
     def node_ts(expr, ref, legend='{{node_name}} · {{panel_title}}'):
         return target(f'sum by (panel_title, node_name) (({expr}) {BY_NODE})', ref, legend)
-    detail = [
-        timeseries('Клиенты', {'h': 8, 'w': 12, 'x': 0, 'y': y + 1},
-                   [node_ts(f'rwmon_node_online_users{{{F}}}', 'A')], 'none', legend='table', placement='right'),
-        timeseries('Трафик клиентов', {'h': 8, 'w': 12, 'x': 12, 'y': y + 1}, [
-            node_ts(f'sum by (panel, node_uuid) (rate(rwmon_node_inbound_download_bytes{{{F}}}[5m])) * 8', 'A',
-                    '{{node_name}} · {{panel_title}} к клиентам'),
+    limit_line = {'mode': 'absolute', 'steps': [{'color': 'transparent', 'value': None},
+                                                {'color': RED, 'value': 0.9}]}
+    compare = [
+        timeseries('Клиенты на нодах', {'h': 8, 'w': 12, 'x': 0, 'y': y + 1},
+                   [node_ts(f'rwmon_node_online_users{{{F}}}', 'A')], 'none', legend='table',
+                   placement='right', fill=0),
+        timeseries('Трафик клиентов: к клиентам ↑ / от клиентов ↓', {'h': 8, 'w': 12, 'x': 12, 'y': y + 1}, [
+            node_ts(f'sum by (panel, node_uuid) (rate(rwmon_node_inbound_download_bytes{{{F}}}[5m])) * 8', 'A'),
             node_ts(f'sum by (panel, node_uuid) (rate(rwmon_node_inbound_upload_bytes{{{F}}}[5m])) * 8', 'B',
                     '{{node_name}} · {{panel_title}} ↑ от клиентов'),
-        ], 'bps', overrides=negative_tx(), legend='table', placement='right'),
-        timeseries('CPU: load average на ядро', {'h': 7, 'w': 12, 'x': 0, 'y': y + 9},
+        ], 'bps', overrides=negative_tx(), legend='table', placement='right', fill=0),
+        timeseries('CPU: load average на ядро', {'h': 8, 'w': 12, 'x': 0, 'y': y + 9},
                    [node_ts(f'rwmon_node_cpu_load5{{{F}}}', 'A')], 'percentunit', legend='table',
-                   placement='right'),
-        timeseries('Память', {'h': 7, 'w': 12, 'x': 12, 'y': y + 9},
+                   placement='right', fill=0),
+        timeseries('Память', {'h': 8, 'w': 12, 'x': 12, 'y': y + 9},
                    [node_ts(f'rwmon_node_memory_used_ratio{{{F}}}', 'A')], 'percentunit', legend='table',
-                   placement='right'),
+                   placement='right', fill=0),
+        timeseries('Аутбаунды $outbound: ответы ↑ / запросы ↓', {'h': 8, 'w': 12, 'x': 0, 'y': y + 17}, [
+            target(f'sum by (panel_title, node_name, tag) ((rate(rwmon_node_outbound_download_bytes'
+                   f'{{tag=~"$outbound", {F}}}[5m]) * 8) {BY_NODE})', 'A', '{{node_name}} · {{tag}}'),
+            target(f'sum by (panel_title, node_name, tag) ((rate(rwmon_node_outbound_upload_bytes'
+                   f'{{tag=~"$outbound", {F}}}[5m]) * 8) {BY_NODE})', 'B', '{{node_name}} · {{tag}} ↑ запросы'),
+        ], 'bps', overrides=negative_tx(), legend='table', placement='right', fill=0),
+        timeseries('Задержка подключения к хостам', {'h': 8, 'w': 12, 'x': 12, 'y': y + 17}, [
+            target(f'max by (host, panel_title) ({hosts("xray")} * on (name) group_left () '
+                   f'max by (name) (xray_proxy_latency_ms{{check="xray"}} > 0))', 'A',
+                   '{{host}} · {{panel_title}}'),
+        ], 'ms', legend='table', placement='right', fill=0,
+            desc='Сколько занимает проверка «Подключение»: подключение к хосту и загрузка страницы'),
     ]
-    p.append(row('Нода подробно: $node', y, detail))
+    for c in compare[2:4]:                   # красная пунктирная линия на 90%
+        c['fieldConfig']['defaults']['thresholds'] = limit_line
+        c['fieldConfig']['defaults']['custom']['thresholdsStyle'] = {'mode': 'dashed'}
+        c['fieldConfig']['defaults']['max'] = 1
+    for c in compare:
+        c['options']['legend']['sortBy'] = 'Last *'
+        c['options']['legend']['sortDesc'] = True
+    p.append(row('Сравнение нод', y, compare))
     y += 1
 
     # 7. Проверки хостов
