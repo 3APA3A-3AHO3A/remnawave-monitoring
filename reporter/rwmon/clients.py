@@ -107,6 +107,14 @@ class Prometheus:
                 pass
         return out
 
+    def targets(self, job):
+        """Состояние опроса целей: [(адрес, 'up'/'down'/'unknown', текст ошибки)]."""
+        req = urllib.request.Request(self.url + '/api/v1/targets?state=active',
+                                     headers={'User-Agent': USER_AGENT})
+        data = json.loads(_open(req, 30))
+        return [(t.get('scrapeUrl', ''), t.get('health', ''), t.get('lastError', ''))
+                for t in data['data']['activeTargets'] if t.get('labels', {}).get('job') == job]
+
     def by(self, expr, label, at=None):
         """Запрос, результат которого — словарь {значение метки: число}."""
         return {m.get(label, ''): v for m, v in self.query(expr, at)}
