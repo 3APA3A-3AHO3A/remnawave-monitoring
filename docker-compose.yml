@@ -94,6 +94,7 @@ services:
       - |
         rm -rf /tmp/rwmon-provisioning
         cp -r /etc/grafana/provisioning-src /tmp/rwmon-provisioning
+        mkdir -p /tmp/rwmon-provisioning/plugins
         for v in TG_BOT_TOKEN TG_CHAT_ID TG_TOPIC_ID CLIENTS_DROP_MIN_AVG CLIENTS_DROP_MAX_NOW OUTBOUND_TAGS; do
           val=$$(printenv "$$v" | sed -e 's/[\\&#]/\\&/g')
           sed -i "s#__$${v}__#$${val}#g" /tmp/rwmon-provisioning/alerting/*.yml
