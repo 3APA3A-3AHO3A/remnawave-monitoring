@@ -13,6 +13,7 @@
 import json
 import os
 import sys
+import threading
 import time
 import urllib.request
 
@@ -35,11 +36,14 @@ def due(state, key, hm):
     return (t.hour, t.minute) >= hm
 
 
-def ping(url):
-    try:
-        urllib.request.urlopen(url, timeout=10).read()
-    except Exception as e:
-        log('healthcheck', f'не удалось отметиться: {e}')
+def pinger(url):
+    """Отметки для внешнего сторожа — в своём потоке, чтобы долгий GeoCheck их не задерживал."""
+    while True:
+        try:
+            urllib.request.urlopen(url, timeout=10).read()
+        except Exception as e:
+            log('healthcheck', f'не удалось отметиться: {e}')
+        time.sleep(PING_EVERY)
 
 
 def run_forever(cfg):
@@ -49,7 +53,9 @@ def run_forever(cfg):
     prom = Prometheus(cfg.prometheus_url)
     state_path = os.path.join(cfg.data_dir, 'state.json')
     state = read_json(state_path, {})
-    next_links = next_ping = 0
+    next_links = 0
+    if cfg.healthcheck_url:
+        threading.Thread(target=pinger, args=(cfg.healthcheck_url,), daemon=True).start()
     log('main', f'запущен для панелей: {", ".join(p.title for p in cfg.panels)}; '
                 f'GeoCheck в {cfg.geocheck_time[0]:02d}:{cfg.geocheck_time[1]:02d}, '
                 f'сводка в {cfg.report_time[0]:02d}:{cfg.report_time[1]:02d} UTC')
@@ -74,10 +80,11 @@ def run_forever(cfg):
         if due(state, 'geocheck', cfg.geocheck_time):
             task('geocheck', lambda: geocheck.run(cfg, clients))
         if due(state, 'report', cfg.report_time):
-            task('report', lambda: daily.send(prom, clients, cfg))
-        if cfg.healthcheck_url and time.time() >= next_ping:
-            ping(cfg.healthcheck_url)
-            next_ping = time.time() + PING_EVERY
+            today = now().strftime('%Y-%m-%d')
+            parts = state.setdefault('report_parts', {})
+            for day in [d for d in parts if d != today]:
+                parts.pop(day)                     # доставленные части прошлых дней не нужны
+            task('report', lambda: daily.send(prom, clients, cfg, done=parts.setdefault(today, [])))
         time.sleep(TICK)
 
 
@@ -160,7 +167,9 @@ def ports_check(proc='/proc/sys/net/ipv4'):
             f'{", ".join(clash)}. Закрепите их: echo "net.ipv4.ip_local_reserved_ports = '
             '21000-21999,22000-22999,23000-23999" | sudo tee /etc/sysctl.d/90-rwmon.conf '
             '&& sudo sysctl -p /etc/sysctl.d/90-rwmon.conf')
-    return 'свободны' if low > 23999 else 'закреплены за проверками'
+    if low > 23999 or high < 21000:
+        return 'свободны'
+    return 'закреплены за проверками'
 
 
 def _hosts(rw, p):
@@ -179,7 +188,12 @@ def _toml_str(v):
 
 
 def migrate(env=os.environ):
-    g = env.get
+    def g(key, default=None):
+        """docker run --env-file не снимает кавычки — снимаем сами."""
+        v = env.get(key, default)
+        if isinstance(v, str) and len(v) >= 2 and v[0] == v[-1] and v[0] in '"\'':
+            v = v[1:-1]
+        return v
     lst = lambda v: '[' + ', '.join(_toml_str(x.strip()) for x in (v or '').split(',') if x.strip()) + ']'
     tags = [t for t in (g('OUTBOUND_TAGS') or 'psiphon-out|WARP').split('|') if t]
     metrics = '# metrics_url = ""'
@@ -233,7 +247,7 @@ topic_id = {_toml_str(g('TG_TOPIC_ID', ''))}
 # api_token = ""
 # monitor_user = "monitoring"
 # host_tag = "MONITORING"
-# host_tag_lite = "MONITORING_LTE"
+# host_tag_lite = "MONITORING_LITE"
 # host_suffix = " · R"
 # exclude_nodes = []
 # geocheck_exclude = []

@@ -145,6 +145,9 @@ class MiscTest(unittest.TestCase):
         parts = split_message(text, 4000)
         self.assertTrue(all(len(p) <= 4000 for p in parts))
         self.assertEqual('\n'.join(parts), text)
+        long = ['a', 'x' * 25, 'b']                     # порядок сохраняется, пустых нет
+        self.assertEqual(split_message('\n'.join(long), 10), ['a', 'x' * 10, 'x' * 10, 'x' * 5 + '\nb'])
+        self.assertEqual(split_message('y' * 10 + '\nz', 10), ['y' * 10, 'z'])
 
     def test_ports(self):
         from rwmon.__main__ import ports_check
@@ -161,6 +164,19 @@ class MiscTest(unittest.TestCase):
                 ports_check(d)
             put('1024\t65000\n', '21000-21999,22000-23999\n')
             self.assertEqual(ports_check(d), 'закреплены за проверками')
+
+    def test_migrate_quotes(self):
+        import contextlib
+        import io
+        import tomllib
+        from rwmon.__main__ import migrate
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            migrate({'RW_API_TOKEN': '"tok"', 'TG_BOT_TOKEN': "'1:x'", 'TG_CHAT_ID': '-1', 'RW_METRICS_PASS': 'p"w'})
+        cfg = config.parse(tomllib.loads(buf.getvalue()), env={})
+        self.assertEqual(cfg.panels[0].api_token, 'tok')
+        self.assertEqual(cfg.panels[0].telegram.bot_token, '1:x')
+        self.assertEqual(cfg.panels[0].metrics_password, 'p"w')
 
     def test_rename(self):
         self.assertEqual(links.rename('vless://a@h:443?x=1#Poland%201', ' · R'),
@@ -202,6 +218,10 @@ class ConfigTest(unittest.TestCase):
                        {'id': 'b', 'api_url': 'y', 'api_token': 't', 'telegram': TG, 'host_suffix': ''}]},
             {'panel': [{'id': 'a', 'api_url': 'x', 'api_token': 't', 'telegram': TG}],
              'schedule': {'report_time': '25:00'}},
+            {'panel': [{'id': 'a', 'api_url': 'x', 'api_token': 't', 'telegram': TG}],
+             'schedule': {'report_time': '15:00', 'geocheck_time': '15:30'}},
+            {'panel': [{'id': 'a', 'api_url': 'x', 'api_token': 't', 'telegram': TG}],
+             'checks': {'interval': 'часто'}},
         ):
             with self.assertRaises(config.ConfigError, msg=bad):
                 config.parse(bad, env={})
@@ -322,7 +342,7 @@ class RenderTest(unittest.TestCase):
             prom = load('prometheus/prometheus.yml')
             self.assertEqual(prom['scrape_configs'][1]['static_configs'][1]['labels'], {'check': 'warp'})
             rules = load('grafana/alerting/rules.yml')['groups'][0]['rules']
-            self.assertEqual(len({r['uid'] for r in rules}), 9)
+            self.assertEqual(len({r['uid'] for r in rules}), 11)
             self.assertIn('psiphon-out|WARP', json.dumps(rules))
             routes = load('grafana/alerting/policies.yml')['policies'][0]['routes']
             self.assertEqual(routes[0]['object_matchers'], [['scope', '=', 'host'], ['panel', '=', 'main']])

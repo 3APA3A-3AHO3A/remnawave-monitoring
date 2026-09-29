@@ -36,24 +36,29 @@ def summarize(report):
     cons = (report.get('consensus') or {}).get('ipv4') or []
     if cons:
         top = cons[0]
-        s['consensus'] = f'{top.get("code", "?")} {round(top.get("percent", 0))}%'
+        try:
+            s['consensus'] = f'{top.get("code") or "?"} {round(float(top.get("percent") or 0))}%'
+        except (TypeError, ValueError, AttributeError):
+            pass
 
     geo = report.get('geo') or {}
     for group in ('services', 'geoip', 'cdn'):
         for c in geo.get(group) or []:
-            v = (c.get('ipv4') or {})
-            if v.get('error') or not v.get('value'):
+            v = c.get('ipv4') if isinstance(c, dict) else None
+            if not isinstance(v, dict) or v.get('error') or not v.get('value'):
                 continue
-            kind = c.get('kind') or ''
-            value = v['value'].upper() if kind == 'country' else v['value'].lower()
+            kind = str(c.get('kind') or '')
+            value = str(v['value']).upper() if kind == 'country' else str(v['value']).lower()
             s['checks'][f'{group}:{c.get("id")}'] = {
                 'name': c.get('name') or c.get('id'), 'group': group, 'kind': kind, 'value': value}
 
     for c in report.get('stash_checks') or []:
-        state = (c.get('state') or '').lower()
+        if not isinstance(c, dict):
+            continue
+        state = str(c.get('state') or '').lower()
         if not state or state == 'error' or c.get('error'):
             continue
-        value = state + (f' ({c["region"].upper()})' if c.get('region') else '')
+        value = state + (f' ({str(c["region"]).upper()})' if c.get('region') else '')
         s['checks'][f'stash:{c.get("id")}'] = {
             'name': c.get('name') or c.get('id'), 'group': 'stash', 'kind': 'access', 'value': value}
     return s
@@ -96,7 +101,7 @@ def attention(summary, bad_countries):
 def pick_nodes(nodes, exclude):
     out = []
     for n in nodes:
-        if n.get('isDisabled') or not n.get('isConnected'):
+        if not n.get('uuid') or n.get('isDisabled') or not n.get('isConnected'):
             continue
         names = {(n.get('name') or '').lower()} | {t.lower() for t in n.get('tags') or []}
         if names & exclude:
@@ -107,6 +112,15 @@ def pick_nodes(nodes, exclude):
 
 def image_path(folder, key):
     return os.path.join(folder, 'images', key.replace(':', '_') + '.svg')
+
+
+def save_image(path, data):
+    if data:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'wb') as f:
+            f.write(base64.b64decode(data))
+    elif os.path.exists(path):
+        os.remove(path)          # не показывать вчерашнюю картинку
 
 
 def run(cfg, clients):
@@ -141,23 +155,20 @@ def run(cfg, clients):
             item = {'name': name, 'panel': p.id, 'country': node.get('countryCode') or '',
                     'ok': err is None, 'error': err}
             if err is None:
-                summary = summarize(res.get('rawReport'))
-                prev = baseline.get(key) or baseline.get(uid)     # uid — формат до нескольких панелей
-                main, minor = compare(prev, summary)
-                item.update(summary=summary, changes=main, minor=minor,
-                            attention=attention(summary, cfg.bad_countries),
-                            first=prev is None)
-                baseline.pop(uid, None)
-                baseline[key] = summary
-                image = (res.get('image') or {}).get('data')
-                path = image_path(folder, key)
-                if image:
-                    os.makedirs(os.path.dirname(path), exist_ok=True)
-                    with open(path, 'wb') as f:
-                        f.write(base64.b64decode(image))
-                elif os.path.exists(path):
-                    os.remove(path)          # не показывать вчерашнюю картинку
-            else:
+                try:                         # странный ответ по одной ноде не ломает весь прогон
+                    summary = summarize((res or {}).get('rawReport'))
+                    prev = baseline.get(key) or baseline.get(uid)     # uid — формат до нескольких панелей
+                    main, minor = compare(prev, summary)
+                    item.update(summary=summary, changes=main, minor=minor,
+                                attention=attention(summary, cfg.bad_countries),
+                                first=prev is None)
+                    baseline.pop(uid, None)
+                    baseline[key] = summary
+                    save_image(image_path(folder, key), (res.get('image') or {}).get('data'))
+                except Exception as e:
+                    err = f'не удалось разобрать ответ: {e!r}'
+                    item.update(ok=False, error=err)
+            if err is not None:
                 log('geocheck', f'{name}: {err}')
             results[key] = item
 

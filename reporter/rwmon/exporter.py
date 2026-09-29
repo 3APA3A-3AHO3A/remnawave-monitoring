@@ -38,6 +38,12 @@ HELP = {
     'rwmon_node_network_tx_bytes_per_second': ('gauge', 'Сеть сервера ноды: отправлено, байт/с'),
     'rwmon_node_network_rx_bytes': ('counter', 'Сеть сервера ноды: принято всего'),
     'rwmon_node_network_tx_bytes': ('counter', 'Сеть сервера ноды: отправлено всего'),
+    'rwmon_node_uptime_seconds': ('gauge', 'Сколько секунд работает сервер ноды'),
+    'rwmon_node_xray_uptime_seconds': ('gauge', 'Сколько секунд работает Xray на ноде'),
+    'rwmon_node_version': ('gauge', 'Версии Xray и ноды'),
+    'rwmon_node_traffic_used_bytes': ('gauge', 'Трафик ноды за расчётный период (учёт в панели)'),
+    'rwmon_node_traffic_limit_bytes': ('gauge', 'Лимит трафика ноды (учёт в панели)'),
+    'rwmon_panel_hosts': ('gauge', 'Сколько хостов панели проверяется'),
     'rwmon_host': ('gauge', 'Хост панели и имя его проверки (name) в xray-checker'),
     'rwmon_users': ('gauge', 'Пользователи по статусам'),
     'rwmon_users_online': ('gauge', 'Пользователи онлайн: сейчас / за сутки / за неделю'),
@@ -69,6 +75,10 @@ class Lines:
         lab = ','.join(f'{k}="{_esc(v)}"' for k, v in labels.items())
         num = str(int(value)) if value.is_integer() else repr(value)   # без потери точности
         self.rows.setdefault(name, []).append(f'{name}{{{lab}}} {num}')
+
+    def merge(self, other):
+        for name, rows in other.rows.items():
+            self.rows.setdefault(name, []).extend(rows)
 
     def text(self):
         out = []
@@ -142,7 +152,7 @@ def collect_panel(panel, rw, lines, state):
 
     watched = {}
     for n in nodes:
-        if not node_is_watched(n, panel):
+        if not isinstance(n, dict) or not n.get('uuid') or not node_is_watched(n, panel):
             continue
         uid = n['uuid']
         watched[uid] = n
@@ -158,6 +168,16 @@ def collect_panel(panel, rw, lines, state):
             lines.add('rwmon_node_cpu_load5', nl, load[1] / cpus)
         if info.get('memoryTotal') and st.get('memoryUsed') is not None:
             lines.add('rwmon_node_memory_used_ratio', nl, st['memoryUsed'] / info['memoryTotal'])
+        lines.add('rwmon_node_uptime_seconds', nl, st.get('uptime'))
+        if n.get('isConnected'):
+            lines.add('rwmon_node_xray_uptime_seconds', nl, n.get('xrayUptime'))
+        versions = n.get('versions') or {}
+        if versions:
+            lines.add('rwmon_node_version', dict(nl, xray=versions.get('xray', ''),
+                                                 node=versions.get('node', '')), 1)
+        if n.get('isTrafficTrackingActive') and n.get('trafficLimitBytes'):
+            lines.add('rwmon_node_traffic_used_bytes', nl, n.get('trafficUsedBytes'))
+            lines.add('rwmon_node_traffic_limit_bytes', nl, n.get('trafficLimitBytes'))
         net = st.get('interface') or {}
         if net and n.get('isConnected'):
             lines.add('rwmon_node_network_rx_bytes_per_second', nl, net.get('rxBytesPerSec'))
@@ -165,15 +185,17 @@ def collect_panel(panel, rw, lines, state):
             lines.add('rwmon_node_network_rx_bytes', nl, net.get('rxTotal'))
             lines.add('rwmon_node_network_tx_bytes', nl, net.get('txTotal'))
 
-    exact = 0
-    if panel.metrics_url:
+    # Точные и округлённые счётчики в одну серию не смешиваем: округлённое значение
+    # меньше точного, Prometheus принял бы это за сброс счётчика и насчитал бы лишний трафик.
+    exact = 1 if panel.metrics_url else 0
+    if exact:
         try:
             rows = parse_panel_metrics(rw.raw_metrics())
-            exact = 1
             state.pop(panel.id + ':raw', None)
         except ApiError as e:
-            _warn(state, panel.id + ':raw', f'{e} — беру приблизительный трафик из API')
-    if not exact:
+            _warn(state, panel.id + ':raw', f'{e} — трафик в этот раз пропускаю')
+            rows = []
+    else:
         try:
             rows = traffic_from_api(rw.nodes_metrics())
             state.pop(panel.id + ':metrics', None)
@@ -200,7 +222,7 @@ def collect_panel(panel, rw, lines, state):
     version = state.get(panel.id + ':version')
     if version is None or time.time() - state.get(panel.id + ':version_at', 0) > 3600:
         try:
-            version = rw.metadata().get('version', '')
+            version = str((rw.metadata() or {}).get('version') or '')
         except ApiError:
             version = version or ''
         state[panel.id + ':version'], state[panel.id + ':version_at'] = version, time.time()
@@ -210,7 +232,10 @@ def collect_panel(panel, rw, lines, state):
     return True
 
 
-def host_lines(hosts, lines):
+def host_lines(hosts, lines, panels=()):
+    for p in panels:              # сколько хостов панели проверяется — 0 тоже важен
+        lines.add('rwmon_panel_hosts', {'panel': p.id, 'panel_title': p.title},
+                  sum(1 for h in hosts if h['panel'] == p.id))
     for h in hosts:
         lines.add('rwmon_host', {'panel': h['panel'], 'panel_title': h['panel_title'], 'host': h['host'],
                                  'name': h['name'], 'lite': '1' if h['lite'] else '0'}, 1)
@@ -230,13 +255,21 @@ class Exporter:
         self.clients = {p.id: Remnawave(p) for p in cfg.panels}
         self.text = '# нет данных — первый опрос ещё не завершён\n'
         self.state = {}
-        self.ok = {}
 
     def poll_once(self):
         lines = Lines()
         for p in self.cfg.panels:
-            self.ok[p.id] = collect_panel(p, self.clients[p.id], lines, self.state)
-        host_lines(links.HOSTS, lines)
+            part = Lines()
+            try:
+                collect_panel(p, self.clients[p.id], part, self.state)
+            except Exception as e:       # неожиданный ответ одной панели не должен замораживать остальные
+                _warn(self.state, p.id + ':crash', f'[{p.title}] ошибка разбора ответа панели: {e!r}')
+                part = Lines()
+                part.add('rwmon_panel_up', {'panel': p.id, 'panel_title': p.title}, 0)
+            else:
+                self.state.pop(p.id + ':crash', None)
+            lines.merge(part)
+        host_lines(links.HOSTS, lines, self.cfg.panels)
         self.text = lines.text()
 
     def loop(self):

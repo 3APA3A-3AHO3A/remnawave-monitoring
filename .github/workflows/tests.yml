@@ -1,0 +1,32 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  reporter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Тесты reporter
+        run: cd reporter && python -m unittest discover -v tests
+      - name: Дашборд собран из grafana/dashboard.py
+        run: |
+          python grafana/dashboard.py
+          git diff --exit-code grafana/dashboards/
+      - name: docker-compose.yml
+        run: |
+          cp .env.example .env
+          sed -i 's/^GRAFANA_ADMIN_USER=$/GRAFANA_ADMIN_USER=ci/; s/^GRAFANA_ADMIN_PASSWORD=$/GRAFANA_ADMIN_PASSWORD=ci/' .env
+          docker compose config -q
+
+  checker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Образ xray-checker с патчами собирается
+        run: docker build -t rwmon-xray-checker:ci checker

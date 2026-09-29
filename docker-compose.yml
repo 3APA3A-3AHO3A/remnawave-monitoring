@@ -10,8 +10,10 @@ x-logging: &logging
   options: { max-size: "10m", max-file: "3" }
 
 x-checker: &checker
-  # xray-checker v1.3.1 + исправление для Hysteria2 (см. checker/Dockerfile)
-  build: ./checker
+  # xray-checker v1.3.1 + патчи: Hysteria2 packetSize и повторные попытки (см. checker/Dockerfile)
+  build:
+    context: ./checker
+    labels: { rwmon: "1" }      # по этой метке apply.sh убирает старые версии образа
   image: rwmon-xray-checker:local
   network_mode: host
   restart: unless-stopped
@@ -28,7 +30,9 @@ x-checker: &checker
 services:
   # Собирает конфиги Prometheus, Grafana и проверок из config.toml и завершается
   config:
-    build: ./reporter
+    build:
+      context: ./reporter
+      labels: { rwmon: "1" }
     image: rwmon-reporter:local
     container_name: rwmon-config
     command: ["render"]
@@ -99,7 +103,9 @@ services:
 
   # Метрики панелей, список хостов для проверок, GeoCheck и ежедневная сводка
   reporter:
-    build: ./reporter
+    build:
+      context: ./reporter
+      labels: { rwmon: "1" }
     image: rwmon-reporter:local
     container_name: rwmon-reporter
     network_mode: host

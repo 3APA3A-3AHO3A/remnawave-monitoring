@@ -1,4 +1,4 @@
-# xray-checker с исправлением для Hysteria2 + Salamander packetSize.
+# xray-checker v1.3.1 с двумя патчами: Hysteria2 + Salamander packetSize и повторные попытки.
 #
 # Официальный xray-checker теряет параметр packetSize у обфускации Salamander.
 # С packetSize ядро Xray работает в режиме Gecko, который несовместим с обычным

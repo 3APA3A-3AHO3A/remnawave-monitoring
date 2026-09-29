@@ -7,9 +7,11 @@ config.toml → перезапустили (`./apply.sh`).
 Файлы пишутся в JSON — это тоже корректный YAML, лишние библиотеки не нужны.
 """
 import json
+import math
 import os
-import re
 import shutil
+
+from .util import promql_regex
 
 OUT = os.environ.get('RWMON_GENERATED', '/generated')
 SRC = os.environ.get('RWMON_SRC', '/src')
@@ -17,7 +19,7 @@ DS = 'rwmon-prometheus'
 CHECKERS = (('xray', 2112), ('warp', 2113), ('psiphon', 2114))
 
 
-def _write(path, data):
+def _write(path, data, mode=0o644):
     path = os.path.join(OUT, path)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w', encoding='utf-8') as f:
@@ -25,12 +27,7 @@ def _write(path, data):
             f.write(data)
         else:
             json.dump(data, f, ensure_ascii=False, indent=2)
-    os.chmod(path, 0o644)
-
-
-def re2_escape(text):
-    """Экранирование для регулярок Prometheus (RE2): только спецсимволы."""
-    return re.sub(r'([\\.^$|?*+()\[\]{}])', r'\\\1', text)
+    os.chmod(path, mode)
 
 
 # ── Prometheus ───────────────────────────────────────────────
@@ -97,10 +94,11 @@ UNCHECKED = ('(rwmon_host unless on (name) xray_proxy_status{check="xray"})'
 
 
 def rules(cfg):
-    for_check = f'{cfg.check_interval // 60 + 1}m'      # две проверки подряд
-    tags = '|'.join(re2_escape(t) for t in cfg.outbound_tags)
-    up = f'sum by (panel, node_uuid, tag) (increase(rwmon_node_outbound_upload_bytes{{tag=~"{tags}"}}[15m]))'
-    down = f'sum by (panel, node_uuid, tag) (increase(rwmon_node_outbound_download_bytes{{tag=~"{tags}"}}[15m]))'
+    # две неудачные проверки подряд: интервал + минута на опрос результата
+    for_check = f'{math.ceil((cfg.check_interval + 60) / 60)}m'
+    tags = promql_regex(cfg.outbound_tags)
+    up = f'sum by (panel, node_uuid, tag) (increase(rwmon_node_outbound_upload_bytes{{tag=~{tags}}}[15m]))'
+    down = f'sum by (panel, node_uuid, tag) (increase(rwmon_node_outbound_download_bytes{{tag=~{tags}}}[15m]))'
     r = [
         _rule('rwmon-clients-dropped', 'Клиенты пропали с ноды', f'''
 (
@@ -148,6 +146,19 @@ def rules(cfg):
               'Хост есть в панели, но результатов проверки нет. Обычно это значит, что xray-checker '
               'не смог загрузить новый список хостов: docker compose logs --tail 30 checker-xray',
               'all', severity='warning'),
+        _rule('rwmon-panel-no-hosts', 'У панели нет хостов для проверки', '(rwmon_panel_hosts == 0) * 0 + 1',
+              '30m', 'Нет хостов для проверки', 'Хосты для проверки снова есть',
+              'У служебного пользователя панели нет хостов с тегами проверки (или пользователь пропал '
+              'из сквадов) — проверки для этой панели не идут.', 'all', severity='warning'),
+        _rule('rwmon-node-overload', 'Нода перегружена', f'''
+(
+  (
+    (avg_over_time(rwmon_node_cpu_load5[15m]) > 0.9)
+    or on (panel, node_uuid) (avg_over_time(rwmon_node_memory_used_ratio[15m]) > 0.9)
+  ) * 0 + 1
+) {NAMES}''', '15m', 'Нода перегружена', 'Нагрузка на ноде снизилась',
+              'Уже 15 минут load average выше 0.9 на ядро или занято больше 90% памяти.', 'all',
+              severity='warning', window=1800),
         _rule('rwmon-checker-down', 'Не работает проверка хостов', '(up{job="xray-checker"} == 0) * 0 + 1', '5m',
               'Контейнер проверки хостов не отвечает', 'Проверка хостов снова работает',
               'docker compose logs --tail 50 checker-xray checker-warp checker-psiphon', 'all',
@@ -254,7 +265,8 @@ def render(cfg):
         'disableDeletion': True, 'allowUiUpdates': False,
         'options': {'path': '/etc/grafana/dashboards'}}]})
     _write('grafana/alerting/rules.yml', rules(cfg))
-    _write('grafana/alerting/contact-points.yml', contact_points(cfg))
+    # токены ботов: читать может только Grafana (группа root), а не контейнеры проверок
+    _write('grafana/alerting/contact-points.yml', contact_points(cfg), mode=0o640)
     _write('grafana/alerting/policies.yml', policies(cfg))
     _write('grafana/alerting/templates.yml', templates(cfg))
     for check, port in CHECKERS:

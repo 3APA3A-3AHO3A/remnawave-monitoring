@@ -156,19 +156,34 @@ def parse(data, env=os.environ):
                           f'({", ".join(empty)}) — хосты разных панелей будет не различить')
 
     sch, chk, al, geo = (data.get(k) or {} for k in ('schedule', 'checks', 'alerts', 'geocheck'))
+
+    def num(section, key, default, where, minimum=0, kind=int):
+        try:
+            v = kind(section.get(key, default))
+        except (TypeError, ValueError):
+            raise ConfigError(f'config.toml: [{where}] {key} — нужно число') from None
+        if v < minimum:
+            raise ConfigError(f'config.toml: [{where}] {key} должно быть не меньше {minimum}')
+        return v
+
+    report_time = _time(sch.get('report_time', '15:00'), 'report_time')
+    geocheck_time = _time(sch.get('geocheck_time', '14:30'), 'geocheck_time')
+    if geocheck_time >= report_time:
+        raise ConfigError('config.toml: geocheck_time должно быть раньше report_time — '
+                          'иначе в сводку не попадёт сегодняшний GeoCheck')
     return Config(
         panels=panels,
-        report_time=_time(sch.get('report_time', '15:00'), 'report_time'),
-        geocheck_time=_time(sch.get('geocheck_time', '14:30'), 'geocheck_time'),
-        check_interval=int(chk.get('interval', 300)),
-        check_attempts=max(1, int(chk.get('attempts', 3))),
-        check_retry_delay=max(0, int(chk.get('retry_delay', 5))),
-        check_concurrency=max(0, int(chk.get('concurrency', 20))),
+        report_time=report_time,
+        geocheck_time=geocheck_time,
+        check_interval=num(chk, 'interval', 300, 'checks', minimum=60),
+        check_attempts=num(chk, 'attempts', 3, 'checks', minimum=1),
+        check_retry_delay=num(chk, 'retry_delay', 5, 'checks'),
+        check_concurrency=num(chk, 'concurrency', 20, 'checks'),
         url_xray=chk.get('url_xray', Config.url_xray),
         url_warp=chk.get('url_warp', Config.url_warp),
         url_psiphon=chk.get('url_psiphon', Config.url_psiphon),
-        clients_drop_min_avg=float(al.get('clients_drop_min_avg', 3)),
-        clients_drop_max_now=float(al.get('clients_drop_max_now', 1)),
+        clients_drop_min_avg=num(al, 'clients_drop_min_avg', 3, 'alerts', kind=float),
+        clients_drop_max_now=num(al, 'clients_drop_max_now', 1, 'alerts', kind=float),
         outbound_tags=[str(t) for t in al.get('outbound_tags', ['psiphon-out', 'WARP'])],
         bad_countries={str(c).upper() for c in geo.get('bad_countries', ['RU', 'BY'])},
         attach_images=bool(geo.get('attach_images', True)),

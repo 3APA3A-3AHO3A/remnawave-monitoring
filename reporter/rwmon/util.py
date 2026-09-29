@@ -1,5 +1,6 @@
 import html
 import json
+import re
 import os
 import tempfile
 from datetime import datetime, timezone
@@ -53,3 +54,10 @@ def minutes(m):
     if m < 60:
         return f'{m} мин'
     return f'{m // 60} ч {m % 60:02d} мин'
+
+
+def promql_regex(values):
+    """Список строк → регулярка для PromQL `a|b\\.c` в обратных кавычках
+    (raw-строка: обратные слэши не надо удваивать, кавычки внутри не мешают)."""
+    body = '|'.join(re.sub(r'([\\.^$|?*+()\[\]{}])', r'\\\1', v) for v in values)
+    return '`' + body.replace('`', '') + '`'

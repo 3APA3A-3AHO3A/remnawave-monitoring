@@ -87,7 +87,7 @@ class Remnawave:
 
     def nodes_metrics(self):
         """Клиенты и трафик по инбаундам/аутбаундам каждой ноды (то же, что /metrics панели)."""
-        return self._call('GET', '/api/system/nodes/metrics')['nodes']
+        return (self._call('GET', '/api/system/nodes/metrics') or {}).get('nodes') or []
 
     def stats(self):
         return self._call('GET', '/api/system/stats')
@@ -213,16 +213,19 @@ class Telegram:
 
 
 def split_message(text, limit):
-    chunks, cur = [], ''
+    """Разбить длинный текст на сообщения по строкам, сохраняя порядок.
+    Строку длиннее limit режем на куски; пустых сообщений не бывает."""
+    chunks, cur = [], None
     for line in text.split('\n'):
-        while len(line) > limit:            # одна очень длинная строка
-            chunks.append(line[:limit])
-            line = line[limit:]
-        if len(cur) + len(line) + 1 > limit:
-            chunks.append(cur)
-            cur = line
-        else:
-            cur = f'{cur}\n{line}' if cur else line
-    if cur.strip():
+        pieces = [line[i:i + limit] for i in range(0, len(line), limit)] or ['']
+        for piece in pieces:
+            if cur is None:
+                cur = piece
+            elif len(cur) + 1 + len(piece) <= limit:
+                cur += '\n' + piece
+            else:
+                chunks.append(cur)
+                cur = piece
+    if cur is not None:
         chunks.append(cur)
-    return chunks
+    return [c for c in chunks if c.strip()]

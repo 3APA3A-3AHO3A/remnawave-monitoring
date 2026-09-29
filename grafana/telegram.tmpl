@@ -2,7 +2,7 @@
      сначала «восстановилось», потом «всё ещё не работает».
      __MULTI__ подставляется при запуске: true, если панелей несколько. */}}
 {{ define "rwmon.target" -}}
-{{ if .Labels.node_name }}{{ .Labels.node_name }}{{ if and __MULTI__ .Labels.panel_title }} · {{ .Labels.panel_title }}{{ end }}{{ else if .Labels.host }}{{ .Labels.host }}{{ if and __MULTI__ .Labels.panel_title }} · {{ .Labels.panel_title }}{{ end }}{{ else if .Labels.name }}{{ .Labels.name }}{{ else if .Labels.panel_title }}{{ .Labels.panel_title }}{{ else if .Labels.rulename }}{{ .Labels.rulename }}{{ else }}{{ .Labels.alertname }}{{ end }}{{ if .Labels.tag }} · {{ .Labels.tag }}{{ end }}
+{{ if .Labels.node_name }}{{ .Labels.node_name | html }}{{ if and __MULTI__ .Labels.panel_title }} · {{ .Labels.panel_title | html }}{{ end }}{{ else if .Labels.host }}{{ .Labels.host | html }}{{ if and __MULTI__ .Labels.panel_title }} · {{ .Labels.panel_title | html }}{{ end }}{{ else if .Labels.name }}{{ .Labels.name | html }}{{ else if .Labels.panel_title }}{{ .Labels.panel_title | html }}{{ else if .Labels.check }}проверка «{{ .Labels.check }}»{{ else if .Labels.rulename }}{{ .Labels.rulename | html }}{{ else }}{{ .Labels.alertname | html }}{{ end }}{{ if .Labels.tag }} · {{ .Labels.tag | html }}{{ end }}
 {{- end }}
 
 {{ define "rwmon.firing" -}}
@@ -17,7 +17,7 @@
 
 {{ define "rwmon.message" -}}
 {{- if gt (len .Alerts.Firing) 0 }}{{ if eq (index .Alerts.Firing 0).Labels.alertname "DatasourceError" "DatasourceNoData" -}}
-⚠️ <b>Ошибка в самом мониторинге</b>: правило «{{ (index .Alerts.Firing 0).Labels.rulename }}» не может выполниться и сейчас ничего не проверяет. Смотрите Grafana → Оповещение → Правила.
+⚠️ <b>Ошибка в самом мониторинге</b>: правило «{{ (index .Alerts.Firing 0).Labels.rulename | html }}» не может выполниться и сейчас ничего не проверяет. Смотрите Grafana → Оповещение → Правила.
 {{ else if gt (len .Alerts.Resolved) 0 -}}
 🟢 <b>{{ or (index .Alerts.Resolved 0).Annotations.recovered "Восстановлено" }}</b>
 {{ template "rwmon.resolved" .Alerts.Resolved }}
@@ -31,7 +31,7 @@
 {{- end }}
 {{- end }}
 {{- else if gt (len .Alerts.Resolved) 0 }}{{ if eq (index .Alerts.Resolved 0).Labels.alertname "DatasourceError" "DatasourceNoData" -}}
-🟢 Правило «{{ (index .Alerts.Resolved 0).Labels.rulename }}» снова работает
+🟢 Правило «{{ (index .Alerts.Resolved 0).Labels.rulename | html }}» снова работает
 {{- else -}}
 🟢 <b>{{ or (index .Alerts.Resolved 0).Annotations.recovered "Восстановлено" }}</b>
 {{ template "rwmon.resolved" .Alerts.Resolved }}

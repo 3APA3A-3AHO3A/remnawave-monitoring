@@ -48,12 +48,16 @@ docker compose (всё слушает только 127.0.0.1)
  ├─ reporter        опрашивает API панелей → метрики; список хостов; GeoCheck; сводка
  ├─ Prometheus      метрики reporter и проверок, хранит 90 дней
  ├─ Grafana         графики + алерты в Telegram, наружу — через nginx
- └─ xray-checker ×3 раз в 5 минут подключаются к хостам с тегом MONITORING:
+ └─ xray-checker ×3 раз в 5 минут подключаются к хостам с тегами проверки:
                       «Подключение», «WARP», «Psiphon»
 ```
 
 - Все данные о панелях `reporter` берёт через API по токену. Поэтому для второй панели не нужен ни отдельный домен, ни доступ к её `/metrics`.
-- Проверки хостов делает [xray-checker](https://github.com/kutovoys/xray-checker). Образ собирается локально из v1.3.1 с небольшим исправлением для Hysteria2 с Salamander `packetSize` (см. [`checker/Dockerfile`](checker/Dockerfile)). Первая сборка занимает несколько минут.
+- Проверки хостов делает [xray-checker](https://github.com/kutovoys/xray-checker). Образ собирается локально из v1.3.1 с двумя небольшими патчами (см. [`checker/Dockerfile`](checker/Dockerfile)):
+  - поддержка Hysteria2 с Salamander `packetSize`;
+  - повторные попытки: одна случайная неудача (например, обрыв соединения WARP) не считается сбоем.
+
+  Первая сборка занимает несколько минут.
 - GeoCheck запускает сама панель на каждой ноде, как кнопка GeoCheck в карточке ноды.
 - `reporter` написан на Python без внешних зависимостей.
 
@@ -72,12 +76,10 @@ docker compose (всё слушает только 127.0.0.1)
 
 1. **API-токен.** Панель → Настройки → API-токены. Нужны только права на чтение:
    - Nodes: Get nodes;
-   - Hosts: Get hosts;
    - Users: Get user by username;
    - Subscriptions: Get Raw Subscription by Short UUID, Get connection keys by user id;
    - Connections: Request Geocheck for Node, Get Geocheck for Node by Job ID;
-   - System: Get Stats, Get Nodes Metrics, Get Nodes Statistics, Get Stats Digest, Get Remnawave Health, Get Remnawave Information;
-   - Bandwidth Stats: Get Nodes Usage by Range;
+   - System: Get Stats, Get Nodes Metrics, Get Stats Digest, Get Remnawave Information;
    - по желанию Infra Billing: Get infra billing nodes — тогда в сводке будут ближайшие оплаты.
 2. **Служебный пользователь**, например `monitoring`:
    - без лимита трафика и без срока окончания;

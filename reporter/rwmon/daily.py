@@ -7,7 +7,7 @@ from datetime import timedelta
 
 from . import geocheck
 from .clients import ApiError, Telegram
-from .util import esc, gb, log, minutes, now
+from .util import esc, gb, log, minutes, now, promql_regex
 
 CHECK_NAMES = {'xray': 'Подключение', 'warp': 'WARP', 'psiphon': 'Psiphon'}
 BILLING_DAYS = 7
@@ -26,7 +26,7 @@ def _by(prom, expr, *labels):
 
 def collect(prom, cfg):
     """Все цифры за последние сутки. Ключи — (panel, node_uuid) и т.п."""
-    tags = '|'.join(cfg.outbound_tags)
+    tags = promql_regex(cfg.outbound_tags)
     pn = ('panel', 'node_uuid')
     d = {
         'info': {(m['panel'], m['node_uuid']): m for m, _ in
@@ -45,8 +45,8 @@ def collect(prom, cfg):
         'checks': [],
     }
     for m, v in prom.query(
-            f'sum by (panel, node_uuid, tag) (increase(rwmon_node_outbound_upload_bytes{{tag=~"{tags}"}}[24h])'
-            f' + increase(rwmon_node_outbound_download_bytes{{tag=~"{tags}"}}[24h]))'):
+            f'sum by (panel, node_uuid, tag) (increase(rwmon_node_outbound_upload_bytes{{tag=~{tags}}}[24h])'
+            f' + increase(rwmon_node_outbound_download_bytes{{tag=~{tags}}}[24h]))'):
         d['outbound'].setdefault((m.get('panel'), m.get('node_uuid')), {})[m.get('tag')] = v
     for check in CHECK_NAMES:                     # сколько минут за сутки проверка не проходила
         hosts = 'rwmon_host' if check == 'xray' else 'rwmon_host{lite="0"}'
@@ -138,7 +138,9 @@ def _node_name(info, cfg):
     return f'{name} · {info.get("panel_title")}' if cfg.multi else name
 
 
-def send(prom, clients, cfg, dry_run=False):
+def send(prom, clients, cfg, dry_run=False, done=None):
+    """Отправить сводку во все чаты. done — список уже доставленных частей
+    («чат:text», «чат:doc») за сегодня: при повторе после сбоя они не дублируются."""
     data = collect(prom, cfg)
     extras = {p.id: panel_extras(clients[p.id]) for p in cfg.panels}
     geo_run = geocheck.load_last(cfg)
@@ -154,18 +156,26 @@ def send(prom, clients, cfg, dry_run=False):
         if html:
             print(f'\n[+ файл geocheck-{today}.html, {len(html) // 1024} КБ]')
         return text, html
+    done = [] if done is None else done
     errors = []
     for tg in cfg.chats():
-        try:
-            bot = Telegram(tg)
-            bot.send(text)
-            if html:
-                bot.send_document(f'geocheck-{today}.html', html, caption='🌍 Полный отчёт GeoCheck')
-        except ApiError as e:
-            errors.append(str(e))
-    if errors and len(errors) == len(cfg.chats()):
-        raise ApiError('; '.join(errors))
-    for e in errors:
-        log('report', f'в один из чатов не отправлено: {e}')
-    log('report', f'сводка отправлена в {len(cfg.chats()) - len(errors)} чат(а)')
+        chat = f'{tg.chat_id}/{tg.topic_id}'
+        bot = Telegram(tg)
+        parts = [('text', lambda: bot.send(text))]
+        if html:
+            parts.append(('doc', lambda: bot.send_document(f'geocheck-{today}.html', html,
+                                                           caption='🌍 Полный отчёт GeoCheck')))
+        for part, fn in parts:
+            key = f'{chat}:{part}'
+            if key in done:
+                continue
+            try:
+                fn()
+                done.append(key)
+            except ApiError as e:
+                errors.append(f'{chat}: {e}')
+                break                     # файл без текста не шлём — повторим оба позже
+    if errors:
+        raise ApiError('не доставлено: ' + '; '.join(errors))
+    log('report', f'сводка отправлена в {len(cfg.chats())} чат(а)')
     return text, html
