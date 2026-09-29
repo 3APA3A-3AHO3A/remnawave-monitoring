@@ -4,6 +4,10 @@
 .env.bak
 !.env.example
 config.toml
+# проба из РФ: пароль, ключ и сгенерированный web.yml
+probe/secret/
+probe/web.yml
+probe/.env
 
 # Python
 __pycache__/

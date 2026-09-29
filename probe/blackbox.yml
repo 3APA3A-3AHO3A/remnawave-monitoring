@@ -1,0 +1,14 @@
+modules:
+  # Открывается ли TCP-соединение до хоста (IP:порт из ссылки подписки)
+  tcp_connect:
+    prober: tcp
+    timeout: 10s
+    tcp:
+      preferred_ip_protocol: ip4
+  # Открывается ли сайт: код 2xx после редиректов
+  http_2xx:
+    prober: http
+    timeout: 15s
+    http:
+      preferred_ip_protocol: ip4
+      follow_redirects: true

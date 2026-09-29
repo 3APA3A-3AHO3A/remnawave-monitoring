@@ -1,0 +1,21 @@
+# Проба из РФ: blackbox exporter на RU-ноде.
+# Мониторинг раз в минуту просит её открыть каждый хост (TCP) и каждый сайт (HTTP)
+# и видит, что доступно изнутри России. Ставится командой ./install.sh (см. README).
+services:
+  blackbox:
+    image: prom/blackbox-exporter:v0.27.0
+    container_name: rwmon-probe
+    network_mode: host
+    restart: unless-stopped
+    user: "0:0"                    # читать ключ из secret/ (права 600)
+    command:
+      - --config.file=/etc/blackbox/blackbox.yml
+      - --web.config.file=/etc/blackbox/web.yml
+      - --web.listen-address=:${PROBE_PORT:-9115}
+    volumes:
+      - ./blackbox.yml:/etc/blackbox/blackbox.yml:ro
+      - ./secret:/etc/blackbox/secret:ro
+      - ./web.yml:/etc/blackbox/web.yml:ro
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }

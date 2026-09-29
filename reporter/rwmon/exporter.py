@@ -13,14 +13,22 @@ panel (id из config.toml) и panel_title (подпись).
 Выключенные в панели ноды и ноды из exclude_nodes не выгружаются вовсе —
 их нет ни на графиках, ни в алертах.
 """
+import ipaddress
+import os
 import re
+import socket
+import ssl
 import threading
+import urllib.error
+import urllib.parse
+import urllib.request
 import time
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import links
 from .clients import ApiError, Remnawave
-from .util import log
+from .util import log, read_json
 
 HELP = {
     'rwmon_panel_up': ('gauge', 'API панели отвечает (1) или нет (0)'),
@@ -43,6 +51,16 @@ HELP = {
     'rwmon_node_version': ('gauge', 'Версии Xray и ноды'),
     'rwmon_node_traffic_used_bytes': ('gauge', 'Трафик ноды за расчётный период (учёт в панели)'),
     'rwmon_node_traffic_limit_bytes': ('gauge', 'Лимит трафика ноды (учёт в панели)'),
+    'rwmon_node_address': ('gauge', 'IP ноды (для сопоставления с хостами и пробами из РФ)'),
+    'rwmon_geocheck': ('gauge', 'GeoCheck: как сервис видит ноду (value)'),
+    'rwmon_geocheck_info': ('gauge', 'GeoCheck: IP, сеть, тип IP ноды'),
+    'rwmon_geocheck_risk': ('gauge', 'GeoCheck: риск IP, 0–100'),
+    'rwmon_geocheck_timestamp_seconds': ('gauge', 'Когда был последний GeoCheck'),
+    'rwmon_site_up': ('gauge', 'Сайт открывается (1) или нет (0)'),
+    'rwmon_site_status_code': ('gauge', 'HTTP-код ответа сайта'),
+    'rwmon_site_response_seconds': ('gauge', 'Время ответа сайта'),
+    'rwmon_site_cert_expiry_timestamp_seconds': ('gauge', 'Когда истекает сертификат сайта'),
+    'rwmon_address_info': ('gauge', 'Какие хосты смотрят на этот адрес (для проб из РФ)'),
     'rwmon_panel_hosts': ('gauge', 'Сколько хостов панели проверяется'),
     'rwmon_host': ('gauge', 'Хост панели и имя его проверки (name) в xray-checker'),
     'rwmon_users': ('gauge', 'Пользователи по статусам'),
@@ -138,7 +156,27 @@ def node_is_watched(node, panel):
     return not (names & panel.exclude_nodes)
 
 
-def collect_panel(panel, rw, lines, state):
+def resolve_ip(address, state):
+    """Адрес ноды → IPv4 (для сопоставления нод с хостами и пробами). Кэш на час."""
+    if not address:
+        return ''
+    try:
+        ipaddress.ip_address(address)
+        return address
+    except ValueError:
+        pass
+    cached = state.get('ip:' + address)
+    if cached and time.time() - cached[1] < 3600:
+        return cached[0]
+    try:
+        ip = socket.getaddrinfo(address, None, socket.AF_INET)[0][4][0]
+    except OSError:
+        ip = cached[0] if cached else ''
+    state['ip:' + address] = (ip, time.time())
+    return ip
+
+
+def collect_panel(panel, rw, lines, state, multi=False):
     """Опрос одной панели. Ошибка отдельного запроса не мешает остальным."""
     base = {'panel': panel.id, 'panel_title': panel.title}
     try:
@@ -157,8 +195,12 @@ def collect_panel(panel, rw, lines, state):
         uid = n['uuid']
         watched[uid] = n
         nl = dict(base, node_uuid=uid)
-        lines.add('rwmon_node_info', dict(nl, node_name=n.get('name', uid),
+        name = n.get('name') or uid
+        lines.add('rwmon_node_info', dict(nl, node_name=name, node=f'{name} · {panel.title}' if multi else name,
                                           country=(n.get('countryCode') or '').upper()), 1)
+        ip = resolve_ip(str(n.get('address') or ''), state)
+        if ip:
+            lines.add('rwmon_node_address', dict(nl, ip=ip), 1)
         lines.add('rwmon_node_connected', nl, 1 if n.get('isConnected') else 0)
         lines.add('rwmon_node_online_users', nl, n.get('usersOnline', 0) if n.get('isConnected') else 0)
         system = n.get('system') or {}
@@ -232,13 +274,86 @@ def collect_panel(panel, rw, lines, state):
     return True
 
 
+def geocheck_lines(run, lines, cfg):
+    """Последний GeoCheck в Prometheus — для таблиц «кто как видит ноду» в Grafana."""
+    if not run:
+        return
+    try:
+        ts = datetime.fromisoformat(run.get('finished', '')).timestamp()
+    except ValueError:
+        ts = None
+    titles = {p.id: p.title for p in cfg.panels}
+    for key, r in (run.get('results') or {}).items():
+        pid, _, uid = key.partition(':')
+        if not uid or not r.get('summary'):
+            continue
+        base = {'panel': pid, 'panel_title': titles.get(pid, pid), 'node_uuid': uid}
+        sm = r['summary']
+        lines.add('rwmon_geocheck_info', dict(base, ip=sm.get('ip', ''), network=sm.get('network', ''),
+                                              ip_type=sm.get('type', ''), place=sm.get('place', ''),
+                                              consensus=sm.get('consensus', '')), 1)
+        lines.add('rwmon_geocheck_risk', base, sm.get('risk'))
+        lines.add('rwmon_geocheck_timestamp_seconds', base, ts)
+        for c in (sm.get('checks') or {}).values():
+            lines.add('rwmon_geocheck', dict(base, group=c.get('group', ''), service=c.get('name', ''),
+                                             value=c.get('value', '')), 1)
+
+
+def check_site(site, timeout=15):
+    """Открыть страницу как браузер: код ответа, время, ключевое слово и срок сертификата."""
+    out = {'up': 0, 'code': None, 'seconds': None, 'cert': None}
+    started = time.time()
+    req = urllib.request.Request(site.url, headers={'User-Agent': 'Mozilla/5.0 rwmon'})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            body = r.read(512 * 1024).decode('utf-8', 'replace')
+            out['code'] = r.status
+            out['up'] = int(200 <= r.status < 400 and (not site.keyword or site.keyword in body))
+    except urllib.error.HTTPError as e:
+        out['code'] = e.code
+    except Exception:
+        pass
+    out['seconds'] = time.time() - started
+    host = urllib.parse.urlsplit(site.url)
+    if host.scheme == 'https':
+        try:
+            ctx = ssl.create_default_context()
+            with socket.create_connection((host.hostname, host.port or 443), timeout=timeout) as sock:
+                with ctx.wrap_socket(sock, server_hostname=host.hostname) as tls:
+                    out['cert'] = ssl.cert_time_to_seconds(tls.getpeercert()['notAfter'])
+        except Exception:
+            pass                     # сертификат не прошёл проверку — сайт и так будет «не открывается»
+    return out
+
+
+def site_lines(results, lines):
+    """results — [(Site, результат check_site)]."""
+    for site, r in results:
+        base = {'site': site.name, 'url': site.url}
+        lines.add('rwmon_site_up', base, r['up'])
+        lines.add('rwmon_site_status_code', base, r['code'])
+        lines.add('rwmon_site_response_seconds', base, r['seconds'])
+        lines.add('rwmon_site_cert_expiry_timestamp_seconds', base, r['cert'])
+
+
 def host_lines(hosts, lines, panels=()):
     for p in panels:              # сколько хостов панели проверяется — 0 тоже важен
         lines.add('rwmon_panel_hosts', {'panel': p.id, 'panel_title': p.title},
                   sum(1 for h in hosts if h['panel'] == p.id))
+    names = {}
+    for h in hosts:                   # один адрес — все названия хостов на нём (для проб из РФ)
+        if h.get('address'):
+            label = f'{h["host"]} · {h["panel_title"]}' if len(panels) > 1 else h['host']
+            names.setdefault(h['address'], []).append(label)
+    for address, hs in names.items():
+        lines.add('rwmon_address_info', {'address': address, 'hosts': ', '.join(sorted(set(hs)))}, 1)
     for h in hosts:
         lines.add('rwmon_host', {'panel': h['panel'], 'panel_title': h['panel_title'], 'host': h['host'],
-                                 'name': h['name'], 'lite': '1' if h['lite'] else '0'}, 1)
+                                 'name': h['name'], 'lite': '1' if h['lite'] else '0',
+                                 'address': h.get('address', '')}, 1)
+
+
+SITE_EVERY = 60     # как часто проверять сайты, секунд
 
 
 def _warn(state, key, err):
@@ -255,13 +370,14 @@ class Exporter:
         self.clients = {p.id: Remnawave(p) for p in cfg.panels}
         self.text = '# нет данных — первый опрос ещё не завершён\n'
         self.state = {}
+        self.sites = {}
 
     def poll_once(self):
         lines = Lines()
         for p in self.cfg.panels:
             part = Lines()
             try:
-                collect_panel(p, self.clients[p.id], part, self.state)
+                collect_panel(p, self.clients[p.id], part, self.state, multi=self.cfg.multi)
             except Exception as e:       # неожиданный ответ одной панели не должен замораживать остальные
                 _warn(self.state, p.id + ':crash', f'[{p.title}] ошибка разбора ответа панели: {e!r}')
                 part = Lines()
@@ -270,7 +386,33 @@ class Exporter:
                 self.state.pop(p.id + ':crash', None)
             lines.merge(part)
         host_lines(links.HOSTS, lines, self.cfg.panels)
+        site_lines(list(self.sites.values()), lines)
+        try:
+            geocheck_lines(self._geocheck(), lines, self.cfg)
+        except Exception as e:
+            _warn(self.state, 'geocheck', f'GeoCheck для Grafana: {e!r}')
         self.text = lines.text()
+
+    def _geocheck(self):
+        """Последний прогон GeoCheck; файл перечитываем, только если он изменился."""
+        path = os.path.join(self.cfg.data_dir, 'geocheck', 'last-run.json')
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            return None
+        if self.state.get('geocheck_mtime') != mtime:
+            self.state['geocheck_run'] = read_json(path, None)
+            self.state['geocheck_mtime'] = mtime
+        return self.state.get('geocheck_run')
+
+    def site_loop(self):
+        while True:
+            for site in self.cfg.sites:
+                try:
+                    self.sites[site.name] = (site, check_site(site))
+                except Exception as e:       # проверка сайта не должна ронять reporter
+                    _warn(self.state, 'site:' + site.name, f'сайт {site.name}: {e!r}')
+            time.sleep(SITE_EVERY)
 
     def loop(self):
         while True:
@@ -302,6 +444,8 @@ class Exporter:
 
         server = ThreadingHTTPServer(('127.0.0.1', self.cfg.reporter_port), Handler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
+        if self.cfg.sites:
+            threading.Thread(target=self.site_loop, daemon=True).start()
         threading.Thread(target=self.loop, daemon=True).start()
         log('metrics', f'метрики панелей: http://127.0.0.1:{self.cfg.reporter_port}/metrics, '
                        f'опрос раз в {self.cfg.poll_interval} с')

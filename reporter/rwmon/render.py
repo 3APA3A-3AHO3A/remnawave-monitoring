@@ -19,7 +19,7 @@ DS = 'rwmon-prometheus'
 CHECKERS = (('xray', 2112), ('warp', 2113), ('psiphon', 2114))
 
 
-def _write(path, data, mode=0o644):
+def _write(path, data, mode=0o644, owner=None):
     path = os.path.join(OUT, path)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w', encoding='utf-8') as f:
@@ -28,9 +28,41 @@ def _write(path, data, mode=0o644):
         else:
             json.dump(data, f, ensure_ascii=False, indent=2)
     os.chmod(path, mode)
+    if owner is not None:
+        try:
+            os.chown(path, owner, owner)
+        except PermissionError:          # не root (тесты) — оставляем как есть
+            pass
 
 
 # ── Prometheus ───────────────────────────────────────────────
+
+def probe_jobs(cfg):
+    """Пробы из РФ (blackbox exporter на RU-нодах): Prometheus просит пробу открыть
+    каждый адрес из списка, который пишет reporter (/links/probe-*.json)."""
+    jobs = []
+    for p in cfg.probes:
+        scheme, _, hostport = p.url.partition('://')
+        for kind, module, file in (('tcp', 'tcp_connect', 'probe-tcp.json'), ('http', 'http_2xx', 'probe-http.json')):
+            job = {
+                'job_name': f'probe-{p.name}-{kind}', 'metrics_path': '/probe', 'params': {'module': [module]},
+                'scheme': scheme, 'scrape_interval': '60s', 'scrape_timeout': '20s',
+                'tls_config': {'insecure_skip_verify': True},     # у пробы самоподписанный сертификат
+                'file_sd_configs': [{'files': [f'/links/{file}'], 'refresh_interval': '1m'}],
+                'relabel_configs': [
+                    {'source_labels': ['__address__'], 'target_label': '__param_target'},
+                    {'source_labels': ['__param_target'], 'target_label': 'address'},
+                    {'target_label': 'instance', 'replacement': p.name},
+                    {'target_label': 'probe', 'replacement': p.name},
+                    {'target_label': 'kind', 'replacement': kind},
+                    {'target_label': '__address__', 'replacement': hostport},
+                ],
+            }
+            if p.user:
+                job['basic_auth'] = {'username': p.user, 'password': p.password}
+            jobs.append(job)
+    return jobs
+
 
 def prometheus(cfg):
     return {
@@ -42,7 +74,7 @@ def prometheus(cfg):
                                 for check, port in CHECKERS],
              # к какой панели относится проверка, знает rwmon_host (см. links.py)
              'metric_relabel_configs': [{'action': 'labeldrop', 'regex': 'sub_name|group_name'}]},
-        ],
+        ] + probe_jobs(cfg),
     }
 
 
@@ -159,6 +191,28 @@ def rules(cfg):
 ) {NAMES}''', '15m', 'Нода перегружена', 'Нагрузка на ноде снизилась',
               'Уже 15 минут load average выше 0.9 на ядро или занято больше 90% памяти.', 'all',
               severity='warning', window=1800),
+        _rule('rwmon-probe-blocked', 'Хост не открывается из РФ',
+              '(rwmon_host * on (address) group_left () (max by (address) (probe_success{kind="tcp"}) == 0)) * 0 + 1',
+              '5m', 'Хост не открывается из РФ', 'Хост снова открывается из РФ',
+              'Ни одна проба из РФ не может установить соединение с адресом хоста. '
+              'Похоже на блокировку IP или порта.', 'host'),
+        _rule('rwmon-probe-down', 'Проба из РФ не отвечает',
+              '(max by (probe) (up{kind="tcp"}) == 0) * 0 + 1', '10m',
+              'Проба из РФ не отвечает', 'Проба из РФ снова работает',
+              'Мониторинг не может опросить blackbox exporter на RU-ноде: нода, контейнер или файрвол.',
+              'all', severity='warning'),
+        _rule('rwmon-site-down', 'Сайт не открывается', '(rwmon_site_up == 0) * 0 + 1', '3m',
+              'Сайт не открывается', 'Сайт снова открывается',
+              'Страница не отвечает, отдаёт ошибку или на ней нет нужного текста (проверка с сервера мониторинга).',
+              'all'),
+        _rule('rwmon-site-down-ru', 'Сайт не открывается из РФ',
+              '(max by (site) (probe_success{kind="http"}) == 0) * 0 + 1', '5m',
+              'Сайт не открывается из РФ', 'Сайт снова открывается из РФ',
+              'Ни одна проба из РФ не может открыть страницу.', 'all'),
+        _rule('rwmon-site-cert', 'Сертификат скоро истекает',
+              '((rwmon_site_cert_expiry_timestamp_seconds - time()) < 14 * 86400) * 0 + 1', '1h',
+              'Сертификат истекает меньше чем через 14 дней', 'Сертификат обновлён',
+              'Проверьте автопродление сертификата (certbot / acme.sh).', 'all', severity='warning'),
         _rule('rwmon-checker-down', 'Не работает проверка хостов', '(up{job="xray-checker"} == 0) * 0 + 1', '5m',
               'Контейнер проверки хостов не отвечает', 'Проверка хостов снова работает',
               'docker compose logs --tail 50 checker-xray checker-warp checker-psiphon', 'all',
@@ -255,7 +309,9 @@ def render(cfg):
     if os.path.isdir(OUT):
         for name in os.listdir(OUT):
             shutil.rmtree(os.path.join(OUT, name), ignore_errors=True)
-    _write('prometheus/prometheus.yml', prometheus(cfg))
+    # пароли проб: читает только Prometheus (он работает как nobody, uid 65534)
+    _write('prometheus/prometheus.yml', prometheus(cfg), mode=0o600 if cfg.probes else 0o644,
+           owner=65534 if cfg.probes else None)
     _write('grafana/datasources/prometheus.yml', {'apiVersion': 1, 'datasources': [{
         'name': 'Prometheus', 'uid': DS, 'type': 'prometheus', 'access': 'proxy',
         'url': f'http://127.0.0.1:{cfg.prometheus_port}', 'isDefault': True, 'editable': False,

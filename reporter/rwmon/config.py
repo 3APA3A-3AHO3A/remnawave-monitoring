@@ -43,6 +43,22 @@ class Panel:
 
 
 @dataclass
+class Site:
+    name: str                  # как подписывать: «Сайт», «Панель OVRO»
+    url: str
+    keyword: str = ''          # если задано — страница должна содержать этот текст
+
+
+@dataclass
+class Probe:
+    """Blackbox exporter на ноде в РФ: проверяет, открываются ли ноды и сайты оттуда."""
+    name: str
+    url: str                   # https://IP:9115
+    user: str = ''
+    password: str = ''
+
+
+@dataclass
 class Config:
     panels: list
     report_time: tuple = (15, 0)
@@ -60,6 +76,8 @@ class Config:
     bad_countries: set = field(default_factory=lambda: {'RU', 'BY'})
     attach_images: bool = True
     healthcheck_url: str = ''
+    sites: list = field(default_factory=list)
+    probes: list = field(default_factory=list)
     # из окружения
     data_dir: str = '/data'
     links_file: str = '/links/monitor.txt'
@@ -188,6 +206,8 @@ def parse(data, env=os.environ):
         bad_countries={str(c).upper() for c in geo.get('bad_countries', ['RU', 'BY'])},
         attach_images=bool(geo.get('attach_images', True)),
         healthcheck_url=str((data.get('healthcheck') or {}).get('ping_url', '')).strip(),
+        sites=_sites(data.get('site') or []),
+        probes=_probes(data.get('probe') or []),
         data_dir=env.get('DATA_DIR', '/data'),
         links_file=env.get('LINKS_FILE', '/links/monitor.txt'),
         links_file_xray=env.get('LINKS_FILE_XRAY', '/links/monitor-xray.txt'),
@@ -195,6 +215,36 @@ def parse(data, env=os.environ):
         prometheus_port=int(env.get('PROMETHEUS_PORT', 9090)),
         reporter_port=int(env.get('REPORTER_PORT', 9105)),
     )
+
+
+def _sites(items):
+    out, names = [], set()
+    for i, s in enumerate(items):
+        url = str(s.get('url', '')).strip()
+        if not re.match(r'https?://', url):
+            raise ConfigError(f'config.toml: [[site]] №{i + 1}: url должен начинаться с http:// или https://')
+        name = str(s.get('name') or url.split('/')[2]).strip()
+        if name in names:
+            raise ConfigError(f'config.toml: [[site]] «{name}» встречается дважды')
+        names.add(name)
+        out.append(Site(name=name, url=url, keyword=str(s.get('keyword', ''))))
+    return out
+
+
+def _probes(items):
+    out, names = [], set()
+    for i, s in enumerate(items):
+        name = str(s.get('name', '')).strip()
+        url = str(s.get('url', '')).strip().rstrip('/')
+        if not re.fullmatch(r'[a-z0-9_-]{1,30}', name):
+            raise ConfigError(f'config.toml: [[probe]] №{i + 1}: name латиницей, например "ru-msk"')
+        if name in names:
+            raise ConfigError(f'config.toml: [[probe]] «{name}» встречается дважды')
+        if not re.fullmatch(r'https?://[^/]+', url):
+            raise ConfigError(f'config.toml: [[probe]] {name}: url вида "https://IP:9115"')
+        names.add(name)
+        out.append(Probe(name=name, url=url, user=str(s.get('user', '')), password=str(s.get('password', ''))))
+    return out
 
 
 def load(path=CONFIG_PATH):

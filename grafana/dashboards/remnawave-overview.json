@@ -54,11 +54,11 @@
           "uid": "rwmon-prometheus"
         },
         "query": {
-          "query": "label_values(rwmon_node_info{panel_title=~\"$panel\"}, node_name)",
+          "query": "label_values(rwmon_node_info{panel_title=~\"$panel\"}, node)",
           "refId": "node",
           "qryType": 1
         },
-        "definition": "label_values(rwmon_node_info{panel_title=~\"$panel\"}, node_name)",
+        "definition": "label_values(rwmon_node_info{panel_title=~\"$panel\"}, node)",
         "multi": true,
         "includeAll": true,
         "allValue": ".*",
@@ -645,25 +645,37 @@
       "id": 7,
       "type": "table",
       "title": "Ноды",
-      "description": "CPU — load average за 5 минут на одно ядро. RX/TX — скорость сети сервера сейчас. Трафик и пик — за выбранный период. Чтобы посмотреть ноду подробно, выберите её вверху в «Нода».",
+      "description": "Связь — нода подключена к панели. Подкл./WARP/Psiphon — проверки хостов, которые смотрят на IP этой ноды; «Из РФ» — открывается ли нода с проб в России. Сервер и Xray — сколько работают без перезапуска (жёлтым — Xray перезапускался меньше суток назад). CPU — load average на ядро. Трафик — клиентов за выбранный период, лимит — расход трафика ноды, если он задан в панели.",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
       },
       "gridPos": {
-        "h": 14,
-        "w": 16,
+        "h": 15,
+        "w": 24,
         "x": 0,
         "y": 4
       },
       "targets": [
+        {
+          "refId": "S",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "sum by (panel_title, node_name) ((rwmon_node_connected{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
         {
           "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (panel_title, node_name) ((rwmon_node_online_users{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node_name=~\"$node\"}))",
+          "expr": "sum by (panel_title, node_name) ((rwmon_node_online_users{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -675,65 +687,90 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (panel_title, node_name) ((rwmon_node_online_users{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node_name=~\"$node\"}))",
+          "expr": "sum by (panel_title, node_name) ((rwmon_node_online_users{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
           "legendFormat": "",
           "range": true,
           "instant": false
         },
         {
-          "refId": "B",
+          "refId": "Kxray",
           "datasource": {
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (panel_title, node_name) ((max_over_time(rwmon_node_online_users{panel_title=~\"$panel\"}[$__range])) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node_name=~\"$node\"}))",
+          "expr": "sum by (panel_title, node_name) (((min by (ip) (label_replace(max by (name, address) (xray_proxy_status{check=\"xray\"}), \"ip\", \"$1\", \"address\", \"(.+):[0-9]+\"))) * on (ip) group_right () rwmon_node_address{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
           "format": "table"
         },
         {
-          "refId": "C",
+          "refId": "Kwarp",
           "datasource": {
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (panel_title, node_name) ((rwmon_node_network_rx_bytes_per_second{panel_title=~\"$panel\"} * 8) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node_name=~\"$node\"}))",
+          "expr": "sum by (panel_title, node_name) (((min by (ip) (label_replace(max by (name, address) (xray_proxy_status{check=\"warp\"}), \"ip\", \"$1\", \"address\", \"(.+):[0-9]+\"))) * on (ip) group_right () rwmon_node_address{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
           "format": "table"
         },
         {
-          "refId": "D",
+          "refId": "Kpsiphon",
           "datasource": {
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (panel_title, node_name) ((rwmon_node_network_tx_bytes_per_second{panel_title=~\"$panel\"} * 8) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node_name=~\"$node\"}))",
+          "expr": "sum by (panel_title, node_name) (((min by (ip) (label_replace(max by (name, address) (xray_proxy_status{check=\"psiphon\"}), \"ip\", \"$1\", \"address\", \"(.+):[0-9]+\"))) * on (ip) group_right () rwmon_node_address{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
           "format": "table"
         },
         {
-          "refId": "T2",
+          "refId": "R",
           "datasource": {
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (panel_title, node_name) (((rwmon_node_network_rx_bytes_per_second{panel_title=~\"$panel\"} + rwmon_node_network_tx_bytes_per_second{panel_title=~\"$panel\"}) * 8) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node_name=~\"$node\"}))",
+          "expr": "sum by (panel_title, node_name) (((min by (ip) (label_replace(max by (address) (probe_success{kind=\"tcp\"}), \"ip\", \"$1\", \"address\", \"(.+):[0-9]+\"))) * on (ip) group_right () rwmon_node_address{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
           "legendFormat": "",
-          "range": true,
-          "instant": false
+          "range": false,
+          "instant": true,
+          "format": "table"
         },
         {
-          "refId": "E",
+          "refId": "U",
           "datasource": {
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (panel_title, node_name) ((sum by (panel, node_uuid) (increase(rwmon_node_inbound_upload_bytes{panel_title=~\"$panel\"}[$__range]) + increase(rwmon_node_inbound_download_bytes{panel_title=~\"$panel\"}[$__range]))) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node_name=~\"$node\"}))",
+          "expr": "sum by (panel_title, node_name) ((rwmon_node_uptime_seconds{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "X",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "sum by (panel_title, node_name) ((rwmon_node_xray_uptime_seconds{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "V",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (panel_title, node_name, xray) (rwmon_node_version{panel_title=~\"$panel\"} * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -745,7 +782,7 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (panel_title, node_name) ((rwmon_node_cpu_load5{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node_name=~\"$node\"}))",
+          "expr": "sum by (panel_title, node_name) ((rwmon_node_cpu_load5{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -757,7 +794,55 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (panel_title, node_name) ((rwmon_node_memory_used_ratio{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node_name=~\"$node\"}))",
+          "expr": "sum by (panel_title, node_name) ((rwmon_node_memory_used_ratio{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "sum by (panel_title, node_name) ((rwmon_node_network_rx_bytes_per_second{panel_title=~\"$panel\"} * 8) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "sum by (panel_title, node_name) ((rwmon_node_network_tx_bytes_per_second{panel_title=~\"$panel\"} * 8) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "sum by (panel_title, node_name) ((sum by (panel, node_uuid) (increase(rwmon_node_inbound_upload_bytes{panel_title=~\"$panel\"}[$__range]) + increase(rwmon_node_inbound_download_bytes{panel_title=~\"$panel\"}[$__range]))) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "L",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "sum by (panel_title, node_name) ((rwmon_node_traffic_used_bytes{panel_title=~\"$panel\"} / rwmon_node_traffic_limit_bytes{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -777,33 +862,48 @@
           "id": "organize",
           "options": {
             "excludeByName": {
-              "Time": true
+              "Time": true,
+              "Value #V": true
             },
             "indexByName": {
               "panel_title": 0,
               "node_name": 1,
-              "Value #A": 2,
-              "Trend #T1": 3,
-              "Value #B": 4,
-              "Value #C": 5,
-              "Value #D": 6,
-              "Trend #T2": 7,
-              "Value #E": 8,
-              "Value #G": 9,
-              "Value #H": 10
+              "Value #S": 2,
+              "Value #A": 3,
+              "Trend #T1": 4,
+              "Value #Kxray": 5,
+              "Value #Kwarp": 6,
+              "Value #Kpsiphon": 7,
+              "Value #R": 8,
+              "Value #U": 9,
+              "Value #X": 10,
+              "xray": 11,
+              "Value #G": 12,
+              "Value #H": 13,
+              "Value #C": 14,
+              "Value #D": 15,
+              "Value #E": 16,
+              "Value #L": 17
             },
             "renameByName": {
               "panel_title": "Панель",
               "node_name": "Нода",
-              "Value #A": "Клиенты",
-              "Trend #T1": "клиенты за период",
-              "Value #B": "пик",
+              "Value #S": "Связь",
+              "Value #A": "Онлайн",
+              "Trend #T1": "онлайн за период",
+              "Value #Kxray": "Подкл.",
+              "Value #Kwarp": "WARP",
+              "Value #Kpsiphon": "Psiphon",
+              "Value #R": "Из РФ",
+              "Value #U": "Сервер",
+              "Value #X": "Xray",
+              "xray": "версия",
+              "Value #G": "CPU",
+              "Value #H": "RAM",
               "Value #C": "↓ RX",
               "Value #D": "↑ TX",
-              "Trend #T2": "сеть за период",
               "Value #E": "трафик",
-              "Value #G": "CPU",
-              "Value #H": "RAM"
+              "Value #L": "лимит"
             }
           }
         }
@@ -813,7 +913,7 @@
         "cellHeight": "sm",
         "sortBy": [
           {
-            "displayName": "Клиенты",
+            "displayName": "Онлайн",
             "desc": true
           }
         ],
@@ -841,7 +941,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 110
+                "value": 105
               },
               {
                 "id": "color",
@@ -866,14 +966,54 @@
             "properties": [
               {
                 "id": "custom.minWidth",
-                "value": 150
+                "value": 130
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "Клиенты"
+              "options": "Связь"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 60
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "да",
+                        "color": "green"
+                      },
+                      "0": {
+                        "text": "нет",
+                        "color": "red"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Онлайн"
             },
             "properties": [
               {
@@ -882,7 +1022,7 @@
               },
               {
                 "id": "custom.width",
-                "value": 80
+                "value": 70
               },
               {
                 "id": "custom.align",
@@ -893,7 +1033,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "клиенты за период"
+              "options": "онлайн за период"
             },
             "properties": [
               {
@@ -912,23 +1052,243 @@
               },
               {
                 "id": "custom.minWidth",
-                "value": 140
+                "value": 120
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "пик"
+              "options": "Подкл."
             },
             "properties": [
+              {
+                "id": "custom.width",
+                "value": 72
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "OK",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "СБОЙ",
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "·",
+                        "color": "transparent",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "WARP"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 72
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "OK",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "СБОЙ",
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "·",
+                        "color": "transparent",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Psiphon"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 72
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "OK",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "СБОЙ",
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "·",
+                        "color": "transparent",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Из РФ"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 72
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "OK",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "СБОЙ",
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "·",
+                        "color": "transparent",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Сервер"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dtdurations"
+              },
               {
                 "id": "decimals",
                 "value": 0
               },
               {
                 "id": "custom.width",
-                "value": 60
+                "value": 90
               },
               {
                 "id": "custom.align",
@@ -952,90 +1312,16 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "↓ RX"
+              "options": "Xray"
             },
             "properties": [
               {
                 "id": "unit",
-                "value": "bps"
+                "value": "dtdurations"
               },
               {
                 "id": "decimals",
-                "value": 1
-              },
-              {
-                "id": "custom.width",
-                "value": 100
-              },
-              {
-                "id": "custom.align",
-                "value": "right"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "↑ TX"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "bps"
-              },
-              {
-                "id": "decimals",
-                "value": 1
-              },
-              {
-                "id": "custom.width",
-                "value": 100
-              },
-              {
-                "id": "custom.align",
-                "value": "right"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "сеть за период"
-            },
-            "properties": [
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "sparkline",
-                  "hideValue": true
-                }
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "blue"
-                }
-              },
-              {
-                "id": "custom.minWidth",
-                "value": 140
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "трафик"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "decbytes"
-              },
-              {
-                "id": "decimals",
-                "value": 1
+                "value": 0
               },
               {
                 "id": "custom.width",
@@ -1044,6 +1330,53 @@
               {
                 "id": "custom.align",
                 "value": "right"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "yellow",
+                      "value": null
+                    },
+                    {
+                      "color": "text",
+                      "value": 86400
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "версия"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 75
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
               }
             ]
           },
@@ -1063,7 +1396,7 @@
               },
               {
                 "id": "custom.width",
-                "value": 60
+                "value": 58
               },
               {
                 "id": "custom.align",
@@ -1113,7 +1446,7 @@
               },
               {
                 "id": "custom.width",
-                "value": 60
+                "value": 58
               },
               {
                 "id": "custom.align",
@@ -1146,6 +1479,128 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "лимит"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 58
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 0.8
+                    },
+                    {
+                      "color": "red",
+                      "value": 0.9
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "↓ RX"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bps"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.width",
+                "value": 95
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "↑ TX"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bps"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.width",
+                "value": 95
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "трафик"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "decbytes"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.width",
+                "value": 85
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              }
+            ]
           }
         ]
       }
@@ -1154,16 +1609,16 @@
       "id": 8,
       "type": "table",
       "title": "Сейчас не работает",
-      "description": "Хосты, которые не проходят проверку прямо сейчас, и сколько времени назад проверка проходила последний раз (в пределах суток)",
+      "description": "Хосты, которые не проходят проверку прямо сейчас, и сколько времени назад проверка проходила последний раз (в пределах суток). «из РФ» — ни одна проба в России не может открыть соединение с хостом.",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 4
+        "w": 10,
+        "x": 0,
+        "y": 19
       },
       "targets": [
         {
@@ -1172,7 +1627,7 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "(rwmon_host{panel_title=~\"$panel\"} * on (name) group_left (check) ((time() - max by (name, check) (max_over_time(timestamp(xray_proxy_status{check=\"xray\"} == 1)[1d:1m]))) and on (name) (max by (name) (xray_proxy_status{check=\"xray\"}) == 0))) or ((rwmon_host{panel_title=~\"$panel\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"xray\"}) == 0) * 0 + 86400) or (rwmon_host{panel_title=~\"$panel\", lite=\"0\"} * on (name) group_left (check) ((time() - max by (name, check) (max_over_time(timestamp(xray_proxy_status{check=\"warp\"} == 1)[1d:1m]))) and on (name) (max by (name) (xray_proxy_status{check=\"warp\"}) == 0))) or ((rwmon_host{panel_title=~\"$panel\", lite=\"0\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"warp\"}) == 0) * 0 + 86400) or (rwmon_host{panel_title=~\"$panel\", lite=\"0\"} * on (name) group_left (check) ((time() - max by (name, check) (max_over_time(timestamp(xray_proxy_status{check=\"psiphon\"} == 1)[1d:1m]))) and on (name) (max by (name) (xray_proxy_status{check=\"psiphon\"}) == 0))) or ((rwmon_host{panel_title=~\"$panel\", lite=\"0\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"psiphon\"}) == 0) * 0 + 86400)",
+          "expr": "(rwmon_host{panel_title=~\"$panel\"} * on (name) group_left (check) ((time() - max by (name, check) (max_over_time(timestamp(xray_proxy_status{check=\"xray\"} == 1)[1d:1m]))) and on (name) (max by (name) (xray_proxy_status{check=\"xray\"}) == 0))) or ((rwmon_host{panel_title=~\"$panel\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"xray\"}) == 0) * 0 + 86400) or (rwmon_host{panel_title=~\"$panel\", lite=\"0\"} * on (name) group_left (check) ((time() - max by (name, check) (max_over_time(timestamp(xray_proxy_status{check=\"warp\"} == 1)[1d:1m]))) and on (name) (max by (name) (xray_proxy_status{check=\"warp\"}) == 0))) or ((rwmon_host{panel_title=~\"$panel\", lite=\"0\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"warp\"}) == 0) * 0 + 86400) or (rwmon_host{panel_title=~\"$panel\", lite=\"0\"} * on (name) group_left (check) ((time() - max by (name, check) (max_over_time(timestamp(xray_proxy_status{check=\"psiphon\"} == 1)[1d:1m]))) and on (name) (max by (name) (xray_proxy_status{check=\"psiphon\"}) == 0))) or ((rwmon_host{panel_title=~\"$panel\", lite=\"0\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"psiphon\"}) == 0) * 0 + 86400) or (label_replace(rwmon_host{panel_title=~\"$panel\"} * on (address) group_left () (max by (address) (probe_success{kind=\"tcp\"}) == 0), \"check\", \"ru\", \"\", \"\") * 0 + 0)",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -1291,6 +1746,9 @@
                       },
                       "psiphon": {
                         "text": "Psiphon"
+                      },
+                      "ru": {
+                        "text": "из РФ"
                       }
                     }
                   }
@@ -1311,6 +1769,19 @@
               {
                 "id": "custom.width",
                 "value": 110
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "—"
+                      }
+                    }
+                  }
+                ]
               }
             ]
           }
@@ -1327,10 +1798,10 @@
         "uid": "rwmon-prometheus"
       },
       "gridPos": {
-        "h": 6,
-        "w": 8,
-        "x": 16,
-        "y": 12
+        "h": 8,
+        "w": 6,
+        "x": 10,
+        "y": 19
       },
       "targets": [
         {
@@ -1405,7 +1876,7 @@
               "panel_title": "Панель",
               "Value #A": "API",
               "version": "версия",
-              "Value #D": "пользователей",
+              "Value #D": "польз.",
               "Value #C": "трафик"
             }
           }
@@ -1439,7 +1910,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 70
+                "value": 55
               },
               {
                 "id": "custom.cellOptions",
@@ -1483,7 +1954,7 @@
                         "text": "точный"
                       },
                       "0": {
-                        "text": "из API, ≈"
+                        "text": "≈ из API"
                       }
                     }
                   }
@@ -1494,7 +1965,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "пользователей"
+              "options": "польз."
             },
             "properties": [
               {
@@ -1508,6 +1979,292 @@
     },
     {
       "id": 10,
+      "type": "table",
+      "title": "Сайты",
+      "description": "Сайты из [[site]] в config.toml: проверка с сервера мониторинга и с проб в России, время ответа и сколько осталось до конца сертификата",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "rwmon-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 19
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (site) (rwmon_site_up)",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (site) (probe_success{kind=\"http\"})",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (site) (rwmon_site_response_seconds)",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (site) (rwmon_site_cert_expiry_timestamp_seconds - time())",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "site": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #C": 3,
+              "Value #D": 4
+            },
+            "renameByName": {
+              "site": "Сайт",
+              "Value #A": "открывается",
+              "Value #B": "из РФ",
+              "Value #C": "ответ",
+              "Value #D": "сертификат"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [],
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": false,
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "noValue": "Добавьте [[site]] в config.toml"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "открывается"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "OK",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "СБОЙ",
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "·",
+                        "color": "transparent",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "из РФ"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "OK",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "СБОЙ",
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "·",
+                        "color": "transparent",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ответ"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "сертификат"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dtdurations"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 604800
+                    },
+                    {
+                      "color": "text",
+                      "value": 1209600
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 11,
       "type": "timeseries",
       "title": "Клиенты онлайн",
       "description": "По панелям, слоями: высота — сколько всего клиентов",
@@ -1519,7 +2276,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 18
+        "y": 27
       },
       "targets": [
         {
@@ -1566,7 +2323,7 @@
       }
     },
     {
-      "id": 11,
+      "id": 12,
       "type": "timeseries",
       "title": "Сеть всех нод",
       "description": "Вверх от нуля — принято серверами (RX), вниз пунктиром — отправлено (TX)",
@@ -1578,7 +2335,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 18
+        "y": 27
       },
       "targets": [
         {
@@ -1663,7 +2420,7 @@
       }
     },
     {
-      "id": 12,
+      "id": 13,
       "type": "timeseries",
       "title": "Аутбаунды: $outbound",
       "description": "Все ноды вместе. Вверх — ответы из аутбаунда, вниз — запросы в него. Если запросы есть, а ответов нет — аутбаунд сломан",
@@ -1675,7 +2432,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 18
+        "y": 27
       },
       "targets": [
         {
@@ -1760,7 +2517,161 @@
       }
     },
     {
-      "id": 19,
+      "id": 14,
+      "type": "row",
+      "title": "Сеть по нодам",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      },
+      "panels": []
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "$node",
+      "description": "Сеть сервера ноды: вверх — принято (RX), вниз — отправлено (TX). Пунктиром — сколько пришло из выбранных аутбаундов (WARP, Psiphon)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "rwmon-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 0,
+        "y": 36
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "sum by (node) ((rwmon_node_network_rx_bytes_per_second{panel_title=~\"$panel\"} * 8) * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+          "legendFormat": "RX",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "sum by (node) ((rwmon_node_network_tx_bytes_per_second{panel_title=~\"$panel\"} * 8) * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+          "legendFormat": "TX",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "sum by (tag) ((rate(rwmon_node_outbound_download_bytes{tag=~\"$outbound\", panel_title=~\"$panel\"}[5m]) * 8) * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+          "legendFormat": "{{tag}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bps",
+          "min": null,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": 120000,
+            "stacking": {
+              "mode": "none"
+            },
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "RX"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TX"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              },
+              {
+                "id": "custom.transform",
+                "value": "negative-Y"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^(?!RX$|TX$).*"
+            },
+            "properties": [
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    6,
+                    4
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "repeat": "node",
+      "repeatDirection": "h",
+      "maxPerRow": 4
+    },
+    {
+      "id": 20,
       "type": "row",
       "title": "Нода подробно: $node",
       "collapsed": true,
@@ -1768,11 +2679,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 43
       },
       "panels": [
         {
-          "id": 13,
+          "id": 16,
           "type": "timeseries",
           "title": "Клиенты",
           "description": "",
@@ -1784,7 +2695,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 27
+            "y": 44
           },
           "targets": [
             {
@@ -1793,7 +2704,7 @@
                 "type": "prometheus",
                 "uid": "rwmon-prometheus"
               },
-              "expr": "sum by (panel_title, node_name) ((rwmon_node_online_users{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node_name=~\"$node\"}))",
+              "expr": "sum by (panel_title, node_name) ((rwmon_node_online_users{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
               "legendFormat": "{{node_name}} · {{panel_title}}",
               "range": true,
               "instant": false
@@ -1834,107 +2745,7 @@
           }
         },
         {
-          "id": 14,
-          "type": "timeseries",
-          "title": "Сеть сервера",
-          "description": "",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 27
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "datasource": {
-                "type": "prometheus",
-                "uid": "rwmon-prometheus"
-              },
-              "expr": "sum by (panel_title, node_name) ((rwmon_node_network_rx_bytes_per_second{panel_title=~\"$panel\"} * 8) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node_name=~\"$node\"}))",
-              "legendFormat": "{{node_name}} · {{panel_title}} ↓ RX",
-              "range": true,
-              "instant": false
-            },
-            {
-              "refId": "B",
-              "datasource": {
-                "type": "prometheus",
-                "uid": "rwmon-prometheus"
-              },
-              "expr": "sum by (panel_title, node_name) ((rwmon_node_network_tx_bytes_per_second{panel_title=~\"$panel\"} * 8) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node_name=~\"$node\"}))",
-              "legendFormat": "{{node_name}} · {{panel_title}} ↑ TX",
-              "range": true,
-              "instant": false
-            }
-          ],
-          "options": {
-            "legend": {
-              "displayMode": "table",
-              "placement": "right",
-              "showLegend": true,
-              "calcs": [
-                "lastNotNull",
-                "max"
-              ]
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "desc"
-            }
-          },
-          "fieldConfig": {
-            "defaults": {
-              "unit": "bps",
-              "min": null,
-              "custom": {
-                "lineWidth": 2,
-                "fillOpacity": 15,
-                "gradientMode": "opacity",
-                "showPoints": "never",
-                "spanNulls": 120000,
-                "stacking": {
-                  "mode": "none"
-                },
-                "axisSoftMin": 0
-              }
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byRegexp",
-                  "options": ".*(↑|TX|запрос).*"
-                },
-                "properties": [
-                  {
-                    "id": "custom.transform",
-                    "value": "negative-Y"
-                  },
-                  {
-                    "id": "custom.lineStyle",
-                    "value": {
-                      "fill": "dash",
-                      "dash": [
-                        6,
-                        4
-                      ]
-                    }
-                  },
-                  {
-                    "id": "custom.fillOpacity",
-                    "value": 0
-                  }
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "id": 15,
+          "id": 17,
           "type": "timeseries",
           "title": "Трафик клиентов",
           "description": "",
@@ -1945,8 +2756,8 @@
           "gridPos": {
             "h": 8,
             "w": 12,
-            "x": 0,
-            "y": 35
+            "x": 12,
+            "y": 44
           },
           "targets": [
             {
@@ -1955,7 +2766,7 @@
                 "type": "prometheus",
                 "uid": "rwmon-prometheus"
               },
-              "expr": "sum by (panel_title, node_name) ((sum by (panel, node_uuid) (rate(rwmon_node_inbound_download_bytes{panel_title=~\"$panel\"}[5m])) * 8) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node_name=~\"$node\"}))",
+              "expr": "sum by (panel_title, node_name) ((sum by (panel, node_uuid) (rate(rwmon_node_inbound_download_bytes{panel_title=~\"$panel\"}[5m])) * 8) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
               "legendFormat": "{{node_name}} · {{panel_title}} к клиентам",
               "range": true,
               "instant": false
@@ -1966,7 +2777,7 @@
                 "type": "prometheus",
                 "uid": "rwmon-prometheus"
               },
-              "expr": "sum by (panel_title, node_name) ((sum by (panel, node_uuid) (rate(rwmon_node_inbound_upload_bytes{panel_title=~\"$panel\"}[5m])) * 8) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node_name=~\"$node\"}))",
+              "expr": "sum by (panel_title, node_name) ((sum by (panel, node_uuid) (rate(rwmon_node_inbound_upload_bytes{panel_title=~\"$panel\"}[5m])) * 8) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
               "legendFormat": "{{node_name}} · {{panel_title}} ↑ от клиентов",
               "range": true,
               "instant": false
@@ -2034,107 +2845,7 @@
           }
         },
         {
-          "id": 16,
-          "type": "timeseries",
-          "title": "Аутбаунды $outbound",
-          "description": "",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 35
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "datasource": {
-                "type": "prometheus",
-                "uid": "rwmon-prometheus"
-              },
-              "expr": "sum by (panel_title, node_name, tag) ((rate(rwmon_node_outbound_download_bytes{tag=~\"$outbound\", panel_title=~\"$panel\"}[5m]) * 8) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node_name=~\"$node\"}))",
-              "legendFormat": "{{node_name}} · {{tag}} ответы",
-              "range": true,
-              "instant": false
-            },
-            {
-              "refId": "B",
-              "datasource": {
-                "type": "prometheus",
-                "uid": "rwmon-prometheus"
-              },
-              "expr": "sum by (panel_title, node_name, tag) ((rate(rwmon_node_outbound_upload_bytes{tag=~\"$outbound\", panel_title=~\"$panel\"}[5m]) * 8) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node_name=~\"$node\"}))",
-              "legendFormat": "{{node_name}} · {{tag}} ↑ запросы",
-              "range": true,
-              "instant": false
-            }
-          ],
-          "options": {
-            "legend": {
-              "displayMode": "table",
-              "placement": "right",
-              "showLegend": true,
-              "calcs": [
-                "lastNotNull",
-                "max"
-              ]
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "desc"
-            }
-          },
-          "fieldConfig": {
-            "defaults": {
-              "unit": "bps",
-              "min": null,
-              "custom": {
-                "lineWidth": 2,
-                "fillOpacity": 15,
-                "gradientMode": "opacity",
-                "showPoints": "never",
-                "spanNulls": 120000,
-                "stacking": {
-                  "mode": "none"
-                },
-                "axisSoftMin": 0
-              }
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byRegexp",
-                  "options": ".*(↑|TX|запрос).*"
-                },
-                "properties": [
-                  {
-                    "id": "custom.transform",
-                    "value": "negative-Y"
-                  },
-                  {
-                    "id": "custom.lineStyle",
-                    "value": {
-                      "fill": "dash",
-                      "dash": [
-                        6,
-                        4
-                      ]
-                    }
-                  },
-                  {
-                    "id": "custom.fillOpacity",
-                    "value": 0
-                  }
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "id": 17,
+          "id": 18,
           "type": "timeseries",
           "title": "CPU: load average на ядро",
           "description": "",
@@ -2146,7 +2857,7 @@
             "h": 7,
             "w": 12,
             "x": 0,
-            "y": 43
+            "y": 52
           },
           "targets": [
             {
@@ -2155,7 +2866,7 @@
                 "type": "prometheus",
                 "uid": "rwmon-prometheus"
               },
-              "expr": "sum by (panel_title, node_name) ((rwmon_node_cpu_load5{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node_name=~\"$node\"}))",
+              "expr": "sum by (panel_title, node_name) ((rwmon_node_cpu_load5{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
               "legendFormat": "{{node_name}} · {{panel_title}}",
               "range": true,
               "instant": false
@@ -2196,7 +2907,7 @@
           }
         },
         {
-          "id": 18,
+          "id": 19,
           "type": "timeseries",
           "title": "Память",
           "description": "",
@@ -2208,7 +2919,7 @@
             "h": 7,
             "w": 12,
             "x": 12,
-            "y": 43
+            "y": 52
           },
           "targets": [
             {
@@ -2217,7 +2928,7 @@
                 "type": "prometheus",
                 "uid": "rwmon-prometheus"
               },
-              "expr": "sum by (panel_title, node_name) ((rwmon_node_memory_used_ratio{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node_name=~\"$node\"}))",
+              "expr": "sum by (panel_title, node_name) ((rwmon_node_memory_used_ratio{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
               "legendFormat": "{{node_name}} · {{panel_title}}",
               "range": true,
               "instant": false
@@ -2260,7 +2971,7 @@
       ]
     },
     {
-      "id": 24,
+      "id": 25,
       "type": "row",
       "title": "Проверки хостов",
       "collapsed": true,
@@ -2268,11 +2979,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 44
       },
       "panels": [
         {
-          "id": 20,
+          "id": 21,
           "type": "table",
           "title": "Подключение",
           "description": "Строка — хост, колонка — панель. Одинаковые хосты разных панелей проверяются один раз",
@@ -2284,7 +2995,7 @@
             "h": 12,
             "w": 8,
             "x": 0,
-            "y": 28
+            "y": 45
           },
           "targets": [
             {
@@ -2401,7 +3112,7 @@
           }
         },
         {
-          "id": 21,
+          "id": 22,
           "type": "table",
           "title": "WARP",
           "description": "Строка — хост, колонка — панель. Одинаковые хосты разных панелей проверяются один раз. Лёгкие (LTE) хосты здесь не проверяются",
@@ -2413,7 +3124,7 @@
             "h": 12,
             "w": 8,
             "x": 8,
-            "y": 28
+            "y": 45
           },
           "targets": [
             {
@@ -2530,7 +3241,7 @@
           }
         },
         {
-          "id": 22,
+          "id": 23,
           "type": "table",
           "title": "Psiphon",
           "description": "Строка — хост, колонка — панель. Одинаковые хосты разных панелей проверяются один раз. Лёгкие (LTE) хосты здесь не проверяются",
@@ -2542,7 +3253,7 @@
             "h": 12,
             "w": 8,
             "x": 16,
-            "y": 28
+            "y": 45
           },
           "targets": [
             {
@@ -2659,7 +3370,7 @@
           }
         },
         {
-          "id": 23,
+          "id": 24,
           "type": "state-timeline",
           "title": "История сбоев",
           "description": "Только хосты, у которых за выбранный период были сбои",
@@ -2671,7 +3382,7 @@
             "h": 10,
             "w": 24,
             "x": 0,
-            "y": 40
+            "y": 57
           },
           "targets": [
             {
@@ -2736,6 +3447,772 @@
               "noValue": "Сбоев не было"
             },
             "overrides": []
+          }
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "type": "row",
+      "title": "Проба из РФ",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 45
+      },
+      "panels": [
+        {
+          "id": 26,
+          "type": "state-timeline",
+          "title": "Не открывалось из РФ",
+          "description": "Адреса хостов, которые хотя бы раз за период не открылись с какой-нибудь пробы в России. Если сбой на одной пробе — скорее всего, проблема у самой RU-ноды; если на всех — блокировка.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 46
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "(max by (address, probe) (probe_success{kind=\"tcp\"}) * on (address) group_left (hosts) rwmon_address_info) and on (address, probe) (min by (address, probe) (min_over_time(probe_success{kind=\"tcp\"}[$__range] @ end())) == 0)",
+              "legendFormat": "{{hosts}} ({{address}}) · {{probe}}",
+              "range": true,
+              "instant": false
+            }
+          ],
+          "options": {
+            "showValue": "never",
+            "mergeValues": true,
+            "rowHeight": 0.8,
+            "alignValue": "left",
+            "legend": {
+              "showLegend": false
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "1": {
+                      "text": "OK",
+                      "color": "green",
+                      "index": 0
+                    },
+                    "0": {
+                      "text": "СБОЙ",
+                      "color": "red",
+                      "index": 1
+                    }
+                  }
+                }
+              ],
+              "noValue": "Сбоев не было"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 27,
+          "type": "timeseries",
+          "title": "Время соединения из РФ",
+          "description": "Сколько занимает установка соединения с проб в России до каждого адреса",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 56
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "max by (address, probe) (probe_duration_seconds{kind=\"tcp\"}) * on (address) group_left (hosts) rwmon_address_info",
+              "legendFormat": "{{hosts}} · {{probe}}",
+              "range": true,
+              "instant": false
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "min": 0,
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "gradientMode": "opacity",
+                "showPoints": "never",
+                "spanNulls": 120000,
+                "stacking": {
+                  "mode": "none"
+                },
+                "axisSoftMin": 0
+              }
+            },
+            "overrides": []
+          }
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "type": "row",
+      "title": "GeoCheck: как видят ноды",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 46
+      },
+      "panels": [
+        {
+          "id": 29,
+          "type": "table",
+          "title": "Как сервисы видят ноды",
+          "description": "Страна, которую определяет каждый сервис (последний GeoCheck). Красным — RU и BY",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 47
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "max by (node, service, value) (rwmon_geocheck{group=~\"services\", panel_title=~\"$panel\"} * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+              "legendFormat": "",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "groupingToMatrix",
+              "options": {
+                "columnField": "service",
+                "rowField": "node",
+                "valueField": "value",
+                "emptyValue": "null"
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "renameByName": {
+                  "node\\service": "Нода"
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "sortBy": [
+              {
+                "displayName": "Нода",
+                "desc": false
+              }
+            ],
+            "footer": {
+              "show": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": false,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              },
+              "noValue": "—"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Нода"
+                },
+                "properties": [
+                  {
+                    "id": "custom.minWidth",
+                    "value": 140
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^(?!Нода$).*"
+                },
+                "properties": [
+                  {
+                    "id": "custom.align",
+                    "value": "center"
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 90
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "basic"
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "transparent"
+                    }
+                  },
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(RU|BY)$",
+                          "result": {
+                            "color": "dark-red",
+                            "index": 0
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 30,
+          "type": "table",
+          "title": "Доступ к сервисам",
+          "description": "Открывается ли сервис с IP ноды (Netflix, ChatGPT и т.п.) и в каком регионе",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 57
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "max by (node, service, value) (rwmon_geocheck{group=~\"stash\", panel_title=~\"$panel\"} * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+              "legendFormat": "",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "groupingToMatrix",
+              "options": {
+                "columnField": "service",
+                "rowField": "node",
+                "valueField": "value",
+                "emptyValue": "null"
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "renameByName": {
+                  "node\\service": "Нода"
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "sortBy": [
+              {
+                "displayName": "Нода",
+                "desc": false
+              }
+            ],
+            "footer": {
+              "show": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": false,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              },
+              "noValue": "—"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Нода"
+                },
+                "properties": [
+                  {
+                    "id": "custom.minWidth",
+                    "value": 140
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^(?!Нода$).*"
+                },
+                "properties": [
+                  {
+                    "id": "custom.align",
+                    "value": "center"
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 90
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "basic"
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "transparent"
+                    }
+                  },
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(available|yes|ok).*",
+                          "result": {
+                            "color": "dark-green",
+                            "index": 0
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(blocked|unavailable|no|restricted|denied).*",
+                          "result": {
+                            "color": "dark-red",
+                            "index": 1
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 31,
+          "type": "table",
+          "title": "GeoIP-базы и CDN",
+          "description": "Что о стране IP ноды записано в базах GeoIP и что видят CDN",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 67
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "max by (node, service, value) (rwmon_geocheck{group=~\"geoip|cdn\", panel_title=~\"$panel\"} * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+              "legendFormat": "",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "groupingToMatrix",
+              "options": {
+                "columnField": "service",
+                "rowField": "node",
+                "valueField": "value",
+                "emptyValue": "null"
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "renameByName": {
+                  "node\\service": "Нода"
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "sortBy": [
+              {
+                "displayName": "Нода",
+                "desc": false
+              }
+            ],
+            "footer": {
+              "show": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": false,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              },
+              "noValue": "—"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Нода"
+                },
+                "properties": [
+                  {
+                    "id": "custom.minWidth",
+                    "value": 140
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^(?!Нода$).*"
+                },
+                "properties": [
+                  {
+                    "id": "custom.align",
+                    "value": "center"
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 90
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "basic"
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "transparent"
+                    }
+                  },
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(RU|BY)$",
+                          "result": {
+                            "color": "dark-red",
+                            "index": 0
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 32,
+          "type": "table",
+          "title": "IP нод",
+          "description": "IP, сеть и тип IP по последнему GeoCheck. Риск — оценка репутации IP (0–100)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 77
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "max by (node, ip, network, ip_type, place, consensus) (rwmon_geocheck_info{panel_title=~\"$panel\"} * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+              "legendFormat": "",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "max by (node) (rwmon_geocheck_risk{panel_title=~\"$panel\"} * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+              "legendFormat": "",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            },
+            {
+              "refId": "C",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "max by (node) (time() - rwmon_geocheck_timestamp_seconds{panel_title=~\"$panel\"} * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+              "legendFormat": "",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "merge",
+              "options": {}
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "Value #A": true
+                },
+                "indexByName": {
+                  "node": 0,
+                  "ip": 1,
+                  "network": 2,
+                  "ip_type": 3,
+                  "place": 4,
+                  "consensus": 5,
+                  "Value #B": 6,
+                  "Value #C": 7
+                },
+                "renameByName": {
+                  "node": "Нода",
+                  "ip": "IP",
+                  "network": "Сеть",
+                  "ip_type": "Тип IP",
+                  "place": "Место",
+                  "consensus": "Консенсус GeoIP",
+                  "Value #B": "риск",
+                  "Value #C": "проверено"
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "sortBy": [
+              {
+                "displayName": "Нода",
+                "desc": false
+              }
+            ],
+            "footer": {
+              "show": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": false,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              },
+              "noValue": "—"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "риск"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 70
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  },
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "text",
+                          "value": null
+                        },
+                        {
+                          "color": "yellow",
+                          "value": 30
+                        },
+                        {
+                          "color": "red",
+                          "value": 60
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "проверено"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dtdurations"
+                  },
+                  {
+                    "id": "decimals",
+                    "value": 0
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 110
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    }
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  }
+                ]
+              }
+            ]
           }
         }
       ]

@@ -15,6 +15,7 @@ reporter отдаёт в Prometheus метрикой rwmon_host — по ней 
 import base64
 import json
 import os
+import re
 import tempfile
 import urllib.parse
 
@@ -90,6 +91,22 @@ def connection_key(link):
     params = '&'.join(f'{k}={query[k][0]}' for k in KEY_PARAMS if k in query)
     server = u.netloc.rpartition('@')[2]        # без UUID/пароля: у панелей они разные
     return f'{u.scheme}://{server}{u.path.rstrip("/")}?{params}'
+
+
+def link_address(link):
+    """Адрес хоста из ссылки: «сервер:порт» — так же его показывает xray-checker."""
+    if link.startswith('vmess://'):
+        try:
+            payload = link[8:] + '=' * (-len(link[8:]) % 4)
+            data = json.loads(base64.b64decode(payload))
+            return f'{data.get("add", "")}:{data.get("port", "")}'
+        except ValueError:
+            return ''
+    u = urllib.parse.urlsplit(link.partition('#')[0])
+    server = u.netloc.rpartition('@')[2]
+    if server and not re.search(r':\d+$', server):
+        server += ':443'
+    return server
 
 
 def select_links(raw_configs, keys, tag):
@@ -169,12 +186,23 @@ def combine(per_panel):
                 while name in used:                  # разные хосты с одним названием
                     name, n = f'{base} #{n}', n + 1
                 used.add(name)
-                c = checks[key] = {'name': name, 'link': set_remark(e['link'], name), 'lite': e['lite']}
+                c = checks[key] = {'name': name, 'link': set_remark(e['link'], name), 'lite': e['lite'],
+                                   'address': link_address(e['link'])}
             elif not e['lite']:
                 c['lite'] = False                    # полная проверка покрывает лёгкую
             hosts.append({'panel': p.id, 'panel_title': p.title, 'host': e['host'],
-                          'name': c['name'], 'lite': e['lite']})
+                          'name': c['name'], 'lite': e['lite'], 'address': c['address']})
     return list(checks.values()), hosts
+
+
+def write_probe_targets(cfg, checks):
+    """Списки для проб из РФ (Prometheus file_sd): адреса хостов и сайты."""
+    folder = os.path.dirname(cfg.links_file) or '.'
+    addresses = sorted({c['address'] for c in checks if c.get('address')})
+    write_if_changed(os.path.join(folder, 'probe-tcp.json'),
+                     json.dumps([{'targets': addresses, 'labels': {}}], ensure_ascii=False))
+    write_if_changed(os.path.join(folder, 'probe-http.json'), json.dumps(
+        [{'targets': [s.url], 'labels': {'site': s.name}} for s in cfg.sites], ensure_ascii=False))
 
 
 def refresh(cfg, clients):
@@ -203,6 +231,7 @@ def refresh(cfg, clients):
     lite = [c['link'] for c in checks if c['lite']]
     changed = write_if_changed(cfg.links_file, '\n'.join(full) + '\n')
     changed |= write_if_changed(cfg.links_file_xray, '\n'.join(full + lite) + '\n')
+    write_probe_targets(cfg, checks)
     if changed:
         shared = len(HOSTS) - len(checks)
         log('links', f'список обновлён: {len(full)} полных + {len(lite)} лёгких проверок'

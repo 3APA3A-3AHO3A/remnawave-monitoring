@@ -178,6 +178,27 @@ class MiscTest(unittest.TestCase):
         self.assertEqual(cfg.panels[0].telegram.bot_token, '1:x')
         self.assertEqual(cfg.panels[0].metrics_password, 'p"w')
 
+    def test_link_address(self):
+        self.assertEqual(links.link_address('vless://u@1.2.3.4:8443?x=1#n'), '1.2.3.4:8443')
+        self.assertEqual(links.link_address('hysteria2://p@5.6.7.8:20009/?a=1#n'), '5.6.7.8:20009')
+        self.assertEqual(links.link_address('vless://u@cdn.x.org?type=ws#n'), 'cdn.x.org:443')
+
+    def test_sites_probes(self):
+        cfg = make_cfg(site=[{'url': 'https://fixerrorvpn.com'}, {'name': 'Панель', 'url': 'https://p.x/', 'keyword': 'Remnawave'}],
+                       probe=[{'name': 'ru-msk', 'url': 'https://10.0.0.1:9115/', 'user': 'u', 'password': 'p'}])
+        self.assertEqual([s.name for s in cfg.sites], ['fixerrorvpn.com', 'Панель'])
+        self.assertEqual(cfg.probes[0].url, 'https://10.0.0.1:9115')
+        for bad in ({'site': [{'url': 'fixerrorvpn.com'}]}, {'probe': [{'name': 'RU MSK', 'url': 'https://1.1.1.1:9115'}]}):
+            with self.assertRaises(config.ConfigError):
+                make_cfg(**bad)
+        with tempfile.TemporaryDirectory() as d:
+            cfg.links_file = os.path.join(d, 'monitor.txt')
+            links.write_probe_targets(cfg, [{'address': '1.2.3.4:443'}, {'address': '1.2.3.4:443'}, {'address': ''}])
+            with open(os.path.join(d, 'probe-tcp.json')) as f:
+                self.assertEqual(json.load(f), [{'targets': ['1.2.3.4:443'], 'labels': {}}])
+            with open(os.path.join(d, 'probe-http.json')) as f:
+                self.assertEqual(json.load(f)[1], {'targets': ['https://p.x/'], 'labels': {'site': 'Панель'}})
+
     def test_rename(self):
         self.assertEqual(links.rename('vless://a@h:443?x=1#Poland%201', ' · R'),
                          'vless://a@h:443?x=1#Poland%201%20%C2%B7%20R')
@@ -247,6 +268,7 @@ class FakePanel:
             raise ApiError('нет ответа')
         return [
             {'uuid': 'u1', 'name': 'Poland 1', 'countryCode': 'pl', 'isConnected': True, 'usersOnline': 7,
+             'address': '10.1.2.3', 'versions': {'xray': '25.1.30', 'node': '2.1.0'}, 'xrayUptime': 100,
              'system': {'info': {'cpus': 2, 'memoryTotal': 1000},
                         'stats': {'loadAvg': [1, 0.5, 0], 'memoryUsed': 250,
                                   'interface': {'interface': 'eth0', 'rxBytesPerSec': 1000, 'txBytesPerSec': 5000,
@@ -287,7 +309,7 @@ class ExporterTest(unittest.TestCase):
         ok, text = self.collect(FakePanel())
         self.assertTrue(ok)
         self.assertIn('rwmon_panel_up{panel="main",panel_title="Основная"} 1', text)
-        self.assertIn('node_name="Poland 1",country="PL"} 1', text)
+        self.assertIn('node_name="Poland 1",node="Poland 1",country="PL"} 1', text)
         self.assertIn('rwmon_node_online_users{panel="main",panel_title="Основная",node_uuid="u4"} 0', text)
         self.assertIn('rwmon_node_cpu_load5{panel="main",panel_title="Основная",node_uuid="u1"} 0.25', text)
         self.assertIn('rwmon_node_memory_used_ratio{panel="main",panel_title="Основная",node_uuid="u1"} 0.25', text)
@@ -302,11 +324,61 @@ class ExporterTest(unittest.TestCase):
         self.assertIn('rwmon_node_network_tx_bytes_per_second{panel="main",panel_title="Основная",node_uuid="u1"} 5000', text)
         self.assertIn('rwmon_node_network_rx_bytes{panel="main",panel_title="Основная",node_uuid="u1"} 123456789012', text)
 
+    def test_node_extras(self):
+        _, text = self.collect(FakePanel())
+        self.assertIn('rwmon_node_address{panel="main",panel_title="Основная",node_uuid="u1",ip="10.1.2.3"} 1', text)
+        self.assertIn('xray="25.1.30",node="2.1.0"} 1', text)
+        self.assertIn('rwmon_node_xray_uptime_seconds{panel="main",panel_title="Основная",node_uuid="u1"} 100', text)
+
+    def test_geocheck_lines(self):
+        cfg = make_cfg()
+        run = {'finished': '2026-09-29T14:30:00+00:00', 'results': {
+            'main:u1': {'summary': {'ip': '1.2.3.4', 'network': 'AS1 X', 'type': 'Hosting', 'risk': 5,
+                                    'place': 'Madrid, ES', 'consensus': 'ES 90%',
+                                    'checks': {'services:google': {'name': 'Google', 'group': 'services',
+                                                                   'kind': 'country', 'value': 'ES'}}}},
+            'reserve:u2': {'ok': False, 'error': 'timeout'}}}
+        lines = exporter.Lines()
+        exporter.geocheck_lines(run, lines, cfg)
+        text = lines.text()
+        self.assertIn('rwmon_geocheck{panel="main",panel_title="Основная",node_uuid="u1",group="services",'
+                      'service="Google",value="ES"} 1', text)
+        self.assertIn('rwmon_geocheck_risk{panel="main",panel_title="Основная",node_uuid="u1"} 5', text)
+        self.assertNotIn('u2', text)
+
+    def test_site(self):
+        import http.server
+        import threading as th
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                body = b'hello Remnawave' if self.path == '/ok' else b'nope'
+                self.send_response(200 if self.path != '/500' else 500)
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+        srv = http.server.HTTPServer(('127.0.0.1', 0), H)
+        th.Thread(target=srv.serve_forever, daemon=True).start()
+        base = f'http://127.0.0.1:{srv.server_port}'
+        ok = exporter.check_site(config.Site('a', base + '/ok', 'Remnawave'))
+        miss = exporter.check_site(config.Site('b', base + '/x', 'Remnawave'))
+        err = exporter.check_site(config.Site('c', base + '/500'))
+        srv.shutdown()
+        self.assertEqual((ok['up'], ok['code']), (1, 200))
+        self.assertEqual((miss['up'], miss['code']), (0, 200))       # нет ключевого слова
+        self.assertEqual((err['up'], err['code']), (0, 500))
+        lines = exporter.Lines()
+        exporter.site_lines([(config.Site('a', base + '/ok'), ok)], lines)
+        self.assertIn('rwmon_site_up{site="a"', lines.text())
+
     def test_host_lines(self):
         lines = exporter.Lines()
         exporter.host_lines([{'panel': 'main', 'panel_title': 'Основная', 'host': 'LTE 1', 'name': 'LTE 1',
-                              'lite': True}], lines)
-        self.assertIn('rwmon_host{panel="main",panel_title="Основная",host="LTE 1",name="LTE 1",lite="1"} 1',
+                              'lite': True, 'address': '1.2.3.4:443'}], lines)
+        self.assertIn('rwmon_host{panel="main",panel_title="Основная",host="LTE 1",name="LTE 1",lite="1",'
+                      'address="1.2.3.4:443"} 1',
                       lines.text())
 
     def test_exact_traffic(self):
@@ -342,7 +414,7 @@ class RenderTest(unittest.TestCase):
             prom = load('prometheus/prometheus.yml')
             self.assertEqual(prom['scrape_configs'][1]['static_configs'][1]['labels'], {'check': 'warp'})
             rules = load('grafana/alerting/rules.yml')['groups'][0]['rules']
-            self.assertEqual(len({r['uid'] for r in rules}), 11)
+            self.assertEqual(len({r['uid'] for r in rules}), 16)
             self.assertIn('psiphon-out|WARP', json.dumps(rules))
             routes = load('grafana/alerting/policies.yml')['policies'][0]['routes']
             self.assertEqual(routes[0]['object_matchers'], [['scope', '=', 'host'], ['panel', '=', 'main']])

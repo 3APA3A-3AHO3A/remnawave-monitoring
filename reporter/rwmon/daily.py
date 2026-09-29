@@ -43,7 +43,17 @@ def collect(prom, cfg):
         'total': _by(prom, 'rwmon_users_total', 'panel'),
         'panel_up': _by(prom, 'min_over_time(rwmon_panel_up[24h])', 'panel'),
         'checks': [],
+        'sites_down': _by(prom, 'sum by (site) (sum_over_time((rwmon_site_up == bool 0)[24h:1m]))', 'site'),
+        'sites_ru_down': _by(prom, 'sum by (site) (sum_over_time((max by (site) '
+                                   '(probe_success{kind="http"}) == bool 0)[24h:1m]))', 'site'),
+        'site_cert': _by(prom, '(rwmon_site_cert_expiry_timestamp_seconds - time()) / 86400', 'site'),
+        'site_up': _by(prom, 'rwmon_site_up', 'site'),
+        'probe_blocked': [],
     }
+    for m, v in prom.query('rwmon_host * on (address) group_left () sum by (address) (sum_over_time('
+                           '(max by (address) (probe_success{kind="tcp"}) == bool 0)[24h:1m]))'):
+        if v > 0:
+            d['probe_blocked'].append((m.get('panel', ''), m.get('host', '?'), v))
     for m, v in prom.query(
             f'sum by (panel, node_uuid, tag) (increase(rwmon_node_outbound_upload_bytes{{tag=~{tags}}}[24h])'
             f' + increase(rwmon_node_outbound_download_bytes{{tag=~{tags}}}[24h]))'):
@@ -101,8 +111,24 @@ def build_text(d, extras, geo_run, cfg):
         where = f' · {titles.get(pid, pid)}' if cfg.multi else ''
         problems.append(f'• {esc(host)}{esc(where)} · {CHECK_NAMES.get(check, check)} — '
                         f'не проходила проверка, {minutes(mins)}')
+    for pid, host, mins in sorted(d.get('probe_blocked') or [], key=lambda x: (x[1], x[0])):
+        where = f' · {titles.get(pid, pid)}' if cfg.multi else ''
+        problems.append(f'• {esc(host)}{esc(where)} — не открывался из РФ, {minutes(mins)}')
+    for (site,), mins in sorted((d.get('sites_down') or {}).items()):
+        if mins >= 1:
+            problems.append(f'• 🌐 {esc(site)} — не открывался, {minutes(mins)}')
+    for (site,), mins in sorted((d.get('sites_ru_down') or {}).items()):
+        if mins >= 1:
+            problems.append(f'• 🌐 {esc(site)} — не открывался из РФ, {minutes(mins)}')
     lines.append('⚠️ <b>Сбои за сутки</b>' if problems else '✅ <b>Сбоев за сутки не было</b>')
     lines += problems
+    if d.get('site_up'):
+        parts = []
+        for (site,), up in sorted(d['site_up'].items()):
+            days = (d.get('site_cert') or {}).get((site,))
+            cert = f', сертификат {int(days)} дн.' if days is not None else ''
+            parts.append(f'{esc(site)} {"✅" if up else "❌"}{cert}')
+        lines += ['', '🌐 ' + ' · '.join(parts)]
 
     # По панелям
     for p in cfg.panels:

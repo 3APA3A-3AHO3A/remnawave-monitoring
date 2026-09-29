@@ -62,6 +62,7 @@ services:
       - --web.listen-address=127.0.0.1:${PROMETHEUS_PORT:-9090}
     volumes:
       - generated:/etc/rwmon:ro
+      - links:/links:ro               # списки для проб из РФ (пишет reporter)
       - prometheus-data:/prometheus
     logging: *logging
 
