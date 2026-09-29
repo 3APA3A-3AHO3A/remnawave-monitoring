@@ -197,7 +197,8 @@ class MiscTest(unittest.TestCase):
             with open(os.path.join(d, 'probe-tcp.json')) as f:
                 self.assertEqual(json.load(f), [{'targets': ['1.2.3.4:443'], 'labels': {}}])
             with open(os.path.join(d, 'probe-http.json')) as f:
-                self.assertEqual(json.load(f)[1], {'targets': ['https://p.x/'], 'labels': {'site': 'Панель'}})
+                self.assertEqual(json.load(f)[1], {'targets': ['https://p.x/'],
+                                                   'labels': {'site': 'Панель', 'module': 'http_2xx'}})
 
     def test_rename(self):
         self.assertEqual(links.rename('vless://a@h:443?x=1#Poland%201', ' · R'),
@@ -365,6 +366,8 @@ class ExporterTest(unittest.TestCase):
         ok = exporter.check_site(config.Site('a', base + '/ok', 'Remnawave'))
         miss = exporter.check_site(config.Site('b', base + '/x', 'Remnawave'))
         err = exporter.check_site(config.Site('c', base + '/500'))
+        alive = exporter.check_site(config.Site('d', base + '/500', any_status=True))
+        self.assertEqual(alive['up'], 1)
         srv.shutdown()
         self.assertEqual((ok['up'], ok['code']), (1, 200))
         self.assertEqual((miss['up'], miss['code']), (0, 200))       # нет ключевого слова

@@ -47,6 +47,7 @@ class Site:
     name: str                  # как подписывать: «Сайт», «Панель OVRO»
     url: str
     keyword: str = ''          # если задано — страница должна содержать этот текст
+    any_status: bool = False   # любой HTTP-ответ (даже 404/502) = сервер жив
 
 
 @dataclass
@@ -227,7 +228,8 @@ def _sites(items):
         if name in names:
             raise ConfigError(f'config.toml: [[site]] «{name}» встречается дважды')
         names.add(name)
-        out.append(Site(name=name, url=url, keyword=str(s.get('keyword', ''))))
+        out.append(Site(name=name, url=url, keyword=str(s.get('keyword', '')),
+                        any_status=bool(s.get('any_status', False))))
     return out
 
 

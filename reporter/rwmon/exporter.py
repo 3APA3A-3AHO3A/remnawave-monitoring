@@ -308,9 +308,11 @@ def check_site(site, timeout=15):
         with urllib.request.urlopen(req, timeout=timeout) as r:
             body = r.read(512 * 1024).decode('utf-8', 'replace')
             out['code'] = r.status
-            out['up'] = int(200 <= r.status < 400 and (not site.keyword or site.keyword in body))
+            out['up'] = int((site.any_status or 200 <= r.status < 400)
+                            and (not site.keyword or site.keyword in body))
     except urllib.error.HTTPError as e:
         out['code'] = e.code
+        out['up'] = int(site.any_status and not site.keyword)     # сервер ответил — для any_status этого хватает
     except Exception:
         pass
     out['seconds'] = time.time() - started
@@ -329,7 +331,7 @@ def check_site(site, timeout=15):
 def site_lines(results, lines):
     """results — [(Site, результат check_site)]."""
     for site, r in results:
-        base = {'site': site.name, 'url': site.url}
+        base = {'site': site.name}          # без url: в нём может быть секретная ссылка подписки
         lines.add('rwmon_site_up', base, r['up'])
         lines.add('rwmon_site_status_code', base, r['code'])
         lines.add('rwmon_site_response_seconds', base, r['seconds'])

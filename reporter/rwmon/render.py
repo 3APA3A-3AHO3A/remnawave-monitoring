@@ -51,6 +51,9 @@ def probe_jobs(cfg):
                 'file_sd_configs': [{'files': [f'/links/{file}'], 'refresh_interval': '1m'}],
                 'relabel_configs': [
                     {'source_labels': ['__address__'], 'target_label': '__param_target'},
+                    # у сайтов с any_status свой модуль пробы (любой HTTP-ответ = сайт жив)
+                    {'source_labels': ['module'], 'regex': '(.+)', 'target_label': '__param_module'},
+                    {'action': 'labeldrop', 'regex': 'module'},
                     {'source_labels': ['__param_target'], 'target_label': 'address'},
                     {'target_label': 'instance', 'replacement': p.name},
                     {'target_label': 'probe', 'replacement': p.name},

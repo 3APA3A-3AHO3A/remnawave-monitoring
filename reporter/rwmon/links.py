@@ -202,7 +202,8 @@ def write_probe_targets(cfg, checks):
     write_if_changed(os.path.join(folder, 'probe-tcp.json'),
                      json.dumps([{'targets': addresses, 'labels': {}}], ensure_ascii=False))
     write_if_changed(os.path.join(folder, 'probe-http.json'), json.dumps(
-        [{'targets': [s.url], 'labels': {'site': s.name}} for s in cfg.sites], ensure_ascii=False))
+        [{'targets': [s.url], 'labels': {'site': s.name, 'module': 'http_any' if s.any_status else 'http_2xx'}}
+         for s in cfg.sites], ensure_ascii=False))
 
 
 def refresh(cfg, clients):
