@@ -1,0 +1,14 @@
+# секреты
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+
+# локальные данные
+data/
+*.log
+.DS_Store
+Thumbs.db

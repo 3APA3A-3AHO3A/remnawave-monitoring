@@ -1,0 +1,63 @@
+# Пример server-блока для Grafana. Добавьте в конфиг nginx панели
+# (обычно /opt/remnawave/nginx.conf) и перезапустите nginx.
+#
+# Замените:
+#   edge-cache-07.example.com — ваш поддомен (A-запись на IP панели)
+#   пути к сертификату       — ваш wildcard-сертификат, как в блоке панели
+#   listen                    — как в блоке панели (у вас может быть unix-сокет
+#                               с proxy_protocol, если на 443 стоит Xray)
+#   3300                      — GRAFANA_PORT из .env
+
+# Вход в Grafana: не больше 10 попыток в минуту с одного IP.
+# Эта строка должна быть на уровне http {} — в файле conf.d/*.conf так и есть.
+limit_req_zone $binary_remote_addr zone=rwmon_login:10m rate=10r/m;
+
+map $http_upgrade $rwmon_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+upstream rwmon_grafana {
+    server 127.0.0.1:3300;
+}
+
+server {
+    server_name edge-cache-07.example.com;
+    listen 443 ssl;
+    http2 on;
+
+    ssl_certificate     /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    client_max_body_size 5m;
+
+    proxy_http_version 1.1;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+
+    # Отправка формы входа — с ограничением частоты
+    location = /login {
+        limit_req zone=rwmon_login burst=5 nodelay;
+        limit_req_status 429;
+        proxy_pass http://rwmon_grafana;
+    }
+
+    # Живые обновления графиков (websocket)
+    # (свои proxy_set_header отменяют заданные выше, поэтому повторяем их)
+    location /api/live/ {
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $rwmon_upgrade;
+        proxy_pass http://rwmon_grafana;
+    }
+
+    location / {
+        proxy_pass http://rwmon_grafana;
+    }
+}

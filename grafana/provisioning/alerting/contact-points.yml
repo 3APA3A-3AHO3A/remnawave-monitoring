@@ -1,0 +1,16 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: telegram
+    receivers:
+      - uid: rwmon-telegram
+        type: telegram
+        disableResolveMessage: false
+        settings:
+          bottoken: ${TG_BOT_TOKEN}
+          chatid: "${TG_CHAT_ID}"
+          message_thread_id: "${TG_TOPIC_ID}"
+          parse_mode: HTML
+          disable_web_page_preview: true
+          message: '{{ template "rwmon.message" . }}'

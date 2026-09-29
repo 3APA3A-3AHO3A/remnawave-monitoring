@@ -1,0 +1,25 @@
+apiVersion: 1
+
+# Текст сообщений в Telegram (HTML).
+# Знак доллара здесь не используется: Grafana подставляет в эти файлы
+# переменные окружения вида $VAR.
+templates:
+  - orgId: 1
+    name: rwmon
+    template: |
+      {{ define "rwmon.target" -}}
+      {{ if .Labels.node_name }}{{ .Labels.node_name }}{{ else if .Labels.name }}{{ .Labels.name }}{{ else if .Labels.rulename }}{{ .Labels.rulename }}{{ else }}{{ .Labels.alertname }}{{ end }}{{ if .Labels.tag }} · {{ .Labels.tag }}{{ end }}
+      {{- end }}
+
+      {{ define "rwmon.message" -}}
+      {{ if gt (len .Alerts.Firing) 0 -}}
+      🔴 <b>{{ or (index .Alerts.Firing 0).Annotations.summary (index .Alerts.Firing 0).Labels.alertname }}</b>
+      {{ range .Alerts.Firing }}• {{ template "rwmon.target" . }} — с {{ .StartsAt.UTC.Format "02.01 15:04" }} UTC
+      {{ end }}{{ with (index .Alerts.Firing 0).Annotations.description }}
+      <i>{{ . }}</i>
+      {{ end }}{{ end -}}
+      {{ if gt (len .Alerts.Resolved) 0 -}}
+      🟢 <b>Восстановлено: {{ or (index .Alerts.Resolved 0).Annotations.summary (index .Alerts.Resolved 0).Labels.alertname }}</b>
+      {{ range .Alerts.Resolved }}• {{ template "rwmon.target" . }} — {{ .StartsAt.UTC.Format "02.01 15:04" }} → {{ .EndsAt.UTC.Format "15:04" }} UTC
+      {{ end }}{{ end -}}
+      {{- end }}

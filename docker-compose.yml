@@ -1,0 +1,150 @@
+# remnawave-monitoring
+# Все контейнеры работают в сети хоста и слушают только 127.0.0.1:
+# наружу ничего не открывается, Grafana отдаёт nginx.
+
+x-checker: &checker
+  image: kutovoys/xray-checker:v1.3.1
+  network_mode: host
+  restart: unless-stopped
+  depends_on: [reporter]
+  volumes:
+    - links:/links:ro
+  environment: &checker-env
+    TZ: UTC
+    SUBSCRIPTION_URL: file:///links/monitor.txt
+    SUBSCRIPTION_UPDATE: "true"
+    SUBSCRIPTION_UPDATE_INTERVAL: "300"
+    PROXY_CHECK_INTERVAL: ${CHECK_INTERVAL:-300}
+    PROXY_TIMEOUT: "20"
+    METRICS_HOST: 127.0.0.1
+    LOG_LEVEL: warn
+  logging: &logging
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    container_name: rwmon-prometheus
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      RW_METRICS_PORT: ${RW_METRICS_PORT:-3001}
+      RW_METRICS_USER: ${RW_METRICS_USER:-admin}
+      RW_METRICS_PASS: ${RW_METRICS_PASS:?заполните RW_METRICS_PASS в .env}
+      PROMETHEUS_PORT: ${PROMETHEUS_PORT:-9090}
+      PROMETHEUS_RETENTION: ${PROMETHEUS_RETENTION:-90d}
+    # Подставляем порт и логин метрик в конфиг, пароль — в отдельный файл
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        printf '%s' "$$RW_METRICS_PASS" > /prometheus/.rw_metrics_pass
+        sed -e "s|__RW_METRICS_PORT__|$$RW_METRICS_PORT|g" \
+            -e "s|__RW_METRICS_USER__|$$RW_METRICS_USER|g" \
+            /etc/prometheus/prometheus.yml.tmpl > /prometheus/prometheus.yml
+        exec /bin/prometheus \
+          --config.file=/prometheus/prometheus.yml \
+          --storage.tsdb.path=/prometheus \
+          --storage.tsdb.retention.time=$$PROMETHEUS_RETENTION \
+          --web.listen-address=127.0.0.1:$$PROMETHEUS_PORT
+    volumes:
+      - ./prometheus/prometheus.yml.tmpl:/etc/prometheus/prometheus.yml.tmpl:ro
+      - prometheus-data:/prometheus
+    logging: *logging
+
+  grafana:
+    image: grafana/grafana:13.2.3
+    container_name: rwmon-grafana
+    network_mode: host
+    restart: unless-stopped
+    depends_on: [prometheus]
+    environment:
+      TZ: UTC
+      GF_SERVER_HTTP_ADDR: 127.0.0.1
+      GF_SERVER_HTTP_PORT: ${GRAFANA_PORT:-3300}
+      GF_SERVER_DOMAIN: ${GRAFANA_DOMAIN:-localhost}
+      GF_SERVER_ROOT_URL: https://${GRAFANA_DOMAIN:-localhost}/
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?заполните GRAFANA_ADMIN_USER в .env}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?заполните GRAFANA_ADMIN_PASSWORD в .env}
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_SECURITY_BRUTE_FORCE_LOGIN_PROTECTION_MAX_ATTEMPTS: "5"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_ALLOW_ORG_CREATE: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_DATE_FORMATS_DEFAULT_TIMEZONE: utc
+      GF_USERS_DEFAULT_LANGUAGE: ru-RU
+      # Используются в provisioning (адрес Prometheus, алерты, Telegram)
+      PROMETHEUS_PORT: ${PROMETHEUS_PORT:-9090}
+      TG_BOT_TOKEN: ${TG_BOT_TOKEN:?заполните TG_BOT_TOKEN в .env}
+      TG_CHAT_ID: ${TG_CHAT_ID:?заполните TG_CHAT_ID в .env}
+      TG_TOPIC_ID: ${TG_TOPIC_ID:-}
+      CLIENTS_DROP_MIN_AVG: ${CLIENTS_DROP_MIN_AVG:-3}
+      CLIENTS_DROP_MAX_NOW: ${CLIENTS_DROP_MAX_NOW:-1}
+      OUTBOUND_TAGS: ${OUTBOUND_TAGS:-psiphon-out|WARP}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    logging: *logging
+
+  # Список хостов для проверок, GeoCheck и ежедневная сводка
+  reporter:
+    build: ./reporter
+    image: rwmon-reporter:local
+    container_name: rwmon-reporter
+    network_mode: host
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: UTC
+      LINKS_FILE: /links/monitor.txt
+      DATA_DIR: /data
+      PROMETHEUS_URL: http://127.0.0.1:${PROMETHEUS_PORT:-9090}
+    volumes:
+      - links:/links
+      - reporter-data:/data
+    logging: *logging
+
+  # «Xray жив»: нода принимает клиента и выпускает его в интернет напрямую
+  checker-xray:
+    <<: *checker
+    container_name: rwmon-checker-xray
+    environment:
+      <<: *checker-env
+      METRICS_PORT: "2112"
+      XRAY_START_PORT: "21000"
+      PROXY_CHECK_METHOD: status
+      PROXY_STATUS_CHECK_URL: ${CHECK_URL_XRAY:-https://www.google.com/generate_204}
+
+  # «WARP жив»: адрес, который роутинг ноды отправляет в WARP
+  checker-warp:
+    <<: *checker
+    container_name: rwmon-checker-warp
+    environment:
+      <<: *checker-env
+      METRICS_PORT: "2113"
+      XRAY_START_PORT: "22000"
+      PROXY_CHECK_METHOD: ip
+      PROXY_IP_CHECK_URL: ${CHECK_URL_WARP:-https://icanhazip.com}
+
+  # «Psiphon жив»: адрес, который роутинг ноды отправляет в Psiphon
+  checker-psiphon:
+    <<: *checker
+    container_name: rwmon-checker-psiphon
+    environment:
+      <<: *checker-env
+      METRICS_PORT: "2114"
+      XRAY_START_PORT: "23000"
+      PROXY_CHECK_METHOD: ip
+      PROXY_IP_CHECK_URL: ${CHECK_URL_PSIPHON:-http://ip-api.com/line/?fields=query}
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  reporter-data:
+  links:
