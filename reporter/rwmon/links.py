@@ -3,9 +3,9 @@
 У каждой панели берём подписку служебного пользователя и оставляем только
 хосты с тегами host_tag (все три проверки) и host_tag_lite (только «Подключение»).
 
-Если в двух панелях один и тот же хост (тот же сервер, порт, пользователь и
-способ подключения — так бывает, когда панели делят ноды через маппер UUID;
-fp, sni и название при этом могут отличаться), он проверяется один раз,
+Если в двух панелях один и тот же хост (тот же сервер, порт и способ
+подключения — так бывает, когда панели делят ноды через маппер UUID; UUID, fp,
+sni и название при этом могут отличаться), он проверяется один раз,
 а результат засчитывается обеим панелям. Какой хост какой панели чем проверяется,
 reporter отдаёт в Prometheus метрикой rwmon_host — по ней алерты и дашборд
 понимают, к какой панели относится проверка.
@@ -73,21 +73,23 @@ KEY_PARAMS = ('type', 'security', 'path', 'serviceName', 'mode', 'flow', 'encryp
 
 
 def connection_key(link):
-    """Ключ хоста: адрес, порт, пользователь и основные параметры подключения.
-    У одинаковых хостов разных панелей он совпадает, даже если название,
-    отпечаток браузера (fp) или SNI отличаются."""
+    """Ключ хоста: адрес, порт и основные параметры подключения (транспорт, путь,
+    ключ Reality…). UUID/пароль не учитываются: у служебных пользователей разных
+    панелей они свои, а нода и её WARP/Psiphon от этого работают одинаково.
+    Название, отпечаток браузера (fp) и SNI тоже не учитываются."""
     if link.startswith('vmess://'):
         try:
             payload = link[8:] + '=' * (-len(link[8:]) % 4)
             data = json.loads(base64.b64decode(payload))
-            keep = ('add', 'port', 'id', 'net', 'type', 'path', 'host', 'tls')
+            keep = ('add', 'port', 'net', 'type', 'path', 'host', 'tls')
             return 'vmess://' + json.dumps({k: str(data.get(k, '')) for k in keep}, sort_keys=True)
         except ValueError:
             return link
     u = urllib.parse.urlsplit(link.partition('#')[0])
     query = urllib.parse.parse_qs(u.query)
     params = '&'.join(f'{k}={query[k][0]}' for k in KEY_PARAMS if k in query)
-    return f'{u.scheme}://{u.netloc}{u.path.rstrip("/")}?{params}'
+    server = u.netloc.rpartition('@')[2]        # без UUID/пароля: у панелей они разные
+    return f'{u.scheme}://{server}{u.path.rstrip("/")}?{params}'
 
 
 def select_links(raw_configs, keys, tag):

@@ -125,7 +125,9 @@ class LinksTest(unittest.TestCase):
         a = 'vless://u@1.1.1.1:443?type=tcp&security=reality&pbk=K&sni=a.com&fp=edge#A'
         b = 'vless://u@1.1.1.1:443?type=tcp&security=reality&pbk=K&sni=b.com&fp=firefox&sid=1#B'
         self.assertEqual(links.connection_key(a), links.connection_key(b))
-        self.assertNotEqual(links.connection_key(a), links.connection_key(a.replace('u@', 'v@')))
+        self.assertEqual(links.connection_key(a), links.connection_key(a.replace('u@', 'v@')))
+        self.assertNotEqual(links.connection_key(a), links.connection_key(a.replace(':443', ':8443')))
+        self.assertNotEqual(links.connection_key(a), links.connection_key(a.replace('pbk=K', 'pbk=Q')))
         self.assertEqual([(h['panel'], h['host'], h['name']) for h in hosts], [
             ('main', 'Швеция 1', 'Швеция 1'), ('main', 'LTE 1', 'LTE 1'),
             ('reserve', 'Швеция 1', 'Швеция 1'), ('reserve', 'LTE 1', 'LTE 1'),

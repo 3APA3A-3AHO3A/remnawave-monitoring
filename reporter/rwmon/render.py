@@ -79,7 +79,8 @@ def host_checks(check, cond='== 0'):
     """Результат проверки по каждому хосту каждой панели: rwmon_host × xray_proxy_status.
     Один хост, общий для двух панелей, даёт две строки — по одной на панель."""
     hosts = 'rwmon_host' if check == 'xray' else 'rwmon_host{lite="0"}'
-    return f'{hosts} * on (name) group_left (check) (xray_proxy_status{{check="{check}"}} {cond})'
+    # max by: при обновлении списка у одного имени ненадолго бывает две серии
+    return f'{hosts} * on (name) group_left (check) (max by (name, check) (xray_proxy_status{{check="{check}"}}) {cond})'
 
 
 def _checker(check):

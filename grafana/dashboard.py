@@ -22,7 +22,7 @@ CHECKS = (('xray', 'Подключение'), ('warp', 'WARP'), ('psiphon', 'Psi
 GREEN, RED, YELLOW, BLUE, GREY = 'green', 'red', 'yellow', 'blue', 'text'
 OK_MAP = [{'type': 'value', 'options': {'1': {'text': 'OK', 'color': GREEN, 'index': 0},
                                         '0': {'text': 'СБОЙ', 'color': RED, 'index': 1}}},
-          {'type': 'special', 'options': {'match': 'null', 'result': {'text': '·', 'index': 2}}}]
+          {'type': 'special', 'options': {'match': 'null', 'result': {'text': '·', 'color': 'transparent', 'index': 2}}}]
 
 
 def hosts(check):
@@ -31,7 +31,8 @@ def hosts(check):
 
 
 def host_status(check):
-    return f'{hosts(check)} * on (name) group_left (check) xray_proxy_status{{check="{check}"}}'
+    # max by: при обновлении списка у одного имени ненадолго бывает две серии
+    return f'{hosts(check)} * on (name) group_left (check) max by (name, check) (xray_proxy_status{{check="{check}"}})'
 
 
 def failing():
@@ -202,16 +203,16 @@ def build():
     ], [
         by_name('Панель', custom__width=110, color={'mode': 'fixed', 'fixedColor': GREY},
                 custom__cellOptions={'type': 'color-text'}),
-        by_name('Нода', custom__width=170),
+        by_name('Нода', custom__minWidth=150),
         by_name('Клиенты', decimals=0, custom__width=80, custom__align='right'),
         by_name('клиенты за период', custom__cellOptions={'type': 'sparkline', 'hideValue': True},
-                color={'mode': 'fixed', 'fixedColor': GREEN}, custom__width=130),
+                color={'mode': 'fixed', 'fixedColor': GREEN}, custom__minWidth=140),
         by_name('пик', decimals=0, custom__width=60, custom__align='right',
                 color={'mode': 'fixed', 'fixedColor': GREY}, custom__cellOptions={'type': 'color-text'}),
         by_name('↓ RX', unit='bps', decimals=1, custom__width=100, custom__align='right'),
         by_name('↑ TX', unit='bps', decimals=1, custom__width=100, custom__align='right'),
         by_name('сеть за период', custom__cellOptions={'type': 'sparkline', 'hideValue': True},
-                color={'mode': 'fixed', 'fixedColor': BLUE}, custom__width=130),
+                color={'mode': 'fixed', 'fixedColor': BLUE}, custom__minWidth=140),
         by_name('трафик', unit='decbytes', decimals=1, custom__width=90, custom__align='right'),
         by_name('CPU', unit='percentunit', decimals=0, custom__width=60, custom__align='right',
                 custom__cellOptions={'type': 'color-text'},
@@ -233,8 +234,8 @@ def build():
     # (не проходила ни разу за сутки — показываем «1 день»)
     down = ' or '.join(
         f'({hosts(c)} * on (name) group_left (check) '
-        f'((time() - max_over_time(timestamp(xray_proxy_status{{check="{c}"}} == 1)[1d:1m])) '
-        f'and on (name) (xray_proxy_status{{check="{c}"}} == 0)))'
+        f'((time() - max by (name) (max_over_time(timestamp(xray_proxy_status{{check="{c}"}} == 1)[1d:1m]))) '
+        f'and on (name) (max by (name) (xray_proxy_status{{check="{c}"}}) == 0)))'
         f' or (({host_status(c)} == 0) * 0 + 86400)'
         for c, _ in CHECKS)
     p.append(table('Сейчас не работает', {'h': 8, 'w': 8, 'x': 16, 'y': y}, [
@@ -351,7 +352,7 @@ def build():
         'description': 'Только хосты, у которых за выбранный период были сбои',
         'datasource': DS, 'gridPos': {'h': 10, 'w': 24, 'x': 0, 'y': y + 13},
         'targets': [target(' or '.join(
-            f'({host_status(c)}) and on (name) (min_over_time(xray_proxy_status{{check="{c}"}}[$__range]) == 0)'
+            f'({host_status(c)}) and on (name) (min by (name) (min_over_time(xray_proxy_status{{check="{c}"}}[$__range])) == 0)'
             for c, _ in CHECKS), 'A', '{{host}} · {{panel_title}} · {{check}}')],
         'options': {'showValue': 'never', 'mergeValues': True, 'rowHeight': 0.8, 'alignValue': 'left',
                     'legend': {'showLegend': False}, 'tooltip': {'mode': 'single'}},
