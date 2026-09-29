@@ -3,8 +3,9 @@
 У каждой панели берём подписку служебного пользователя и оставляем только
 хосты с тегами host_tag (все три проверки) и host_tag_lite (только «Подключение»).
 
-Если в двух панелях один и тот же хост (ссылка совпадает всем, кроме названия —
-так бывает, когда панели делят ноды через маппер UUID), он проверяется один раз,
+Если в двух панелях один и тот же хост (тот же сервер, порт, пользователь и
+способ подключения — так бывает, когда панели делят ноды через маппер UUID;
+fp, sni и название при этом могут отличаться), он проверяется один раз,
 а результат засчитывается обеим панелям. Какой хост какой панели чем проверяется,
 reporter отдаёт в Prometheus метрикой rwmon_host — по ней алерты и дашборд
 понимают, к какой панели относится проверка.
@@ -64,17 +65,29 @@ def rename(link, suffix):
     return set_remark(link, link_remark(link) + suffix) if suffix else link
 
 
+# Параметры ссылки, которые определяют, куда и как идёт подключение. Остальные
+# (fp, sni, sid, alpn, extra…) у одного и того же хоста в разных панелях могут
+# отличаться, но на результат проверки «работает ли нода» не влияют.
+KEY_PARAMS = ('type', 'security', 'path', 'serviceName', 'mode', 'flow', 'encryption',
+              'headerType', 'host', 'obfs', 'pbk')
+
+
 def connection_key(link):
-    """Ссылка без названия: у одинаковых хостов разных панелей она совпадает."""
+    """Ключ хоста: адрес, порт, пользователь и основные параметры подключения.
+    У одинаковых хостов разных панелей он совпадает, даже если название,
+    отпечаток браузера (fp) или SNI отличаются."""
     if link.startswith('vmess://'):
         try:
             payload = link[8:] + '=' * (-len(link[8:]) % 4)
             data = json.loads(base64.b64decode(payload))
-            data.pop('ps', None)
-            return 'vmess://' + json.dumps(data, sort_keys=True)
+            keep = ('add', 'port', 'id', 'net', 'type', 'path', 'host', 'tls')
+            return 'vmess://' + json.dumps({k: str(data.get(k, '')) for k in keep}, sort_keys=True)
         except ValueError:
             return link
-    return link.partition('#')[0]
+    u = urllib.parse.urlsplit(link.partition('#')[0])
+    query = urllib.parse.parse_qs(u.query)
+    params = '&'.join(f'{k}={query[k][0]}' for k in KEY_PARAMS if k in query)
+    return f'{u.scheme}://{u.netloc}{u.path.rstrip("/")}?{params}'
 
 
 def select_links(raw_configs, keys, tag):

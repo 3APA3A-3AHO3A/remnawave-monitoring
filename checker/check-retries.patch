@@ -1,0 +1,69 @@
+diff --git a/checker/checker.go b/checker/checker.go
+index 6cbf72a..5a8a062 100644
+--- a/checker/checker.go
++++ b/checker/checker.go
+@@ -7,6 +7,8 @@ import (
+ 	"net/http"
+ 	"net/http/httptrace"
+ 	"net/url"
++	"os"
++	"strconv"
+ 	"sync"
+ 	"time"
+ 
+@@ -150,15 +152,29 @@ func (pc *ProxyChecker) checkProxyInternal(proxy *models.ProxyConfig) {
+ 	var logMessage string
+ 	var latency time.Duration
+ 
+-	if pc.checkMethod == "ip" {
+-		checkSuccess, logMessage, latency, checkErr = pc.checkByIP(client)
+-	} else if pc.checkMethod == "status" {
+-		checkSuccess, logMessage, latency, checkErr = pc.checkByGen(client)
+-	} else if pc.checkMethod == "download" {
+-		checkSuccess, logMessage, latency, checkErr = pc.checkByDownload(client)
+-	} else {
+-		logger.Error("Invalid check method: %s", pc.checkMethod)
+-		return
++	// rwmon: a single failed request (e.g. EOF from a WARP/socks outbound that was
++	// idle) should not mark the proxy as down — retry a few times before failing.
++	attempts, retryDelay := checkAttempts()
++	for attempt := 1; attempt <= attempts; attempt++ {
++		if pc.checkMethod == "ip" {
++			checkSuccess, logMessage, latency, checkErr = pc.checkByIP(client)
++		} else if pc.checkMethod == "status" {
++			checkSuccess, logMessage, latency, checkErr = pc.checkByGen(client)
++		} else if pc.checkMethod == "download" {
++			checkSuccess, logMessage, latency, checkErr = pc.checkByDownload(client)
++		} else {
++			logger.Error("Invalid check method: %s", pc.checkMethod)
++			return
++		}
++		if checkErr == nil && checkSuccess {
++			if attempt > 1 {
++				logger.Warn("%s | Success on attempt %d/%d", proxy.Name, attempt, attempts)
++			}
++			break
++		}
++		if attempt < attempts {
++			time.Sleep(retryDelay)
++		}
+ 	}
+ 
+ 	if checkErr != nil {
+@@ -468,3 +484,16 @@ func (pc *ProxyChecker) GetProxies() []*models.ProxyConfig {
+ 	copy(result, pc.proxies)
+ 	return result
+ }
++
++// checkAttempts reads PROXY_CHECK_ATTEMPTS (default 1) and PROXY_CHECK_RETRY_DELAY
++// in seconds (default 5). Added by rwmon.
++func checkAttempts() (int, time.Duration) {
++	attempts, delay := 1, 5
++	if v, err := strconv.Atoi(os.Getenv("PROXY_CHECK_ATTEMPTS")); err == nil && v > 0 {
++		attempts = v
++	}
++	if v, err := strconv.Atoi(os.Getenv("PROXY_CHECK_RETRY_DELAY")); err == nil && v >= 0 {
++		delay = v
++	}
++	return attempts, time.Duration(delay) * time.Second
++}

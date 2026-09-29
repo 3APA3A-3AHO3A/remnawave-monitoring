@@ -18,6 +18,9 @@ geocheck_time = "14:30"   # GeoCheck всех нод, результат идё�
 
 [checks]
 interval = 300            # как часто проверять хосты, секунд
+attempts = 3              # сколько раз пробовать, прежде чем считать проверку неудачной
+retry_delay = 5           # пауза между попытками, секунд
+concurrency = 20          # сколько хостов проверять одновременно (0 — все сразу)
 # Что открываем через ноду:
 url_xray = "https://www.google.com/generate_204"        # напрямую (DIRECT)
 url_warp = "https://icanhazip.com"                      # домен из geosite:category-ip-geo-detect → WARP

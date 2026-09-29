@@ -121,6 +121,11 @@ class LinksTest(unittest.TestCase):
         self.assertEqual([c['name'] for c in checks], ['Швеция 1', 'LTE 1', 'Швеция 1 · Резерв'])
         self.assertFalse(checks[1]['lite'])              # в резерве полный — проверяем полностью
         self.assertEqual(links.link_remark(checks[0]['link']), 'Швеция 1')
+        # один и тот же хост, у панелей разные fp и sni — проверяется один раз
+        a = 'vless://u@1.1.1.1:443?type=tcp&security=reality&pbk=K&sni=a.com&fp=edge#A'
+        b = 'vless://u@1.1.1.1:443?type=tcp&security=reality&pbk=K&sni=b.com&fp=firefox&sid=1#B'
+        self.assertEqual(links.connection_key(a), links.connection_key(b))
+        self.assertNotEqual(links.connection_key(a), links.connection_key(a.replace('u@', 'v@')))
         self.assertEqual([(h['panel'], h['host'], h['name']) for h in hosts], [
             ('main', 'Швеция 1', 'Швеция 1'), ('main', 'LTE 1', 'LTE 1'),
             ('reserve', 'Швеция 1', 'Швеция 1'), ('reserve', 'LTE 1', 'LTE 1'),
@@ -329,6 +334,8 @@ class RenderTest(unittest.TestCase):
             env = load('checkers/warp.env')
             self.assertIn("PROXY_IP_CHECK_URL='https://icanhazip.com'", env)
             self.assertIn("SUBSCRIPTION_URL='file:///links/monitor.txt'", env)
+            self.assertIn("PROXY_CHECK_ATTEMPTS='3'", env)
+            self.assertIn("PROXY_CHECK_CONCURRENCY='20'", env)
             self.assertIn("monitor-xray.txt", load('checkers/xray.env'))
             self.assertTrue(os.path.isdir(os.path.join(out, 'grafana', 'plugins')))
 

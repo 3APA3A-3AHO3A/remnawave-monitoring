@@ -48,6 +48,9 @@ class Config:
     report_time: tuple = (15, 0)
     geocheck_time: tuple = (14, 30)
     check_interval: int = 300
+    check_attempts: int = 3         # попыток внутри одной проверки
+    check_retry_delay: int = 5      # пауза между попытками, секунд
+    check_concurrency: int = 20     # сколько хостов проверять одновременно
     url_xray: str = 'https://www.google.com/generate_204'
     url_warp: str = 'https://icanhazip.com'
     url_psiphon: str = 'http://ip-api.com/line/?fields=query'
@@ -158,6 +161,9 @@ def parse(data, env=os.environ):
         report_time=_time(sch.get('report_time', '15:00'), 'report_time'),
         geocheck_time=_time(sch.get('geocheck_time', '14:30'), 'geocheck_time'),
         check_interval=int(chk.get('interval', 300)),
+        check_attempts=max(1, int(chk.get('attempts', 3))),
+        check_retry_delay=max(0, int(chk.get('retry_delay', 5))),
+        check_concurrency=max(0, int(chk.get('concurrency', 20))),
         url_xray=chk.get('url_xray', Config.url_xray),
         url_warp=chk.get('url_warp', Config.url_warp),
         url_psiphon=chk.get('url_psiphon', Config.url_psiphon),
