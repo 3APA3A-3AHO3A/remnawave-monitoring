@@ -1,8 +1,6 @@
 apiVersion: 1
 
 # Текст сообщений в Telegram (HTML).
-# Знак доллара здесь не используется: Grafana подставляет в эти файлы
-# переменные окружения вида $VAR.
 templates:
   - orgId: 1
     name: rwmon

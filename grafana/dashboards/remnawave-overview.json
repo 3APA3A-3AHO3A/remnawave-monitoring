@@ -29,6 +29,7 @@
           "qryType": 1
         },
         "definition": "label_values(remnawave_node_outbound_upload_bytes, tag)",
+        "hide": 2,
         "regex": "/^(?!BLOCK$|RW_TB_OUTBOUND_BLOCK$|DIRECT$).*/",
         "multi": true,
         "includeAll": false,
@@ -58,7 +59,7 @@
         "uid": "rwmon-prometheus"
       },
       "gridPos": {
-        "h": 4,
+        "h": 5,
         "w": 6,
         "x": 0,
         "y": 0
@@ -71,7 +72,9 @@
             "uid": "rwmon-prometheus"
           },
           "expr": "sum(remnawave_node_online_users)",
-          "instant": true
+          "legendFormat": "",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -84,11 +87,14 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "value"
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "horizontal"
       },
       "fieldConfig": {
         "defaults": {
           "unit": "none",
+          "decimals": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -105,15 +111,15 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "Нод подключено",
-      "description": "",
+      "title": "Ноды на связи",
+      "description": "Сколько нод сейчас подключено к панели (из всех, включая выключенные)",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
       },
       "gridPos": {
-        "h": 4,
-        "w": 4,
+        "h": 5,
+        "w": 6,
         "x": 6,
         "y": 0
       },
@@ -125,7 +131,20 @@
             "uid": "rwmon-prometheus"
           },
           "expr": "sum(remnawave_node_status)",
-          "instant": true
+          "legendFormat": "на связи",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "count(remnawave_node_status)",
+          "legendFormat": "всего",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -138,11 +157,14 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "value"
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "horizontal"
       },
       "fieldConfig": {
         "defaults": {
           "unit": "none",
+          "decimals": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -159,16 +181,16 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "Нод всего",
-      "description": "",
+      "title": "Проблем сейчас",
+      "description": "Сколько проверок хостов сейчас не проходит (таблица справа)",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
       },
       "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 10,
+        "h": 5,
+        "w": 6,
+        "x": 12,
         "y": 0
       },
       "targets": [
@@ -178,8 +200,10 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "count(remnawave_node_status)",
-          "instant": true
+          "expr": "count(xray_proxy_status == 0) or vector(0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -192,17 +216,24 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "value"
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "horizontal"
       },
       "fieldConfig": {
         "defaults": {
           "unit": "none",
+          "decimals": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "color": "green",
                 "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
               }
             ]
           }
@@ -213,16 +244,16 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "Активных пользователей",
+      "title": "Активных подписок",
       "description": "",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
       },
       "gridPos": {
-        "h": 4,
-        "w": 5,
-        "x": 14,
+        "h": 5,
+        "w": 6,
+        "x": 18,
         "y": 0
       },
       "targets": [
@@ -233,7 +264,9 @@
             "uid": "rwmon-prometheus"
           },
           "expr": "sum(remnawave_users_status{status=\"ACTIVE\"})",
-          "instant": true
+          "legendFormat": "",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -246,11 +279,14 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "value"
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "horizontal"
       },
       "fieldConfig": {
         "defaults": {
           "unit": "none",
+          "decimals": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -266,90 +302,19 @@
     },
     {
       "id": 5,
-      "type": "stat",
-      "title": "Хостов со сбоем сейчас",
-      "description": "Сколько проверок хостов (Xray, WARP, Psiphon) сейчас не проходит",
+      "type": "table",
+      "title": "Ноды: сколько людей и трафика",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
       },
       "gridPos": {
-        "h": 4,
-        "w": 5,
-        "x": 19,
-        "y": 0
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "count(xray_proxy_status == 0) or vector(0)",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "none",
-        "textMode": "value"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 6,
-      "type": "row",
-      "title": "Клиенты и трафик",
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 4
-      },
-      "panels": []
-    },
-    {
-      "id": 7,
-      "type": "timeseries",
-      "title": "Клиенты по нодам",
-      "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "rwmon-prometheus"
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 24,
+        "h": 14,
+        "w": 11,
         "x": 0,
         "y": 5
       },
+      "description": "Трафик — сколько прошло через ноду за последние 24 часа",
       "targets": [
         {
           "refId": "A",
@@ -358,136 +323,10 @@
             "uid": "rwmon-prometheus"
           },
           "expr": "sum by (node_name) (remnawave_node_online_users * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
-          "legendFormat": "{{node_name}}"
-        }
-      ],
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ],
-          "sortBy": "Last *",
-          "sortDesc": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            }
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 8,
-      "type": "timeseries",
-      "title": "Трафик клиентов по нодам",
-      "description": "Скорость трафика пользователей через ноду (вход + выход)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "rwmon-prometheus"
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 24,
-        "x": 0,
-        "y": 14
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "sum by (node_name) ((sum by (node_uuid) (rate(remnawave_node_inbound_upload_bytes[5m]) + rate(remnawave_node_inbound_download_bytes[5m]))) * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
-          "legendFormat": "{{node_name}}"
-        }
-      ],
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ],
-          "sortBy": "Last *",
-          "sortDesc": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps",
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            }
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 9,
-      "type": "row",
-      "title": "Аутбаунды (Psiphon, WARP и др.)",
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 23
-      },
-      "panels": []
-    },
-    {
-      "id": 10,
-      "type": "timeseries",
-      "title": "Аутбаунд $outbound: трафик по нодам",
-      "description": "Сверху — ответы из аутбаунда, снизу — запросы в него. Запросы есть, а ответов нет — аутбаунд сломан.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "rwmon-prometheus"
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 0,
-        "y": 24
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "sum by (node_name) ((sum by (node_uuid) (rate(remnawave_node_outbound_download_bytes{tag=\"$outbound\"}[5m]))) * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
-          "legendFormat": "{{node_name}} ↓"
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table"
         },
         {
           "refId": "B",
@@ -495,460 +334,908 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "-sum by (node_name) ((sum by (node_uuid) (rate(remnawave_node_outbound_upload_bytes{tag=\"$outbound\"}[5m]))) * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
-          "legendFormat": "{{node_name}} ↑"
+          "expr": "sum by (node_name) ((sum by (node_uuid) (increase(remnawave_node_inbound_upload_bytes[24h]) + increase(remnawave_node_inbound_download_bytes[24h]))) * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "node_name",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true
+            },
+            "renameByName": {
+              "node_name": "Нода",
+              "Value #A": "Клиентов сейчас",
+              "Value #B": "Трафик за сутки"
+            },
+            "indexByName": {
+              "node_name": 0,
+              "Value #A": 1,
+              "Value #B": 2
+            }
+          }
         }
       ],
       "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ],
-          "sortBy": "Last *",
-          "sortDesc": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Клиентов сейчас",
+            "desc": true
+          }
+        ],
+        "footer": {
+          "show": false
         }
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "Bps",
           "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            }
+            "align": "auto"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Клиентов сейчас"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic",
+                  "valueDisplayMode": "text"
+                }
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Трафик за сутки"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "decbytes"
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Нода"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 190
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Хосты: работает ли у клиента",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "rwmon-prometheus"
       },
-      "repeat": "outbound",
-      "repeatDirection": "h",
-      "maxPerRow": 2
+      "gridPos": {
+        "h": 14,
+        "w": 13,
+        "x": 11,
+        "y": 5
+      },
+      "description": "Проверка подключается к хосту как клиент. Подключение — нода принимает клиентов; WARP и Psiphon — через ноду открываются адреса, которые идут в эти аутбаунды.",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (name) (xray_proxy_status{check=\"xray\"})",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (name) (xray_proxy_status{check=\"warp\"})",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (name) (xray_proxy_status{check=\"psiphon\"})",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "name",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true
+            },
+            "renameByName": {
+              "name": "Хост",
+              "Value #A": "Подключение",
+              "Value #B": "WARP",
+              "Value #C": "Psiphon"
+            },
+            "indexByName": {
+              "name": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #C": 3
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Подключение",
+            "desc": false
+          }
+        ],
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "center"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "СБОЙ",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "OK",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "—",
+                  "color": "transparent",
+                  "index": 2
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Подключение|WARP|Psiphon"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Хост"
+            },
+            "properties": [
+              {
+                "id": "custom.align",
+                "value": "left"
+              },
+              {
+                "id": "mappings",
+                "value": []
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "type": "row",
+      "title": "Подробно: клиенты и трафик по времени",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "panels": [
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Клиенты по нодам",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 9,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "sum by (node_name) (remnawave_node_online_users * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
+              "legendFormat": "{{node_name}}"
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ],
+              "sortBy": "Last *",
+              "sortDesc": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Трафик клиентов по нодам",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 9,
+            "w": 24,
+            "x": 0,
+            "y": 9
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "sum by (node_name) ((sum by (node_uuid) (rate(remnawave_node_inbound_upload_bytes[5m]) + rate(remnawave_node_inbound_download_bytes[5m]))) * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
+              "legendFormat": "{{node_name}}"
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ],
+              "sortBy": "Last *",
+              "sortDesc": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          }
+        }
+      ]
     },
     {
       "id": 11,
       "type": "row",
-      "title": "Проверки хостов (xray-checker)",
-      "collapsed": false,
+      "title": "Подробно: Psiphon, WARP и другие аутбаунды",
+      "collapsed": true,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 33
+        "y": 20
       },
-      "panels": []
-    },
-    {
-      "id": 12,
-      "type": "state-timeline",
-      "title": "Xray жив",
-      "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "rwmon-prometheus"
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 8,
-        "x": 0,
-        "y": 34
-      },
-      "targets": [
+      "panels": [
         {
-          "refId": "A",
+          "id": 10,
+          "type": "timeseries",
+          "title": "Аутбаунд $outbound: трафик по нодам",
+          "description": "Сверху — ответы из аутбаунда, снизу — запросы в него. Запросы есть, а ответов нет — аутбаунд сломан.",
           "datasource": {
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "xray_proxy_status{check=\"xray\"}",
-          "legendFormat": "{{name}}"
-        }
-      ],
-      "options": {
-        "showValue": "never",
-        "mergeValues": true,
-        "rowHeight": 0.8,
-        "alignValue": "left",
-        "legend": {
-          "showLegend": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 0,
+            "y": 0
           },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          },
-          "mappings": [
+          "targets": [
             {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "сбой",
-                  "color": "red"
-                },
-                "1": {
-                  "text": "OK",
-                  "color": "green"
-                }
-              }
-            }
-          ]
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 13,
-      "type": "state-timeline",
-      "title": "WARP жив",
-      "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "rwmon-prometheus"
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 8,
-        "x": 8,
-        "y": 34
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "xray_proxy_status{check=\"warp\"}",
-          "legendFormat": "{{name}}"
-        }
-      ],
-      "options": {
-        "showValue": "never",
-        "mergeValues": true,
-        "rowHeight": 0.8,
-        "alignValue": "left",
-        "legend": {
-          "showLegend": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
               },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          },
-          "mappings": [
+              "expr": "sum by (node_name) ((sum by (node_uuid) (rate(remnawave_node_outbound_download_bytes{tag=\"$outbound\"}[5m]))) * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
+              "legendFormat": "{{node_name}} ↓"
+            },
             {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "сбой",
-                  "color": "red"
-                },
-                "1": {
-                  "text": "OK",
-                  "color": "green"
-                }
-              }
-            }
-          ]
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 14,
-      "type": "state-timeline",
-      "title": "Psiphon жив",
-      "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "rwmon-prometheus"
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 8,
-        "x": 16,
-        "y": 34
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "xray_proxy_status{check=\"psiphon\"}",
-          "legendFormat": "{{name}}"
-        }
-      ],
-      "options": {
-        "showValue": "never",
-        "mergeValues": true,
-        "rowHeight": 0.8,
-        "alignValue": "left",
-        "legend": {
-          "showLegend": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
               },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "сбой",
-                  "color": "red"
-                },
-                "1": {
-                  "text": "OK",
-                  "color": "green"
-                }
-              }
+              "expr": "-sum by (node_name) ((sum by (node_uuid) (rate(remnawave_node_outbound_upload_bytes{tag=\"$outbound\"}[5m]))) * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
+              "legendFormat": "{{node_name}} ↑"
             }
-          ]
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 15,
-      "type": "timeseries",
-      "title": "Задержка подключения к хостам",
-      "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "rwmon-prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 43
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "xray_proxy_latency_ms{check=\"xray\"} > 0",
-          "legendFormat": "{{name}}"
-        }
-      ],
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "lastNotNull",
-            "max"
           ],
-          "sortBy": "Last *",
-          "sortDesc": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ms",
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ],
+              "sortBy": "Last *",
+              "sortDesc": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
             }
-          }
-        },
-        "overrides": []
-      }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "repeat": "outbound",
+          "repeatDirection": "h",
+          "maxPerRow": 2
+        }
+      ]
     },
     {
       "id": 16,
       "type": "row",
-      "title": "Нагрузка нод",
-      "collapsed": false,
+      "title": "Подробно: история проверок хостов",
+      "collapsed": true,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 21
       },
-      "panels": []
+      "panels": [
+        {
+          "id": 12,
+          "type": "state-timeline",
+          "title": "Подключение",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 8,
+            "x": 0,
+            "y": 0
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "xray_proxy_status{check=\"xray\"}",
+              "legendFormat": "{{name}}"
+            }
+          ],
+          "options": {
+            "showValue": "never",
+            "mergeValues": true,
+            "rowHeight": 0.8,
+            "alignValue": "left",
+            "legend": {
+              "showLegend": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "сбой",
+                      "color": "red"
+                    },
+                    "1": {
+                      "text": "OK",
+                      "color": "green"
+                    }
+                  }
+                }
+              ]
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 13,
+          "type": "state-timeline",
+          "title": "WARP",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 8,
+            "x": 8,
+            "y": 0
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "xray_proxy_status{check=\"warp\"}",
+              "legendFormat": "{{name}}"
+            }
+          ],
+          "options": {
+            "showValue": "never",
+            "mergeValues": true,
+            "rowHeight": 0.8,
+            "alignValue": "left",
+            "legend": {
+              "showLegend": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "сбой",
+                      "color": "red"
+                    },
+                    "1": {
+                      "text": "OK",
+                      "color": "green"
+                    }
+                  }
+                }
+              ]
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 14,
+          "type": "state-timeline",
+          "title": "Psiphon",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 8,
+            "x": 16,
+            "y": 0
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "xray_proxy_status{check=\"psiphon\"}",
+              "legendFormat": "{{name}}"
+            }
+          ],
+          "options": {
+            "showValue": "never",
+            "mergeValues": true,
+            "rowHeight": 0.8,
+            "alignValue": "left",
+            "legend": {
+              "showLegend": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "сбой",
+                      "color": "red"
+                    },
+                    "1": {
+                      "text": "OK",
+                      "color": "green"
+                    }
+                  }
+                }
+              ]
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 15,
+          "type": "timeseries",
+          "title": "Задержка подключения к хостам",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 10
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "xray_proxy_latency_ms{check=\"xray\"} > 0",
+              "legendFormat": "{{name}}"
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ],
+              "sortBy": "Last *",
+              "sortDesc": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          }
+        }
+      ]
     },
     {
-      "id": 17,
-      "type": "timeseries",
-      "title": "CPU: load average 5 мин на ядро",
-      "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "rwmon-prometheus"
-      },
+      "id": 19,
+      "type": "row",
+      "title": "Подробно: нагрузка нод",
+      "collapsed": true,
       "gridPos": {
-        "h": 8,
-        "w": 12,
+        "h": 1,
+        "w": 24,
         "x": 0,
-        "y": 52
+        "y": 22
       },
-      "targets": [
+      "panels": [
         {
-          "refId": "A",
+          "id": 17,
+          "type": "timeseries",
+          "title": "CPU: load average 5 мин на ядро",
+          "description": "",
           "datasource": {
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (node_name) ((remnawave_node_cpu_load_avg_5m / remnawave_node_cpu_count) * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
-          "legendFormat": "{{node_name}}"
-        }
-      ],
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ],
-          "sortBy": "Last *",
-          "sortDesc": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 0
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "sum by (node_name) ((remnawave_node_cpu_load_avg_5m / remnawave_node_cpu_count) * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
+              "legendFormat": "{{node_name}}"
             }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ],
+              "sortBy": "Last *",
+              "sortDesc": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
           }
         },
-        "overrides": []
-      }
-    },
-    {
-      "id": 18,
-      "type": "timeseries",
-      "title": "Занятая память",
-      "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "rwmon-prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 52
-      },
-      "targets": [
         {
-          "refId": "A",
+          "id": 18,
+          "type": "timeseries",
+          "title": "Занятая память",
+          "description": "",
           "datasource": {
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (node_name) ((1 - remnawave_node_memory_free_bytes / remnawave_node_memory_total_bytes) * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
-          "legendFormat": "{{node_name}}"
-        }
-      ],
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ],
-          "sortBy": "Last *",
-          "sortDesc": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 0
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "sum by (node_name) ((1 - remnawave_node_memory_free_bytes / remnawave_node_memory_total_bytes) * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
+              "legendFormat": "{{node_name}}"
             }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ],
+              "sortBy": "Last *",
+              "sortDesc": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
           }
-        },
-        "overrides": []
-      }
+        }
+      ]
     }
   ]
 }

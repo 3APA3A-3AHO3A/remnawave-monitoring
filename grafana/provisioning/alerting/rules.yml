@@ -1,4 +1,4 @@
-# Правила алертов. Пороги берутся из .env (${VAR}).
+# Правила алертов. Значения __ВИДА__ подставляются из .env при старте Grafana.
 # Каждое выражение возвращает 1 для каждой проблемной ноды/хоста,
 # поэтому условие везде одно: «значение больше 0».
 apiVersion: 1
@@ -22,8 +22,8 @@ groups:
         expr: |-
           (
             (
-              max_over_time(remnawave_node_online_users[5m]) <= ${CLIENTS_DROP_MAX_NOW}
-              and on (node_uuid) avg_over_time(remnawave_node_online_users[1h] offset 10m) >= ${CLIENTS_DROP_MIN_AVG}
+              max_over_time(remnawave_node_online_users[5m]) <= __CLIENTS_DROP_MAX_NOW__
+              and on (node_uuid) avg_over_time(remnawave_node_online_users[1h] offset 10m) >= __CLIENTS_DROP_MIN_AVG__
               and on (node_uuid) remnawave_node_status == 1
             ) * 0 + 1
           ) * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info)
@@ -209,9 +209,9 @@ groups:
         expr: |-
           (
             (
-              sum by (node_uuid, tag) (increase(remnawave_node_outbound_upload_bytes{tag=~"${OUTBOUND_TAGS}"}[15m])) > 20480
+              sum by (node_uuid, tag) (increase(remnawave_node_outbound_upload_bytes{tag=~"__OUTBOUND_TAGS__"}[15m])) > 20480
               and on (node_uuid, tag)
-              sum by (node_uuid, tag) (increase(remnawave_node_outbound_download_bytes{tag=~"${OUTBOUND_TAGS}"}[15m])) < 0.1 * sum by (node_uuid, tag) (increase(remnawave_node_outbound_upload_bytes{tag=~"${OUTBOUND_TAGS}"}[15m]))
+              sum by (node_uuid, tag) (increase(remnawave_node_outbound_download_bytes{tag=~"__OUTBOUND_TAGS__"}[15m])) < 0.1 * sum by (node_uuid, tag) (increase(remnawave_node_outbound_upload_bytes{tag=~"__OUTBOUND_TAGS__"}[15m]))
             ) * 0 + 1
           ) * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info)
         instant: true

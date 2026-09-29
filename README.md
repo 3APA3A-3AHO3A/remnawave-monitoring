@@ -131,6 +131,8 @@ docker compose pull && docker compose up -d --build             # обновит
 | `OUTBOUND_TAGS` | `psiphon-out\|WARP` | аутбаунды для пассивной проверки |
 | `CHECK_INTERVAL` | `300` | как часто проверять хосты, секунд |
 
+После изменения порогов, чата или токена бота перезапустите Grafana: `docker compose up -d grafana` — значения подставляются в правила алертов при её старте.
+
 Если меняете `CHECK_INTERVAL`, поправьте `for` у правил проверок в `grafana/provisioning/alerting/rules.yml`. Там стоит `6m`, то есть «две неудачные проверки подряд».
 
 ## Несколько панелей

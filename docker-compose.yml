@@ -78,6 +78,7 @@ services:
       GF_NEWS_NEWS_FEED_ENABLED: "false"
       GF_DATE_FORMATS_DEFAULT_TIMEZONE: utc
       GF_USERS_DEFAULT_LANGUAGE: ru-RU
+      GF_PATHS_PROVISIONING: /tmp/rwmon-provisioning
       # Используются в provisioning (адрес Prometheus, алерты, Telegram)
       PROMETHEUS_PORT: ${PROMETHEUS_PORT:-9090}
       TG_BOT_TOKEN: ${TG_BOT_TOKEN:?заполните TG_BOT_TOKEN в .env}
@@ -86,8 +87,20 @@ services:
       CLIENTS_DROP_MIN_AVG: ${CLIENTS_DROP_MIN_AVG:-3}
       CLIENTS_DROP_MAX_NOW: ${CLIENTS_DROP_MAX_NOW:-1}
       OUTBOUND_TAGS: ${OUTBOUND_TAGS:-psiphon-out|WARP}
+    # Подставляем значения из .env в файлы алертов (__TG_BOT_TOKEN__ и т.п.)
+    # и запускаем Grafana как обычно
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        rm -rf /tmp/rwmon-provisioning
+        cp -r /etc/grafana/provisioning-src /tmp/rwmon-provisioning
+        for v in TG_BOT_TOKEN TG_CHAT_ID TG_TOPIC_ID CLIENTS_DROP_MIN_AVG CLIENTS_DROP_MAX_NOW OUTBOUND_TAGS; do
+          val=$$(printenv "$$v" | sed -e 's/[\\&#]/\\&/g')
+          sed -i "s#__$${v}__#$${val}#g" /tmp/rwmon-provisioning/alerting/*.yml
+        done
+        exec /run.sh
     volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/provisioning:/etc/grafana/provisioning-src:ro
       - ./grafana/dashboards:/etc/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     logging: *logging
