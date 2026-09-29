@@ -116,7 +116,7 @@ def table(title, pos, targets, transformations, overrides, desc='', sort=None, f
         'gridPos': pos, 'targets': targets, 'transformations': transformations,
         'options': {'showHeader': True, 'cellHeight': 'sm', 'sortBy': sort or [],
                     'footer': {'show': footer}},
-        'fieldConfig': {'defaults': {'custom': {'align': 'auto', 'filterable': False,
+        'fieldConfig': {'defaults': {'custom': {'align': 'auto', 'filterable': False, 'wrapHeaderText': True,
                                                 'cellOptions': {'type': 'auto'}},
                                      'noValue': '—'},
                         'overrides': overrides},
@@ -503,32 +503,52 @@ def build():
     # 9. GeoCheck: кто как видит ноды
     geo_node = f'* on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{{{F}, node=~"$node"}})'
 
+    # Короткие подписи колонок: длинные названия сервисов не влезают в узкие колонки
+    short = {'Google Search captcha': 'Google капча', 'YouTube Premium': 'YT Premium',
+             'YouTube Music': 'YT Music', 'Spotify signup': 'Spotify рег.',
+             'Reddit guest access': 'Reddit гость', 'Ookla Speedtest': 'Speedtest',
+             'Microsoft (Bing)': 'Bing', 'Amazon Prime Video': 'Prime Video',
+             'ChatGPT (web)': 'ChatGPT сайт', 'ChatGPT (app)': 'ChatGPT прил.',
+             'Cloudflare edge': 'CF edge', 'YouTube / GGC edge': 'YT GGC', 'Netflix Open Connect': 'Netflix OC',
+             'rdap.db.ripe.net': 'RIPE'}
+
     def geo_matrix(title, pos, groups, mappings, desc):
+        rename = {'node\\service': 'Нода', **short}
         return table(title, pos, [
             target(f'max by (node, service, value) (rwmon_geocheck{{group=~"{groups}", {F}}} {geo_node})',
                    'A', instant=True, fmt='table'),
         ], [
             {'id': 'groupingToMatrix', 'options': {'columnField': 'service', 'rowField': 'node',
                                                    'valueField': 'value', 'emptyValue': 'null'}},
-            {'id': 'organize', 'options': {'renameByName': {'node\\service': 'Нода'}}},
+            {'id': 'organize', 'options': {'renameByName': rename}},
         ], [
-            by_name('Нода', custom__minWidth=140),
-            by_regex('^(?!Нода$).*', custom__align='center', custom__width=90,
+            by_name('Нода', custom__width=190),
+            by_regex('^(?!Нода$).*', custom__align='center', custom__minWidth=58,
                      custom__cellOptions={'type': 'color-background', 'mode': 'basic'},
                      color={'mode': 'fixed', 'fixedColor': 'transparent'}, mappings=mappings),
         ], desc=desc, sort=[{'displayName': 'Нода', 'desc': False}])
     bad = [{'type': 'regex', 'options': {'pattern': '^(RU|BY)$', 'result': {'color': 'dark-red', 'index': 0}}}]
-    access = [{'type': 'regex', 'options': {'pattern': '^(available|yes|ok).*', 'result': {'color': 'dark-green', 'index': 0}}},
-              {'type': 'regex', 'options': {'pattern': '^(blocked|unavailable|no|restricted|denied).*',
-                                            'result': {'color': 'dark-red', 'index': 1}}}]
+    # «available (CA)» → «✓ CA», «blocked (RUS)» → «✗ RUS»: короче и читается с одного взгляда
+    ok_re, no_re = '(?:available|yes|ok)', '(?:blocked|unavailable|no|restricted|denied)'
+    access = [
+        {'type': 'regex', 'options': {'pattern': f'^{ok_re}\\s*\\((\\w+)\\)$',
+                                      'result': {'text': '✓ $1', 'color': 'dark-green', 'index': 0}}},
+        {'type': 'regex', 'options': {'pattern': f'^{ok_re}.*',
+                                      'result': {'text': '✓', 'color': 'dark-green', 'index': 1}}},
+        {'type': 'regex', 'options': {'pattern': f'^{no_re}\\s*\\((\\w+)\\)$',
+                                      'result': {'text': '✗ $1', 'color': 'dark-red', 'index': 2}}},
+        {'type': 'regex', 'options': {'pattern': f'^{no_re}.*',
+                                      'result': {'text': '✗', 'color': 'dark-red', 'index': 3}}},
+    ]
     geo = [
-        geo_matrix('Как сервисы видят ноды', {'h': 10, 'w': 24, 'x': 0, 'y': y + 1}, 'services', bad,
-                   'Страна, которую определяет каждый сервис (последний GeoCheck). Красным — RU и BY'),
-        geo_matrix('Доступ к сервисам', {'h': 10, 'w': 24, 'x': 0, 'y': y + 11}, 'stash', access,
-                   'Открывается ли сервис с IP ноды (Netflix, ChatGPT и т.п.) и в каком регионе'),
-        geo_matrix('GeoIP-базы и CDN', {'h': 10, 'w': 24, 'x': 0, 'y': y + 21}, 'geoip|cdn', bad,
+        geo_matrix('Как сервисы видят ноды', {'h': 16, 'w': 24, 'x': 0, 'y': y + 1}, 'services', bad,
+                   'Страна, которую определяет каждый сервис (последний GeoCheck). Красным — RU и BY. '
+                   'yes/no — ответы на вопросы вроде «показывает ли Google капчу»'),
+        geo_matrix('Доступ к сервисам', {'h': 16, 'w': 24, 'x': 0, 'y': y + 17}, 'stash', access,
+                   'Открывается ли сервис с IP ноды: ✓ — да, ✗ — нет, рядом — регион, который он определил'),
+        geo_matrix('GeoIP-базы и CDN', {'h': 16, 'w': 24, 'x': 0, 'y': y + 33}, 'geoip|cdn', bad,
                    'Что о стране IP ноды записано в базах GeoIP и что видят CDN'),
-        table('IP нод', {'h': 10, 'w': 24, 'x': 0, 'y': y + 31}, [
+        table('IP нод', {'h': 16, 'w': 24, 'x': 0, 'y': y + 49}, [
             target(f'max by (node, ip, network, ip_type, place, consensus) (rwmon_geocheck_info{{{F}}} {geo_node})',
                    'A', instant=True, fmt='table'),
             target(f'max by (node) (rwmon_geocheck_risk{{{F}}} {geo_node})', 'B', instant=True, fmt='table'),
@@ -544,6 +564,8 @@ def build():
                                  'place': 'Место', 'consensus': 'Консенсус GeoIP', 'Value #B': 'риск',
                                  'Value #C': 'проверено'}}},
         ], [
+            by_name('Нода', custom__width=190),
+            by_name('IP', custom__width=140),
             by_name('риск', custom__width=70, custom__cellOptions={'type': 'color-text'},
                     thresholds={'mode': 'absolute', 'steps': [{'color': 'text', 'value': None},
                                                               {'color': YELLOW, 'value': 30},

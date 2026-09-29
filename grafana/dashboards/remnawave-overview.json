@@ -926,6 +926,7 @@
           "custom": {
             "align": "auto",
             "filterable": false,
+            "wrapHeaderText": true,
             "cellOptions": {
               "type": "auto"
             }
@@ -1677,6 +1678,7 @@
           "custom": {
             "align": "auto",
             "filterable": false,
+            "wrapHeaderText": true,
             "cellOptions": {
               "type": "auto"
             }
@@ -1895,6 +1897,7 @@
           "custom": {
             "align": "auto",
             "filterable": false,
+            "wrapHeaderText": true,
             "cellOptions": {
               "type": "auto"
             }
@@ -2137,6 +2140,7 @@
           "custom": {
             "align": "auto",
             "filterable": false,
+            "wrapHeaderText": true,
             "cellOptions": {
               "type": "auto"
             }
@@ -3321,6 +3325,7 @@
               "custom": {
                 "align": "auto",
                 "filterable": false,
+                "wrapHeaderText": true,
                 "cellOptions": {
                   "type": "auto"
                 }
@@ -3450,6 +3455,7 @@
               "custom": {
                 "align": "auto",
                 "filterable": false,
+                "wrapHeaderText": true,
                 "cellOptions": {
                   "type": "auto"
                 }
@@ -3579,6 +3585,7 @@
               "custom": {
                 "align": "auto",
                 "filterable": false,
+                "wrapHeaderText": true,
                 "cellOptions": {
                   "type": "auto"
                 }
@@ -3896,13 +3903,13 @@
           "id": 31,
           "type": "table",
           "title": "Как сервисы видят ноды",
-          "description": "Страна, которую определяет каждый сервис (последний GeoCheck). Красным — RU и BY",
+          "description": "Страна, которую определяет каждый сервис (последний GeoCheck). Красным — RU и BY. yes/no — ответы на вопросы вроде «показывает ли Google капчу»",
           "datasource": {
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
           "gridPos": {
-            "h": 10,
+            "h": 16,
             "w": 24,
             "x": 0,
             "y": 46
@@ -3935,7 +3942,21 @@
               "id": "organize",
               "options": {
                 "renameByName": {
-                  "node\\service": "Нода"
+                  "node\\service": "Нода",
+                  "Google Search captcha": "Google капча",
+                  "YouTube Premium": "YT Premium",
+                  "YouTube Music": "YT Music",
+                  "Spotify signup": "Spotify рег.",
+                  "Reddit guest access": "Reddit гость",
+                  "Ookla Speedtest": "Speedtest",
+                  "Microsoft (Bing)": "Bing",
+                  "Amazon Prime Video": "Prime Video",
+                  "ChatGPT (web)": "ChatGPT сайт",
+                  "ChatGPT (app)": "ChatGPT прил.",
+                  "Cloudflare edge": "CF edge",
+                  "YouTube / GGC edge": "YT GGC",
+                  "Netflix Open Connect": "Netflix OC",
+                  "rdap.db.ripe.net": "RIPE"
                 }
               }
             }
@@ -3958,6 +3979,7 @@
               "custom": {
                 "align": "auto",
                 "filterable": false,
+                "wrapHeaderText": true,
                 "cellOptions": {
                   "type": "auto"
                 }
@@ -3972,8 +3994,8 @@
                 },
                 "properties": [
                   {
-                    "id": "custom.minWidth",
-                    "value": 140
+                    "id": "custom.width",
+                    "value": 190
                   }
                 ]
               },
@@ -3988,8 +4010,8 @@
                     "value": "center"
                   },
                   {
-                    "id": "custom.width",
-                    "value": 90
+                    "id": "custom.minWidth",
+                    "value": 58
                   },
                   {
                     "id": "custom.cellOptions",
@@ -4029,16 +4051,16 @@
           "id": 32,
           "type": "table",
           "title": "Доступ к сервисам",
-          "description": "Открывается ли сервис с IP ноды (Netflix, ChatGPT и т.п.) и в каком регионе",
+          "description": "Открывается ли сервис с IP ноды: ✓ — да, ✗ — нет, рядом — регион, который он определил",
           "datasource": {
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
           "gridPos": {
-            "h": 10,
+            "h": 16,
             "w": 24,
             "x": 0,
-            "y": 56
+            "y": 62
           },
           "targets": [
             {
@@ -4068,7 +4090,21 @@
               "id": "organize",
               "options": {
                 "renameByName": {
-                  "node\\service": "Нода"
+                  "node\\service": "Нода",
+                  "Google Search captcha": "Google капча",
+                  "YouTube Premium": "YT Premium",
+                  "YouTube Music": "YT Music",
+                  "Spotify signup": "Spotify рег.",
+                  "Reddit guest access": "Reddit гость",
+                  "Ookla Speedtest": "Speedtest",
+                  "Microsoft (Bing)": "Bing",
+                  "Amazon Prime Video": "Prime Video",
+                  "ChatGPT (web)": "ChatGPT сайт",
+                  "ChatGPT (app)": "ChatGPT прил.",
+                  "Cloudflare edge": "CF edge",
+                  "YouTube / GGC edge": "YT GGC",
+                  "Netflix Open Connect": "Netflix OC",
+                  "rdap.db.ripe.net": "RIPE"
                 }
               }
             }
@@ -4091,6 +4127,7 @@
               "custom": {
                 "align": "auto",
                 "filterable": false,
+                "wrapHeaderText": true,
                 "cellOptions": {
                   "type": "auto"
                 }
@@ -4105,8 +4142,8 @@
                 },
                 "properties": [
                   {
-                    "id": "custom.minWidth",
-                    "value": 140
+                    "id": "custom.width",
+                    "value": 190
                   }
                 ]
               },
@@ -4121,8 +4158,8 @@
                     "value": "center"
                   },
                   {
-                    "id": "custom.width",
-                    "value": 90
+                    "id": "custom.minWidth",
+                    "value": 58
                   },
                   {
                     "id": "custom.cellOptions",
@@ -4144,8 +4181,9 @@
                       {
                         "type": "regex",
                         "options": {
-                          "pattern": "^(available|yes|ok).*",
+                          "pattern": "^(?:available|yes|ok)\\s*\\((\\w+)\\)$",
                           "result": {
+                            "text": "✓ $1",
                             "color": "dark-green",
                             "index": 0
                           }
@@ -4154,10 +4192,33 @@
                       {
                         "type": "regex",
                         "options": {
-                          "pattern": "^(blocked|unavailable|no|restricted|denied).*",
+                          "pattern": "^(?:available|yes|ok).*",
                           "result": {
-                            "color": "dark-red",
+                            "text": "✓",
+                            "color": "dark-green",
                             "index": 1
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(?:blocked|unavailable|no|restricted|denied)\\s*\\((\\w+)\\)$",
+                          "result": {
+                            "text": "✗ $1",
+                            "color": "dark-red",
+                            "index": 2
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(?:blocked|unavailable|no|restricted|denied).*",
+                          "result": {
+                            "text": "✗",
+                            "color": "dark-red",
+                            "index": 3
                           }
                         }
                       }
@@ -4178,10 +4239,10 @@
             "uid": "rwmon-prometheus"
           },
           "gridPos": {
-            "h": 10,
+            "h": 16,
             "w": 24,
             "x": 0,
-            "y": 66
+            "y": 78
           },
           "targets": [
             {
@@ -4211,7 +4272,21 @@
               "id": "organize",
               "options": {
                 "renameByName": {
-                  "node\\service": "Нода"
+                  "node\\service": "Нода",
+                  "Google Search captcha": "Google капча",
+                  "YouTube Premium": "YT Premium",
+                  "YouTube Music": "YT Music",
+                  "Spotify signup": "Spotify рег.",
+                  "Reddit guest access": "Reddit гость",
+                  "Ookla Speedtest": "Speedtest",
+                  "Microsoft (Bing)": "Bing",
+                  "Amazon Prime Video": "Prime Video",
+                  "ChatGPT (web)": "ChatGPT сайт",
+                  "ChatGPT (app)": "ChatGPT прил.",
+                  "Cloudflare edge": "CF edge",
+                  "YouTube / GGC edge": "YT GGC",
+                  "Netflix Open Connect": "Netflix OC",
+                  "rdap.db.ripe.net": "RIPE"
                 }
               }
             }
@@ -4234,6 +4309,7 @@
               "custom": {
                 "align": "auto",
                 "filterable": false,
+                "wrapHeaderText": true,
                 "cellOptions": {
                   "type": "auto"
                 }
@@ -4248,8 +4324,8 @@
                 },
                 "properties": [
                   {
-                    "id": "custom.minWidth",
-                    "value": 140
+                    "id": "custom.width",
+                    "value": 190
                   }
                 ]
               },
@@ -4264,8 +4340,8 @@
                     "value": "center"
                   },
                   {
-                    "id": "custom.width",
-                    "value": 90
+                    "id": "custom.minWidth",
+                    "value": 58
                   },
                   {
                     "id": "custom.cellOptions",
@@ -4311,10 +4387,10 @@
             "uid": "rwmon-prometheus"
           },
           "gridPos": {
-            "h": 10,
+            "h": 16,
             "w": 24,
             "x": 0,
-            "y": 76
+            "y": 94
           },
           "targets": [
             {
@@ -4407,6 +4483,7 @@
               "custom": {
                 "align": "auto",
                 "filterable": false,
+                "wrapHeaderText": true,
                 "cellOptions": {
                   "type": "auto"
                 }
@@ -4414,6 +4491,30 @@
               "noValue": "—"
             },
             "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Нода"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 190
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "IP"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 140
+                  }
+                ]
+              },
               {
                 "matcher": {
                   "id": "byName",
