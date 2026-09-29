@@ -46,6 +46,9 @@ def build_text(d, nodes, geo_run, cfg):
     if cfg.panel_name:
         head += f' · {esc(cfg.panel_name)}'
     lines = [head, f'<i>{stamp:%d.%m.%Y %H:%M} UTC</i>', '']
+    if not d['status'] and not d['peak']:
+        lines += ['❗️ <b>Нет метрик панели в Prometheus</b> — цифры ниже пустые. '
+                  'Проверьте: <code>docker compose exec reporter python -m rwmon check</code>', '']
 
     # GeoCheck — наверху, изменения подсвечены
     lines += geocheck.telegram_section(geo_run)

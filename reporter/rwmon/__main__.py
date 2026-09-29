@@ -78,10 +78,26 @@ def check(cfg):
     step('API панели, ноды', lambda: f'{len(rw.nodes())} шт.')
     step(f'служебный пользователь «{cfg.monitor_username}» и хосты {cfg.monitor_host_tag}',
          lambda: ', '.join(links.refresh(rw, cfg)) or 'хостов с тегом нет')
-    step('Prometheus, метрики панели',
-         lambda: 'есть' if prom.query('up{job="remnawave"} == 1') else 'НЕТ — проверьте RW_METRICS_* в .env')
-    step('Prometheus, проверки хостов',
-         lambda: f'{len(prom.query("xray_proxy_status"))} результатов (первые появятся через несколько минут)')
+    def panel_metrics():
+        states = prom.targets('remnawave')
+        if not states:
+            raise RuntimeError('Prometheus не знает о метриках панели — проверьте prometheus.yml')
+        url, health, error = states[0]
+        if health == 'up':
+            return f'есть ({url})'
+        if health == 'unknown':
+            raise RuntimeError('Prometheus ещё не успел опросить панель — повторите check через минуту')
+        hint = ' — неверный RW_METRICS_USER / RW_METRICS_PASS' if '401' in error else ''
+        raise RuntimeError(f'{url}: {error}{hint}')
+
+    def checks():
+        n = len(prom.query('xray_proxy_status'))
+        if n:
+            return f'{n} результатов'
+        return 'пока нет — первые появятся через 5–10 минут после запуска'
+
+    step('Prometheus, метрики панели', panel_metrics)
+    step('Prometheus, проверки хостов', checks)
     step('Telegram-бот', lambda: '@' + tg.get_me().get('username', '?'))
     return 0 if ok else 1
 
