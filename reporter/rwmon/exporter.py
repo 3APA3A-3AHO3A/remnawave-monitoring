@@ -303,7 +303,7 @@ def check_site(site, timeout=15):
     """Открыть страницу как браузер: код ответа, время, ключевое слово и срок сертификата."""
     out = {'up': 0, 'code': None, 'seconds': None, 'cert': None}
     started = time.time()
-    req = urllib.request.Request(site.url, headers={'User-Agent': 'Mozilla/5.0 rwmon'})
+    req = urllib.request.Request(site.url, headers=BROWSER)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             body = r.read(512 * 1024).decode('utf-8', 'replace')
@@ -356,6 +356,14 @@ def host_lines(hosts, lines, panels=()):
 
 
 SITE_EVERY = 60     # как часто проверять сайты, секунд
+# Представляемся обычным Chrome: страница подписки Remnawave на «полубраузер»
+# (например «Mozilla/5.0 rwmon») отвечает 502, а на настоящий браузер — 200.
+BROWSER = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
+                  'Chrome/130.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'ru,en;q=0.9',
+}
 
 
 def _warn(state, key, err):
