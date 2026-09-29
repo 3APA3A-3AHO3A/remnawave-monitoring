@@ -182,6 +182,8 @@ class MiscTest(unittest.TestCase):
         self.assertEqual(links.link_address('vless://u@1.2.3.4:8443?x=1#n'), '1.2.3.4:8443')
         self.assertEqual(links.link_address('hysteria2://p@5.6.7.8:20009/?a=1#n'), '5.6.7.8:20009')
         self.assertEqual(links.link_address('vless://u@cdn.x.org?type=ws#n'), 'cdn.x.org:443')
+        self.assertTrue(links.is_udp('hysteria2://p@1.2.3.4:20009#n'))
+        self.assertFalse(links.is_udp('vless://u@1.2.3.4:443#n'))
 
     def test_sites_probes(self):
         cfg = make_cfg(site=[{'url': 'https://fixerrorvpn.com'}, {'name': 'Панель', 'url': 'https://p.x/', 'keyword': 'Remnawave'}],
@@ -193,7 +195,8 @@ class MiscTest(unittest.TestCase):
                 make_cfg(**bad)
         with tempfile.TemporaryDirectory() as d:
             cfg.links_file = os.path.join(d, 'monitor.txt')
-            links.write_probe_targets(cfg, [{'address': '1.2.3.4:443'}, {'address': '1.2.3.4:443'}, {'address': ''}])
+            links.write_probe_targets(cfg, [{'address': '1.2.3.4:443'}, {'address': '1.2.3.4:443'}, {'address': ''},
+                                            {'address': '5.6.7.8:20009', 'udp': True}])
             with open(os.path.join(d, 'probe-tcp.json')) as f:
                 self.assertEqual(json.load(f), [{'targets': ['1.2.3.4:443'], 'labels': {}}])
             with open(os.path.join(d, 'probe-http.json')) as f:

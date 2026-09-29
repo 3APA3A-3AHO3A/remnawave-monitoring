@@ -93,6 +93,15 @@ def connection_key(link):
     return f'{u.scheme}://{server}{u.path.rstrip("/")}?{params}'
 
 
+# Протоколы поверх UDP: TCP-пробой их не проверить (порт не принимает TCP —
+# проба покажет «не открывается», хотя всё работает), поэтому в пробы из РФ не берём.
+UDP_SCHEMES = ('hysteria2', 'hy2', 'hysteria', 'tuic', 'wireguard', 'wg')
+
+
+def is_udp(link):
+    return link.split('://', 1)[0].lower() in UDP_SCHEMES
+
+
 def link_address(link):
     """Адрес хоста из ссылки: «сервер:порт» — так же его показывает xray-checker."""
     if link.startswith('vmess://'):
@@ -187,7 +196,7 @@ def combine(per_panel):
                     name, n = f'{base} #{n}', n + 1
                 used.add(name)
                 c = checks[key] = {'name': name, 'link': set_remark(e['link'], name), 'lite': e['lite'],
-                                   'address': link_address(e['link'])}
+                                   'address': link_address(e['link']), 'udp': is_udp(e['link'])}
             elif not e['lite']:
                 c['lite'] = False                    # полная проверка покрывает лёгкую
             hosts.append({'panel': p.id, 'panel_title': p.title, 'host': e['host'],
@@ -198,7 +207,7 @@ def combine(per_panel):
 def write_probe_targets(cfg, checks):
     """Списки для проб из РФ (Prometheus file_sd): адреса хостов и сайты."""
     folder = os.path.dirname(cfg.links_file) or '.'
-    addresses = sorted({c['address'] for c in checks if c.get('address')})
+    addresses = sorted({c['address'] for c in checks if c.get('address') and not c.get('udp')})
     write_if_changed(os.path.join(folder, 'probe-tcp.json'),
                      json.dumps([{'targets': addresses, 'labels': {}}], ensure_ascii=False))
     write_if_changed(os.path.join(folder, 'probe-http.json'), json.dumps(
