@@ -117,6 +117,9 @@ def check(cfg):
             raise RuntimeError('Prometheus ещё не успел опросить reporter — повторите через минуту')
         raise RuntimeError(f'{url}: {error}')
 
+    print('Сервер')
+    step('порты проверок 21000–23999', ports_check)
+
     print('Prometheus')
     step('метрики панелей от reporter', reporter_metrics)
     step('проверки хостов', lambda: f'{len(prom.query("xray_proxy_status"))} результатов '
@@ -124,11 +127,48 @@ def check(cfg):
     return 0 if ok else 1
 
 
+PORT_RANGES = ((21000, 21999), (22000, 22999), (23000, 23999))   # см. render.CHECKERS
+
+
+def _parse_ports(text):
+    out = set()
+    for part in text.replace(' ', ',').split(','):
+        if '-' in part:
+            a, b = part.split('-')
+            out.update(range(int(a), int(b) + 1))
+        elif part.strip():
+            out.add(int(part))
+    return out
+
+
+def ports_check(proc='/proc/sys/net/ipv4'):
+    """Проверкам нужны порты 21000+, 22000+, 23000+ на 127.0.0.1. Если система раздаёт
+    эти же порты исходящим соединениям, проверка однажды не сможет запуститься
+    («address already in use») и молча перестанет проверять новые хосты."""
+    with open(f'{proc}/ip_local_port_range') as f:
+        low, high = map(int, f.read().split())
+    try:
+        with open(f'{proc}/ip_local_reserved_ports') as f:
+            reserved = _parse_ports(f.read().strip())
+    except OSError:
+        reserved = set()
+    clash = [f'{a}–{b}' for a, b in PORT_RANGES
+             if a <= high and b >= low and not set(range(a, b + 1)) <= reserved]
+    if clash:
+        raise RuntimeError(
+            f'система раздаёт исходящим соединениям порты {low}–{high}, и среди них порты проверок '
+            f'{", ".join(clash)}. Закрепите их: echo "net.ipv4.ip_local_reserved_ports = '
+            '21000-21999,22000-22999,23000-23999" | sudo tee /etc/sysctl.d/90-rwmon.conf '
+            '&& sudo sysctl -p /etc/sysctl.d/90-rwmon.conf')
+    return 'свободны' if low > 23999 else 'закреплены за проверками'
+
+
 def _hosts(rw, p):
-    full, lite, names, lite_names = links.panel_links(rw, p)
-    parts = [f'{len(full)} полных']
+    entries = links.panel_links(rw, p)
+    lite = [e['host'] for e in entries if e['lite']]
+    parts = [f'{len(entries) - len(lite)} полных']
     if lite:
-        parts.append(f'{len(lite)} лёгких ({", ".join(lite_names)})')
+        parts.append(f'{len(lite)} лёгких ({", ".join(lite)})')
     return ', '.join(parts)
 
 
@@ -222,10 +262,21 @@ def main(argv):
     elif cmd == 'check':
         return check(cfg)
     elif cmd == 'links':
-        for p, names, lite_names in links.refresh(cfg, clients):
+        per_panel, checks = links.refresh(cfg, clients)
+        by_name = {c['name']: c for c in checks}
+        for p, entries in per_panel:
             print(f'{p.title}:')
-            print('\n'.join(f'  {n}' for n in names) or '  — полных нет')
-            print('\n'.join(f'  {n} (только «Подключение»)' for n in lite_names))
+            for h in (h for h in links.HOSTS if h['panel'] == p.id):
+                notes = []
+                if h['lite']:
+                    notes.append('только «Подключение»')
+                if h['name'] != h['host'] + p.host_suffix:
+                    notes.append(f'общая проверка с «{h["name"]}»')
+                print(f'  {h["host"]}' + (f' ({"; ".join(notes)})' if notes else ''))
+            if not entries:
+                print('  — хостов нет')
+        print(f'Всего проверок: {len(checks)} ({sum(1 for c in checks if not c["lite"])} полных), '
+              f'хостов в панелях: {len(links.HOSTS)}')
     elif cmd == 'geocheck':
         geocheck.run(cfg, clients)
         if '--send' in argv:

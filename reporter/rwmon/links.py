@@ -1,10 +1,15 @@
 """Список хостов для xray-checker.
 
 У каждой панели берём подписку служебного пользователя и оставляем только
-хосты с тегами host_tag (все три проверки) и host_tag_lite (только «Xray жив»).
-К названиям хостов добавляется host_suffix панели, чтобы одинаковые хосты
-разных панелей не смешались. Результат — два файла со ссылками, их читают
-контейнеры xray-checker.
+хосты с тегами host_tag (все три проверки) и host_tag_lite (только «Подключение»).
+
+Если в двух панелях один и тот же хост (ссылка совпадает всем, кроме названия —
+так бывает, когда панели делят ноды через маппер UUID), он проверяется один раз,
+а результат засчитывается обеим панелям. Какой хост какой панели чем проверяется,
+reporter отдаёт в Prometheus метрикой rwmon_host — по ней алерты и дашборд
+понимают, к какой панели относится проверка.
+
+Результат — два файла со ссылками, их читают контейнеры xray-checker.
 """
 import base64
 import json
@@ -41,25 +46,40 @@ def fix_link(link):
     return link
 
 
-def rename(link, suffix):
-    """Дописать к названию хоста в ссылке подпись панели."""
-    if not suffix:
-        return link
+def set_remark(link, name):
+    """Поставить хосту в ссылке новое название (для vmess — поле ps)."""
     if link.startswith('vmess://'):
         try:
             payload = link[8:] + '=' * (-len(link[8:]) % 4)
             data = json.loads(base64.b64decode(payload))
-            data['ps'] = data.get('ps', '') + suffix
+            data['ps'] = name
             return 'vmess://' + base64.b64encode(json.dumps(data, ensure_ascii=False).encode()).decode()
         except ValueError:
             return link
-    base, _, remark = link.partition('#')
-    return base + '#' + urllib.parse.quote(urllib.parse.unquote(remark) + suffix, safe='')
+    return link.partition('#')[0] + '#' + urllib.parse.quote(name, safe='')
+
+
+def rename(link, suffix):
+    """Дописать к названию хоста в ссылке подпись панели."""
+    return set_remark(link, link_remark(link) + suffix) if suffix else link
+
+
+def connection_key(link):
+    """Ссылка без названия: у одинаковых хостов разных панелей она совпадает."""
+    if link.startswith('vmess://'):
+        try:
+            payload = link[8:] + '=' * (-len(link[8:]) % 4)
+            data = json.loads(base64.b64decode(payload))
+            data.pop('ps', None)
+            return 'vmess://' + json.dumps(data, sort_keys=True)
+        except ValueError:
+            return link
+    return link.partition('#')[0]
 
 
 def select_links(raw_configs, keys, tag):
     """raw_configs — resolvedProxyConfigs из /raw, keys — ответ connection-keys.
-    Возвращает (ссылки, названия, названия без найденной ссылки)."""
+    Возвращает ([(ссылка, название)], названия без найденной ссылки)."""
     wanted = {}
     for c in raw_configs:
         meta = c.get('metadata') or {}
@@ -68,14 +88,14 @@ def select_links(raw_configs, keys, tag):
                 if name:
                     wanted[name] = meta.get('remark') or name
 
-    links, found = [], set()
+    pairs, seen = [], set()
     for link in (keys.get('enabledKeys') or []) + (keys.get('hiddenKeys') or []):
         remark = link_remark(link)
-        if remark in wanted and fix_link(link) not in links:
-            links.append(fix_link(link))
-            found.add(wanted[remark])
-    missing = sorted(set(wanted.values()) - found)
-    return links, sorted(found), missing
+        if remark in wanted and fix_link(link) not in seen:
+            seen.add(fix_link(link))
+            pairs.append((fix_link(link), wanted[remark]))
+    missing = sorted(set(wanted.values()) - {n for _, n in pairs})
+    return pairs, missing
 
 
 def write_if_changed(path, text):
@@ -96,48 +116,80 @@ def write_if_changed(path, text):
 
 
 def panel_links(rw, panel):
-    """Ссылки одной панели: (полные, лёгкие, названия, лёгкие названия)."""
+    """Хосты одной панели: [{'link', 'host', 'lite'}] — полные, потом лёгкие."""
     user = rw.user_by_username(panel.monitor_user)
     raw = rw.raw_subscription(user['shortUuid'])
     keys = rw.connection_keys(user['id'])
     configs = raw.get('resolvedProxyConfigs') or []
-    full, names, missing = select_links(configs, keys, panel.host_tag)
-    lite, lite_names, lite_missing = select_links(configs, keys, panel.host_tag_lite)
-    lite = [x for x in lite if x not in full]
-    lite_names = [n for n in lite_names if n not in names]
+    full, missing = select_links(configs, keys, panel.host_tag)
+    lite, lite_missing = select_links(configs, keys, panel.host_tag_lite)
+    full_links = {link for link, _ in full}
+    lite = [(link, name) for link, name in lite if link not in full_links]
     if missing or lite_missing:
         log('links', f'[{panel.title}] не нашёл ссылку для хостов: ' + ', '.join(missing + lite_missing))
     if not full and not lite:
         log('links', f'[{panel.title}] у пользователя «{panel.monitor_user}» нет хостов с тегами '
                      f'{panel.host_tag} / {panel.host_tag_lite}')
-    sfx = panel.host_suffix
-    return ([rename(x, sfx) for x in full], [rename(x, sfx) for x in lite],
-            [n + sfx for n in names], [n + sfx for n in lite_names])
+    return ([{'link': link, 'host': name, 'lite': False} for link, name in full] +
+            [{'link': link, 'host': name, 'lite': True} for link, name in lite])
+
+
+# Какие хосты каких панелей чем проверяются: [{panel, panel_title, host, name, lite}].
+# name — название в проверке (метка name у xray_proxy_status). Читает exporter.
+HOSTS = []
+
+
+def combine(per_panel):
+    """Склеить хосты всех панелей. Одинаковый хост (та же ссылка без названия)
+    проверяется один раз, а результат относится ко всем панелям, где он есть.
+    per_panel — [(panel, entries)]. Возвращает (проверки, хосты)."""
+    checks, hosts, used = {}, [], set()
+    for p, entries in per_panel:
+        for e in entries:
+            key = connection_key(e['link'])
+            c = checks.get(key)
+            if c is None:
+                name = e['host'] + p.host_suffix
+                base, n = name, 2
+                while name in used:                  # разные хосты с одним названием
+                    name, n = f'{base} #{n}', n + 1
+                used.add(name)
+                c = checks[key] = {'name': name, 'link': set_remark(e['link'], name), 'lite': e['lite']}
+            elif not e['lite']:
+                c['lite'] = False                    # полная проверка покрывает лёгкую
+            hosts.append({'panel': p.id, 'panel_title': p.title, 'host': e['host'],
+                          'name': c['name'], 'lite': e['lite']})
+    return list(checks.values()), hosts
 
 
 def refresh(cfg, clients):
     """Обновить файлы ссылок по всем панелям. Если панель не ответила —
     её хосты берём из прошлого удачного списка, чтобы проверки не пропали."""
+    global HOSTS
     folder = os.path.dirname(cfg.links_file) or '.'
-    full_all, lite_all, report = [], [], []
+    per_panel = []
     for p in cfg.panels:
         cache = os.path.join(folder, f'.panel-{p.id}.json')
         try:
-            full, lite, names, lite_names = panel_links(clients[p.id], p)
-            write_if_changed(cache, json.dumps([full, lite, names, lite_names], ensure_ascii=False))
+            entries = panel_links(clients[p.id], p)
+            write_if_changed(cache, json.dumps(entries, ensure_ascii=False))
         except Exception as e:
             log('links', f'[{p.title}] список хостов не обновлён: {e}')
             try:
                 with open(cache, encoding='utf-8') as f:
-                    full, lite, names, lite_names = json.load(f)
+                    entries = json.load(f)
+                if not isinstance(entries, list) or (entries and not isinstance(entries[0], dict)):
+                    entries = []                     # кэш старого формата
             except (OSError, ValueError):
-                full, lite, names, lite_names = [], [], [], []
-        full_all += full
-        lite_all += lite
-        report.append((p, names, lite_names))
-    changed = write_if_changed(cfg.links_file, '\n'.join(full_all) + '\n')
-    changed |= write_if_changed(cfg.links_file_xray, '\n'.join(full_all + lite_all) + '\n')
+                entries = []
+        per_panel.append((p, entries))
+    checks, HOSTS = combine(per_panel)
+    full = [c['link'] for c in checks if not c['lite']]
+    lite = [c['link'] for c in checks if c['lite']]
+    changed = write_if_changed(cfg.links_file, '\n'.join(full) + '\n')
+    changed |= write_if_changed(cfg.links_file_xray, '\n'.join(full + lite) + '\n')
     if changed:
-        log('links', 'список обновлён: ' + '; '.join(
-            f'{p.title} — {len(n)} полных + {len(ln)} лёгких' for p, n, ln in report))
-    return report
+        shared = len(HOSTS) - len(checks)
+        log('links', f'список обновлён: {len(full)} полных + {len(lite)} лёгких проверок'
+                     + (f', одинаковых хостов в разных панелях: {shared}' if shared else ''))
+    return per_panel, checks

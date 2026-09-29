@@ -36,19 +36,6 @@ def re2_escape(text):
 # ── Prometheus ───────────────────────────────────────────────
 
 def prometheus(cfg):
-    # метка panel у проверок хостов: по подписи в названии хоста
-    relabel = [
-        {'target_label': 'panel', 'replacement': cfg.panels[0].id},
-        {'target_label': 'panel_title', 'replacement': cfg.panels[0].title},
-    ]
-    for p in cfg.panels:
-        if not p.host_suffix:
-            continue
-        regex = '.*' + re2_escape(p.host_suffix)
-        relabel += [
-            {'source_labels': ['name'], 'regex': regex, 'target_label': 'panel', 'replacement': p.id},
-            {'source_labels': ['name'], 'regex': regex, 'target_label': 'panel_title', 'replacement': p.title},
-        ]
     return {
         'global': {'scrape_interval': '30s', 'evaluation_interval': '30s'},
         'scrape_configs': [
@@ -56,7 +43,8 @@ def prometheus(cfg):
             {'job_name': 'xray-checker', 'scrape_interval': '60s',
              'static_configs': [{'targets': [f'127.0.0.1:{port}'], 'labels': {'check': check}}
                                 for check, port in CHECKERS],
-             'metric_relabel_configs': relabel},
+             # к какой панели относится проверка, знает rwmon_host (см. links.py)
+             'metric_relabel_configs': [{'action': 'labeldrop', 'regex': 'sub_name|group_name'}]},
         ],
     }
 
@@ -87,13 +75,24 @@ def _rule(uid, title, expr, for_, summary, recovered, description, scope, severi
     }
 
 
+def host_checks(check, cond='== 0'):
+    """Результат проверки по каждому хосту каждой панели: rwmon_host × xray_proxy_status.
+    Один хост, общий для двух панелей, даёт две строки — по одной на панель."""
+    hosts = 'rwmon_host' if check == 'xray' else 'rwmon_host{lite="0"}'
+    return f'{hosts} * on (name) group_left (check) (xray_proxy_status{{check="{check}"}} {cond})'
+
+
 def _checker(check):
-    base = f'xray_proxy_status{{job="xray-checker", check="{check}"}} == 0'
     if check == 'xray':
-        return f'({base}) * 0 + 1'
+        return f'({host_checks("xray")}) * 0 + 1'
     # если хост не отвечает целиком — об этом уже скажет проверка «Подключение»
-    return (f'(({base}) unless on (panel, name) '
-            f'(xray_proxy_status{{job="xray-checker", check="xray"}} == 0)) * 0 + 1')
+    return (f'(({host_checks(check)}) unless on (name) '
+            f'(xray_proxy_status{{check="xray"}} == 0)) * 0 + 1')
+
+
+UNCHECKED = ('(rwmon_host unless on (name) xray_proxy_status{check="xray"})'
+             ' or (rwmon_host{lite="0"} unless on (name) xray_proxy_status{check="warp"})'
+             ' or (rwmon_host{lite="0"} unless on (name) xray_proxy_status{check="psiphon"})')
 
 
 def rules(cfg):
@@ -143,6 +142,11 @@ def rules(cfg):
         _rule('rwmon-reporter-down', 'reporter не отвечает', '(up{job="reporter"} == 0) * 0 + 1', '3m',
               'reporter не отвечает — данные панелей не собираются', 'reporter снова работает',
               'Посмотрите журнал: docker compose logs --tail 50 reporter', 'all'),
+        _rule('rwmon-hosts-unchecked', 'Хосты не проверяются', UNCHECKED, '20m',
+              'Хосты не проверяются', 'Хосты снова проверяются',
+              'Хост есть в панели, но результатов проверки нет. Обычно это значит, что xray-checker '
+              'не смог загрузить новый список хостов: docker compose logs --tail 30 checker-xray',
+              'all', severity='warning'),
         _rule('rwmon-checker-down', 'Не работает проверка хостов', '(up{job="xray-checker"} == 0) * 0 + 1', '5m',
               'Контейнер проверки хостов не отвечает', 'Проверка хостов снова работает',
               'docker compose logs --tail 50 checker-xray checker-warp checker-psiphon', 'all',
@@ -152,43 +156,44 @@ def rules(cfg):
                                          'interval': '1m', 'rules': r}]}
 
 
-def receiver(cfg, p):
-    """Имя и uid контакта Telegram панели. У первой — как в версии для одной панели,
-    чтобы Grafana обновила существующий контакт, а не создавала второй."""
-    if p is cfg.panels[0]:
-        return 'telegram', 'rwmon-telegram'
-    return f'telegram-{p.id}', f'rwmon-tg-{p.id}'
+def receivers(cfg):
+    """Контакт Telegram на каждый разный чат: {ключ чата: (имя, uid, telegram)}.
+    Первый — с именем и uid как в версии для одной панели, чтобы Grafana обновила
+    существующий контакт, а не создала второй."""
+    out = {}
+    for p in cfg.panels:
+        key = p.telegram.key
+        if key not in out:
+            if not out:
+                out[key] = ('telegram', 'rwmon-telegram', p.telegram)
+            else:
+                out[key] = (f'telegram-{p.id}', f'rwmon-tg-{p.id}', p.telegram)
+    return out
 
 
 def contact_points(cfg):
-    receivers = []
-    for p in cfg.panels:
-        settings = {'bottoken': p.telegram.bot_token, 'chatid': p.telegram.chat_id,
+    items = []
+    for name, uid, tg in receivers(cfg).values():
+        settings = {'bottoken': tg.bot_token, 'chatid': tg.chat_id,
                     'parse_mode': 'HTML', 'disable_web_page_preview': True,
                     'message': '{{ template "rwmon.message" . }}'}
-        if p.telegram.topic_id:
-            settings['message_thread_id'] = p.telegram.topic_id
-        name, uid = receiver(cfg, p)
-        receivers.append({'orgId': 1, 'name': name,
-                          'receivers': [{'uid': uid, 'type': 'telegram',
-                                         'disableResolveMessage': False, 'settings': settings}]})
-    return {'apiVersion': 1, 'contactPoints': receivers}
+        if tg.topic_id:
+            settings['message_thread_id'] = tg.topic_id
+        items.append({'orgId': 1, 'name': name,
+                      'receivers': [{'uid': uid, 'type': 'telegram',
+                                     'disableResolveMessage': False, 'settings': settings}]})
+    return {'apiVersion': 1, 'contactPoints': items}
 
 
 def policies(cfg):
-    """Хосты — в чат своей панели; всё остальное — во все чаты."""
-    name = lambda p: receiver(cfg, p)[0]
-    routes = [{'receiver': name(p),
+    """Хосты — в чат своей панели; всё остальное — по разу в каждый чат."""
+    rcv = receivers(cfg)
+    routes = [{'receiver': rcv[p.telegram.key][0],
                'object_matchers': [['scope', '=', 'host'], ['panel', '=', p.id]]} for p in cfg.panels]
-    # общие сообщения — по одному разу в каждый разный чат
-    chats = {tg.key for tg in cfg.chats()}
-    for p in cfg.panels:
-        if p.telegram.key in chats:
-            chats.discard(p.telegram.key)
-            routes.append({'receiver': name(p), 'object_matchers': [['scope', '!=', 'host']],
-                           'continue': True})
+    routes += [{'receiver': name, 'object_matchers': [['scope', '!=', 'host']], 'continue': True}
+               for name, _, _ in rcv.values()]
     return {'apiVersion': 1, 'policies': [{
-        'orgId': 1, 'receiver': name(cfg.panels[0]),
+        'orgId': 1, 'receiver': routes[0]['receiver'],
         'group_by': ['grafana_folder', 'alertname'],
         'group_wait': '30s', 'group_interval': '2m', 'repeat_interval': '12h',
         'routes': routes}]}

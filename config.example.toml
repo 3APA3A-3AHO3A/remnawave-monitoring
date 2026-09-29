@@ -87,7 +87,7 @@ topic_id = ""
 # host_tag_lite = "MONITORING_LITE"
 # host_suffix = " · R"           # по умолчанию « · <title>»
 # exclude_nodes = []
-# metrics_url = ""               # панель на другом сервере: обычно не нужен
+# metrics_url = "https://panel.example.com/секретный-путь/metrics"   # см. README, «Точный трафик»
 # geocheck_exclude = []
 # [panel.telegram]
 # bot_token = ""

@@ -18,6 +18,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from . import links
 from .clients import ApiError, Remnawave
 from .util import log
 
@@ -33,6 +34,11 @@ HELP = {
     'rwmon_node_inbound_download_bytes': ('counter', 'Трафик клиентов: к клиенту, по инбаундам'),
     'rwmon_node_outbound_upload_bytes': ('counter', 'Запросы в аутбаунд'),
     'rwmon_node_outbound_download_bytes': ('counter', 'Ответы из аутбаунда'),
+    'rwmon_node_network_rx_bytes_per_second': ('gauge', 'Сеть сервера ноды: принято, байт/с'),
+    'rwmon_node_network_tx_bytes_per_second': ('gauge', 'Сеть сервера ноды: отправлено, байт/с'),
+    'rwmon_node_network_rx_bytes': ('counter', 'Сеть сервера ноды: принято всего'),
+    'rwmon_node_network_tx_bytes': ('counter', 'Сеть сервера ноды: отправлено всего'),
+    'rwmon_host': ('gauge', 'Хост панели и имя его проверки (name) в xray-checker'),
     'rwmon_users': ('gauge', 'Пользователи по статусам'),
     'rwmon_users_online': ('gauge', 'Пользователи онлайн: сейчас / за сутки / за неделю'),
     'rwmon_users_total': ('gauge', 'Всего пользователей'),
@@ -152,6 +158,12 @@ def collect_panel(panel, rw, lines, state):
             lines.add('rwmon_node_cpu_load5', nl, load[1] / cpus)
         if info.get('memoryTotal') and st.get('memoryUsed') is not None:
             lines.add('rwmon_node_memory_used_ratio', nl, st['memoryUsed'] / info['memoryTotal'])
+        net = st.get('interface') or {}
+        if net and n.get('isConnected'):
+            lines.add('rwmon_node_network_rx_bytes_per_second', nl, net.get('rxBytesPerSec'))
+            lines.add('rwmon_node_network_tx_bytes_per_second', nl, net.get('txBytesPerSec'))
+            lines.add('rwmon_node_network_rx_bytes', nl, net.get('rxTotal'))
+            lines.add('rwmon_node_network_tx_bytes', nl, net.get('txTotal'))
 
     exact = 0
     if panel.metrics_url:
@@ -198,6 +210,12 @@ def collect_panel(panel, rw, lines, state):
     return True
 
 
+def host_lines(hosts, lines):
+    for h in hosts:
+        lines.add('rwmon_host', {'panel': h['panel'], 'panel_title': h['panel_title'], 'host': h['host'],
+                                 'name': h['name'], 'lite': '1' if h['lite'] else '0'}, 1)
+
+
 def _warn(state, key, err):
     """Одна и та же ошибка пишется в журнал один раз, а не каждые 30 секунд."""
     msg = str(err)
@@ -218,6 +236,7 @@ class Exporter:
         lines = Lines()
         for p in self.cfg.panels:
             self.ok[p.id] = collect_panel(p, self.clients[p.id], lines, self.state)
+        host_lines(links.HOSTS, lines)
         self.text = lines.text()
 
     def loop(self):

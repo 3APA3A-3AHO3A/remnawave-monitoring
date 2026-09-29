@@ -48,10 +48,13 @@ def collect(prom, cfg):
             f'sum by (panel, node_uuid, tag) (increase(rwmon_node_outbound_upload_bytes{{tag=~"{tags}"}}[24h])'
             f' + increase(rwmon_node_outbound_download_bytes{{tag=~"{tags}"}}[24h]))'):
         d['outbound'].setdefault((m.get('panel'), m.get('node_uuid')), {})[m.get('tag')] = v
-    for m, v in prom.query('sum by (panel, check, name) '
-                           '(sum_over_time((xray_proxy_status == bool 0)[24h:1m]))'):
-        if v > 0:
-            d['checks'].append((m.get('panel', ''), m.get('name', '?'), m.get('check', '?'), v))
+    for check in CHECK_NAMES:                     # сколько минут за сутки проверка не проходила
+        hosts = 'rwmon_host' if check == 'xray' else 'rwmon_host{lite="0"}'
+        for m, v in prom.query(
+                f'{hosts} * on (name) group_left () '
+                f'sum by (name) (sum_over_time((xray_proxy_status{{check="{check}"}} == bool 0)[24h:1m]))'):
+            if v > 0:
+                d['checks'].append((m.get('panel', ''), m.get('host', '?'), check, v))
     return d
 
 
@@ -93,8 +96,11 @@ def build_text(d, extras, geo_run, cfg):
         info = d['info'].get((pid, uid))
         if mins >= 1 and info:
             problems.append(f'• {esc(_node_name(info, cfg))} — отключалась от панели, {minutes(mins)}')
-    for pid, name, check, mins in sorted(d['checks'], key=lambda x: (x[1], x[2])):
-        problems.append(f'• {esc(name)} · {CHECK_NAMES.get(check, check)} — не проходила проверка, {minutes(mins)}')
+    titles = {p.id: p.title for p in cfg.panels}
+    for pid, host, check, mins in sorted(d['checks'], key=lambda x: (x[1], x[0], x[2])):
+        where = f' · {titles.get(pid, pid)}' if cfg.multi else ''
+        problems.append(f'• {esc(host)}{esc(where)} · {CHECK_NAMES.get(check, check)} — '
+                        f'не проходила проверка, {minutes(mins)}')
     lines.append('⚠️ <b>Сбои за сутки</b>' if problems else '✅ <b>Сбоев за сутки не было</b>')
     lines += problems
 

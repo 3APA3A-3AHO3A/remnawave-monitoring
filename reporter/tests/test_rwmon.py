@@ -103,10 +103,33 @@ class LinksTest(unittest.TestCase):
             {'finalRemark': 'Old', 'metadata': {'remark': 'Old', 'tags': ['MONITORING'], 'isDisabled': True}},
         ]
         keys = {'enabledKeys': ['vless://a@1:443#Poland%201', 'vless://b@2:443#LTE%201'], 'hiddenKeys': []}
-        found, names, missing = links.select_links(raw, keys, 'MONITORING')
-        self.assertEqual(found, ['vless://a@1:443#Poland%201'])
-        self.assertEqual(names, ['Poland 1'])
+        pairs, missing = links.select_links(raw, keys, 'MONITORING')
+        self.assertEqual(pairs, [('vless://a@1:443#Poland%201', 'Poland 1')])
         self.assertEqual(missing, ['Sweden 1'])
+
+    def test_combine(self):
+        cfg = make_cfg()
+        main, res = cfg.panels
+        per_panel = [
+            (main, [{'link': 'vless://u@1.1.1.1:443?fp=chrome#A', 'host': 'Швеция 1', 'lite': False},
+                    {'link': 'vless://u@2.2.2.2:443#B', 'host': 'LTE 1', 'lite': True}]),
+            (res, [{'link': 'vless://u@1.1.1.1:443?fp=chrome#X', 'host': 'Швеция 1', 'lite': False},
+                   {'link': 'vless://u@2.2.2.2:443#Y', 'host': 'LTE 1', 'lite': False},
+                   {'link': 'vless://u@3.3.3.3:443#Z', 'host': 'Швеция 1', 'lite': False}]),
+        ]
+        checks, hosts = links.combine(per_panel)
+        self.assertEqual([c['name'] for c in checks], ['Швеция 1', 'LTE 1', 'Швеция 1 · Резерв'])
+        self.assertFalse(checks[1]['lite'])              # в резерве полный — проверяем полностью
+        self.assertEqual(links.link_remark(checks[0]['link']), 'Швеция 1')
+        self.assertEqual([(h['panel'], h['host'], h['name']) for h in hosts], [
+            ('main', 'Швеция 1', 'Швеция 1'), ('main', 'LTE 1', 'LTE 1'),
+            ('reserve', 'Швеция 1', 'Швеция 1'), ('reserve', 'LTE 1', 'LTE 1'),
+            ('reserve', 'Швеция 1', 'Швеция 1 · Резерв')])
+        self.assertTrue(hosts[1]['lite'])
+        # одинаковое название у разных хостов одной панели
+        checks, _ = links.combine([(main, [{'link': 'vless://a@1:1#n', 'host': 'N', 'lite': False},
+                                           {'link': 'vless://a@2:1#n', 'host': 'N', 'lite': False}])])
+        self.assertEqual([c['name'] for c in checks], ['N', 'N #2'])
 
 
 class MiscTest(unittest.TestCase):
@@ -115,6 +138,22 @@ class MiscTest(unittest.TestCase):
         parts = split_message(text, 4000)
         self.assertTrue(all(len(p) <= 4000 for p in parts))
         self.assertEqual('\n'.join(parts), text)
+
+    def test_ports(self):
+        from rwmon.__main__ import ports_check
+        with tempfile.TemporaryDirectory() as d:
+            def put(rng, res):
+                with open(os.path.join(d, 'ip_local_port_range'), 'w') as f:
+                    f.write(rng)
+                with open(os.path.join(d, 'ip_local_reserved_ports'), 'w') as f:
+                    f.write(res)
+            put('32768\t60999\n', '\n')
+            self.assertEqual(ports_check(d), 'свободны')
+            put('1024\t65000\n', '\n')
+            with self.assertRaises(RuntimeError):
+                ports_check(d)
+            put('1024\t65000\n', '21000-21999,22000-23999\n')
+            self.assertEqual(ports_check(d), 'закреплены за проверками')
 
     def test_rename(self):
         self.assertEqual(links.rename('vless://a@h:443?x=1#Poland%201', ' · R'),
@@ -181,7 +220,10 @@ class FakePanel:
             raise ApiError('нет ответа')
         return [
             {'uuid': 'u1', 'name': 'Poland 1', 'countryCode': 'pl', 'isConnected': True, 'usersOnline': 7,
-             'system': {'info': {'cpus': 2, 'memoryTotal': 1000}, 'stats': {'loadAvg': [1, 0.5, 0], 'memoryUsed': 250}}},
+             'system': {'info': {'cpus': 2, 'memoryTotal': 1000},
+                        'stats': {'loadAvg': [1, 0.5, 0], 'memoryUsed': 250,
+                                  'interface': {'interface': 'eth0', 'rxBytesPerSec': 1000, 'txBytesPerSec': 5000,
+                                                'rxTotal': 123456789012, 'txTotal': 5}}}},
             {'uuid': 'u2', 'name': 'Panel', 'isConnected': True, 'usersOnline': 0},
             {'uuid': 'u3', 'name': 'Old', 'isDisabled': True},
             {'uuid': 'u4', 'name': 'Down', 'isConnected': False, 'usersOnline': 5},
@@ -230,6 +272,15 @@ class ExporterTest(unittest.TestCase):
         self.assertNotIn('"u2"', text)          # exclude_nodes
         self.assertNotIn('"u3"', text)          # выключена в панели
         self.assertIn('# TYPE rwmon_node_inbound_upload_bytes counter', text)
+        self.assertIn('rwmon_node_network_tx_bytes_per_second{panel="main",panel_title="Основная",node_uuid="u1"} 5000', text)
+        self.assertIn('rwmon_node_network_rx_bytes{panel="main",panel_title="Основная",node_uuid="u1"} 123456789012', text)
+
+    def test_host_lines(self):
+        lines = exporter.Lines()
+        exporter.host_lines([{'panel': 'main', 'panel_title': 'Основная', 'host': 'LTE 1', 'name': 'LTE 1',
+                              'lite': True}], lines)
+        self.assertIn('rwmon_host{panel="main",panel_title="Основная",host="LTE 1",name="LTE 1",lite="1"} 1',
+                      lines.text())
 
     def test_exact_traffic(self):
         ok, text = self.collect(FakePanel(), metrics_url='http://x/metrics')
@@ -262,11 +313,9 @@ class RenderTest(unittest.TestCase):
                 with open(os.path.join(out, path), encoding='utf-8') as f:
                     return json.load(f) if path.endswith('.yml') else f.read()
             prom = load('prometheus/prometheus.yml')
-            relabel = prom['scrape_configs'][1]['metric_relabel_configs']
-            self.assertEqual(relabel[0]['replacement'], 'main')
-            self.assertEqual(relabel[2]['regex'], '.* · Резерв')
+            self.assertEqual(prom['scrape_configs'][1]['static_configs'][1]['labels'], {'check': 'warp'})
             rules = load('grafana/alerting/rules.yml')['groups'][0]['rules']
-            self.assertEqual(len({r['uid'] for r in rules}), 8)
+            self.assertEqual(len({r['uid'] for r in rules}), 9)
             self.assertIn('psiphon-out|WARP', json.dumps(rules))
             routes = load('grafana/alerting/policies.yml')['policies'][0]['routes']
             self.assertEqual(routes[0]['object_matchers'], [['scope', '=', 'host'], ['panel', '=', 'main']])

@@ -2,7 +2,7 @@
      сначала «восстановилось», потом «всё ещё не работает».
      __MULTI__ подставляется при запуске: true, если панелей несколько. */}}
 {{ define "rwmon.target" -}}
-{{ if .Labels.node_name }}{{ .Labels.node_name }}{{ if and __MULTI__ .Labels.panel_title }} · {{ .Labels.panel_title }}{{ end }}{{ else if .Labels.name }}{{ .Labels.name }}{{ else if .Labels.panel_title }}{{ .Labels.panel_title }}{{ else if .Labels.rulename }}{{ .Labels.rulename }}{{ else }}{{ .Labels.alertname }}{{ end }}{{ if .Labels.tag }} · {{ .Labels.tag }}{{ end }}
+{{ if .Labels.node_name }}{{ .Labels.node_name }}{{ if and __MULTI__ .Labels.panel_title }} · {{ .Labels.panel_title }}{{ end }}{{ else if .Labels.host }}{{ .Labels.host }}{{ if and __MULTI__ .Labels.panel_title }} · {{ .Labels.panel_title }}{{ end }}{{ else if .Labels.name }}{{ .Labels.name }}{{ else if .Labels.panel_title }}{{ .Labels.panel_title }}{{ else if .Labels.rulename }}{{ .Labels.rulename }}{{ else }}{{ .Labels.alertname }}{{ end }}{{ if .Labels.tag }} · {{ .Labels.tag }}{{ end }}
 {{- end }}
 
 {{ define "rwmon.firing" -}}
