@@ -7,6 +7,8 @@ cd "$(dirname "$0")"
 [ -f config.toml ] || { echo "Нет config.toml — см. README, раздел «Установка»"; exit 1; }
 docker compose build
 docker compose up -d --force-recreate --remove-orphans
+# после пересборки старые версии образов остаются без имени и никем не используются — убираем их
+docker image prune -f >/dev/null || true
 sleep 5
 docker compose ps -a
 echo
