@@ -70,6 +70,13 @@ class LinksTest(unittest.TestCase):
         vm = 'vmess://' + base64.b64encode(json.dumps({'ps': 'VM 1'}).encode()).decode().rstrip('=')
         self.assertEqual(links.link_remark(vm), 'VM 1')
 
+    def test_hysteria_alpn(self):
+        self.assertEqual(links.fix_link('hysteria2://a@1.2.3.4:443/?sni=x.com&fm=%7B%7D#%F0%9F%8E%AE'),
+                         'hysteria2://a@1.2.3.4:443/?sni=x.com&fm=%7B%7D&alpn=h3#%F0%9F%8E%AE')
+        self.assertEqual(links.fix_link('hy2://a@h:443#n'), 'hy2://a@h:443?alpn=h3#n')
+        self.assertEqual(links.fix_link('hysteria2://a@h:443/?alpn=h3#n'), 'hysteria2://a@h:443/?alpn=h3#n')
+        self.assertEqual(links.fix_link('vless://a@h:443?x=1#n'), 'vless://a@h:443?x=1#n')
+
     def test_select(self):
         raw = [
             {'finalRemark': 'Poland 1', 'metadata': {'remark': 'Poland 1', 'tags': ['BALANCER', 'MONITORING']}},

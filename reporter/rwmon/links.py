@@ -27,6 +27,18 @@ def link_remark(link):
     return ''
 
 
+def fix_link(link):
+    """Hysteria2 работает только поверх HTTP/3, но панель не пишет alpn в ссылку.
+    Xray без alpn предлагает серверу h2/http1.1, и сервер рвёт соединение (EOF).
+    Клиентские приложения подставляют h3 сами — мы делаем то же самое."""
+    if link.startswith(('hysteria2://', 'hy2://')):
+        base, sep, remark = link.partition('#')
+        if 'alpn=' not in base:
+            base += ('&' if '?' in base else '?') + 'alpn=h3'
+        return base + sep + remark
+    return link
+
+
 def select_links(raw_configs, keys, tag):
     """raw_configs — resolvedProxyConfigs из /raw, keys — ответ connection-keys.
     Возвращает (ссылки, названия, названия без найденной ссылки)."""
@@ -41,8 +53,8 @@ def select_links(raw_configs, keys, tag):
     links, found = [], set()
     for link in (keys.get('enabledKeys') or []) + (keys.get('hiddenKeys') or []):
         remark = link_remark(link)
-        if remark in wanted and link not in links:
-            links.append(link)
+        if remark in wanted and fix_link(link) not in links:
+            links.append(fix_link(link))
             found.add(wanted[remark])
     missing = sorted(set(wanted.values()) - found)
     return links, sorted(found), missing
