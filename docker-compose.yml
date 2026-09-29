@@ -3,7 +3,9 @@
 # наружу ничего не открывается, Grafana отдаёт nginx.
 
 x-checker: &checker
-  image: kutovoys/xray-checker:v1.3.1
+  # xray-checker v1.3.1 + исправление для Hysteria2 (см. checker/Dockerfile)
+  build: ./checker
+  image: rwmon-xray-checker:local
   network_mode: host
   restart: unless-stopped
   depends_on: [reporter]

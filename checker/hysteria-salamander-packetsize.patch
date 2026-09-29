@@ -1,0 +1,150 @@
+diff --git a/models/proxy_config.go b/models/proxy_config.go
+index bf466c8..588d138 100644
+--- a/models/proxy_config.go
++++ b/models/proxy_config.go
+@@ -63,6 +63,9 @@ type ProxyConfig struct {
+ 	HysteriaHopInterval  int32
+ 	HysteriaObfs         string
+ 	HysteriaObfsPassword string
++	// Salamander packetSize ("900-1400"): xray-core then uses the Gecko
++	// framing, which is not wire-compatible with plain Salamander.
++	HysteriaObfsPacketSize string
+ 
+ 	// WireGuard fields (Server/Port hold the peer endpoint).
+ 	WGPrivateKey    string
+diff --git a/subscription/parser.go b/subscription/parser.go
+index f23afc8..e4029c9 100644
+--- a/subscription/parser.go
++++ b/subscription/parser.go
+@@ -184,11 +184,13 @@ type libXrayMask struct {
+ }
+ 
+ type libXraySalamander struct {
+-	Password string `json:"password"`
++	Password   string          `json:"password"`
++	PacketSize json.RawMessage `json:"packetSize,omitempty"`
+ }
+ 
+ type originalLinkData struct {
+ 	Name          string
++	FinalMask     string
+ 	Encryption    string
+ 	Type          string
+ 	Path          string
+@@ -198,6 +200,7 @@ type originalLinkData struct {
+ 
+ type parsedLink struct {
+ 	Server        string
++	FinalMask     string
+ 	Port          int
+ 	Name          string
+ 	Encryption    string
+@@ -987,6 +990,7 @@ func (p *Parser) parseOriginalLinks(rawData []byte) map[string]*originalLinkData
+ 				Path:          data.Path,
+ 				Host:          data.Host,
+ 				AllowInsecure: data.AllowInsecure,
++				FinalMask:     data.FinalMask,
+ 			}
+ 		}
+ 	}
+@@ -1026,6 +1030,7 @@ func (p *Parser) parseShareLink(link string) *parsedLink {
+ 	result.Path = query.Get("path")
+ 	result.Host = query.Get("host")
+ 	result.AllowInsecure = query.Get("allowInsecure") == "1" || query.Get("allowInsecure") == "true"
++	result.FinalMask = query.Get("fm")
+ 
+ 	return result
+ }
+@@ -1403,6 +1408,7 @@ func (p *Parser) convertOutbound(raw json.RawMessage, index int, originalData ma
+ 					var sal libXraySalamander
+ 					if err := json.Unmarshal(*mask.Settings, &sal); err == nil {
+ 						pc.HysteriaObfsPassword = sal.Password
++						pc.HysteriaObfsPacketSize = rangeString(sal.PacketSize)
+ 					} else {
+ 						logger.Debug("Failed to parse salamander settings: %v", err)
+ 					}
+@@ -1421,6 +1427,11 @@ func (p *Parser) convertOutbound(raw json.RawMessage, index int, originalData ma
+ 		if orig.AllowInsecure {
+ 			pc.AllowInsecure = true
+ 		}
++		// libXray ignores the "fm" (finalmask) query of hysteria2:// links, so
++		// Salamander packetSize is lost; take it from the original link.
++		if pc.Protocol == "hysteria" && orig.FinalMask != "" {
++			applyHysteriaFinalMask(pc, orig.FinalMask)
++		}
+ 	}
+ 
+ 	if err := pc.Validate(); err != nil {
+@@ -1548,3 +1559,45 @@ func (p *Parser) parseSingleConfigFile(data []byte, startIndex int) ([]*models.P
+ 
+ 	return nil, fmt.Errorf("unsupported config format")
+ }
++
++// rangeString turns a JSON range value ("900-1400" or 1200) into a string.
++func rangeString(raw json.RawMessage) string {
++	if len(raw) == 0 || string(raw) == "null" {
++		return ""
++	}
++	var s string
++	if err := json.Unmarshal(raw, &s); err == nil {
++		return strings.TrimSpace(s)
++	}
++	return strings.TrimSpace(string(raw))
++}
++
++// applyHysteriaFinalMask reads Salamander settings from the "fm" link query.
++func applyHysteriaFinalMask(pc *models.ProxyConfig, fm string) {
++	var mask struct {
++		Udp []struct {
++			Type     string          `json:"type"`
++			Settings json.RawMessage `json:"settings"`
++		} `json:"udp"`
++	}
++	if err := json.Unmarshal([]byte(fm), &mask); err != nil {
++		logger.Debug("Failed to parse hysteria finalmask: %v", err)
++		return
++	}
++	for _, m := range mask.Udp {
++		if m.Type != "salamander" || len(m.Settings) == 0 {
++			continue
++		}
++		var sal libXraySalamander
++		if err := json.Unmarshal(m.Settings, &sal); err != nil {
++			continue
++		}
++		if pc.HysteriaObfsPassword == "" && sal.Password != "" {
++			pc.HysteriaObfs = "salamander"
++			pc.HysteriaObfsPassword = sal.Password
++		}
++		if ps := rangeString(sal.PacketSize); ps != "" {
++			pc.HysteriaObfsPacketSize = ps
++		}
++	}
++}
+diff --git a/xray/config.go b/xray/config.go
+index 6b3f404..182d440 100644
+--- a/xray/config.go
++++ b/xray/config.go
+@@ -496,12 +496,18 @@ func (g *ConfigGenerator) generateStreamSettings(proxy *models.ProxyConfig) map[
+ 			if finalMask == nil {
+ 				finalMask = map[string]interface{}{}
+ 			}
++			salamander := map[string]interface{}{
++				"password": proxy.HysteriaObfsPassword,
++			}
++			// packetSize switches xray-core to Gecko framing; the server and the
++			// client must agree, otherwise the server silently drops packets.
++			if proxy.HysteriaObfsPacketSize != "" {
++				salamander["packetSize"] = proxy.HysteriaObfsPacketSize
++			}
+ 			finalMask["udp"] = []map[string]interface{}{
+ 				{
+-					"type": "salamander",
+-					"settings": map[string]interface{}{
+-						"password": proxy.HysteriaObfsPassword,
+-					},
++					"type":     "salamander",
++					"settings": salamander,
+ 				},
+ 			}
+ 		}

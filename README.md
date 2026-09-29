@@ -40,7 +40,7 @@ docker compose (всё слушает только 127.0.0.1)
  └─ reporter        список хостов для проверок, GeoCheck, ежедневная сводка
 ```
 
-- Проверки хостов делает [xray-checker](https://github.com/kutovoys/xray-checker).
+- Проверки хостов делает [xray-checker](https://github.com/kutovoys/xray-checker). Образ собирается локально из v1.3.1 с небольшим исправлением для Hysteria2 с Salamander `packetSize` (см. [`checker/Dockerfile`](checker/Dockerfile)); первая сборка занимает несколько минут.
 - GeoCheck запускает сама панель на каждой ноде, как кнопка GeoCheck в карточке ноды.
 - `reporter` написан на Python без внешних зависимостей.
 
