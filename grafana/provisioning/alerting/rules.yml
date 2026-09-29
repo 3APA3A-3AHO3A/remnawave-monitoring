@@ -58,6 +58,7 @@ groups:
       severity: critical
     annotations:
       summary: Клиенты пропали с ноды
+      recovered: Клиенты вернулись на ноду
       description: Нода подключена к панели, но клиентов на ней почти не осталось, хотя час назад были. Возможна блокировка IP ноды.
     isPaused: false
   - uid: rwmon-xray-down
@@ -103,6 +104,7 @@ groups:
       severity: critical
     annotations:
       summary: Нода не принимает клиентов
+      recovered: Нода снова принимает клиентов
       description: Проверка подключается к хосту как обычный клиент и не может открыть страницу. Две проверки подряд.
     isPaused: false
   - uid: rwmon-warp-down
@@ -148,6 +150,7 @@ groups:
       severity: critical
     annotations:
       summary: WARP не работает
+      recovered: WARP снова работает
       description: Через ноду не открывается адрес, который она отправляет в WARP. Две проверки подряд.
     isPaused: false
   - uid: rwmon-psiphon-down
@@ -193,6 +196,7 @@ groups:
       severity: critical
     annotations:
       summary: Psiphon не работает
+      recovered: Psiphon снова работает
       description: 'Через ноду не открывается адрес, который она отправляет в Psiphon: Gemini на этой ноде не работает. Две проверки подряд.'
     isPaused: false
   - uid: rwmon-outbound-no-response
@@ -245,6 +249,7 @@ groups:
       severity: warning
     annotations:
       summary: Аутбаунд не отвечает клиентам
+      recovered: Аутбаунд снова отвечает
       description: За 15 минут клиенты отправили запросы в этот аутбаунд, а ответов почти нет.
     isPaused: false
   - uid: rwmon-panel-metrics
@@ -290,6 +295,7 @@ groups:
       severity: critical
     annotations:
       summary: Prometheus не может получить метрики панели
+      recovered: Метрики панели снова поступают
       description: Проверьте, что панель работает и что RW_METRICS_PORT / USER / PASS в .env совпадают с настройками панели.
     isPaused: false
   - uid: rwmon-checker-down
@@ -335,5 +341,6 @@ groups:
       severity: warning
     annotations:
       summary: Контейнер проверки хостов не отвечает
+      recovered: Проверка хостов снова работает
       description: 'Посмотрите логи: docker compose logs --tail 50 checker-xray checker-warp checker-psiphon'
     isPaused: false
