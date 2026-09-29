@@ -3,9 +3,27 @@ import base64
 import json
 import unittest
 
-from rwmon import geocheck, links
-from rwmon.clients import split_message
-from rwmon.config import _headers
+import os
+import tempfile
+
+from rwmon import config, exporter, geocheck, links, render
+from rwmon.clients import ApiError, split_message
+
+TG = {'bot_token': '1:x', 'chat_id': '-100'}
+
+
+def make_cfg(**over):
+    data = {
+        'panel': [
+            {'id': 'main', 'title': 'Основная', 'api_url': 'http://127.0.0.1:3000/', 'api_token': 't1',
+             'exclude_nodes': ['Panel'], 'telegram': TG},
+            {'id': 'reserve', 'title': 'Резерв', 'api_url': 'https://r.example', 'api_token': 't2',
+             'telegram': {'bot_token': '2:y', 'chat_id': '-200'}},
+        ],
+        'alerts': {'outbound_tags': ['psiphon-out', 'WARP']},
+    }
+    data.update(over)
+    return config.parse(data, env={})
 
 REPORT = {
     'schema': 1,
@@ -98,9 +116,172 @@ class MiscTest(unittest.TestCase):
         self.assertTrue(all(len(p) <= 4000 for p in parts))
         self.assertEqual('\n'.join(parts), text)
 
-    def test_headers(self):
-        self.assertEqual(_headers('Cookie: a=1; b=2; X-Key: z'), {'Cookie': 'a=1; b=2', 'X-Key': 'z'})
-        self.assertEqual(_headers(''), {})
+    def test_rename(self):
+        self.assertEqual(links.rename('vless://a@h:443?x=1#Poland%201', ' · R'),
+                         'vless://a@h:443?x=1#Poland%201%20%C2%B7%20R')
+        vm = 'vmess://' + base64.b64encode(json.dumps({'ps': 'VM'}).encode()).decode()
+        self.assertEqual(links.link_remark(links.rename(vm, ' · R')), 'VM · R')
+        self.assertEqual(links.rename('vless://a@h#n', ''), 'vless://a@h#n')
+
+
+class ConfigTest(unittest.TestCase):
+    def test_parse(self):
+        cfg = make_cfg()
+        main, res = cfg.panels
+        self.assertEqual(main.api_url, 'http://127.0.0.1:3000')
+        self.assertEqual(main.host_suffix, '')
+        self.assertEqual(res.host_suffix, ' · Резерв')
+        self.assertEqual(main.exclude_nodes, {'panel'})
+        self.assertTrue(cfg.multi)
+        self.assertEqual([t.chat_id for t in cfg.chats()], ['-100', '-200'])
+
+    def test_shared_telegram(self):
+        cfg = make_cfg(telegram=TG, panel=[
+            {'id': 'a', 'api_url': 'x', 'api_token': 't'},
+            {'id': 'b', 'api_url': 'y', 'api_token': 't'}])
+        self.assertEqual(len(cfg.chats()), 1)
+        self.assertEqual(cfg.panels[1].title, 'b')
+        routes = render.policies(cfg)['policies'][0]['routes']
+        self.assertEqual(len(routes), 3)       # 2 для хостов + 1 общий: без дублей в один чат
+
+    def test_errors(self):
+        for bad in (
+            {'panel': []},
+            {'panel': [{'id': 'Main', 'api_url': 'x', 'api_token': 't', 'telegram': TG}]},
+            {'panel': [{'id': 'a', 'api_url': 'x', 'api_token': '', 'telegram': TG}]},
+            {'panel': [{'id': 'a', 'api_url': 'x', 'api_token': 't'}]},                   # нет Telegram
+            {'panel': [{'id': 'a', 'api_url': 'x', 'api_token': 't', 'telegram': TG},
+                       {'id': 'a', 'api_url': 'y', 'api_token': 't', 'telegram': TG}]},
+            {'panel': [{'id': 'a', 'api_url': 'x', 'api_token': 't', 'telegram': TG},
+                       {'id': 'b', 'api_url': 'y', 'api_token': 't', 'telegram': TG, 'host_suffix': ''}]},
+            {'panel': [{'id': 'a', 'api_url': 'x', 'api_token': 't', 'telegram': TG}],
+             'schedule': {'report_time': '25:00'}},
+        ):
+            with self.assertRaises(config.ConfigError, msg=bad):
+                config.parse(bad, env={})
+
+    def test_example_file(self):
+        """config.example.toml из репозитория читается (после заполнения токенов)."""
+        import tomllib
+        path = os.path.join(os.path.dirname(__file__), '..', '..', 'config.example.toml')
+        with open(path, 'rb') as f:
+            data = tomllib.load(f)
+        data['panel'][0]['api_token'] = 't'
+        data['panel'][0]['telegram'] = TG
+        cfg = config.parse(data, env={})
+        self.assertEqual(cfg.report_time, (15, 0))
+
+
+class FakePanel:
+    def __init__(self, fail=False):
+        self.fail = fail
+
+    def nodes(self):
+        if self.fail:
+            raise ApiError('нет ответа')
+        return [
+            {'uuid': 'u1', 'name': 'Poland 1', 'countryCode': 'pl', 'isConnected': True, 'usersOnline': 7,
+             'system': {'info': {'cpus': 2, 'memoryTotal': 1000}, 'stats': {'loadAvg': [1, 0.5, 0], 'memoryUsed': 250}}},
+            {'uuid': 'u2', 'name': 'Panel', 'isConnected': True, 'usersOnline': 0},
+            {'uuid': 'u3', 'name': 'Old', 'isDisabled': True},
+            {'uuid': 'u4', 'name': 'Down', 'isConnected': False, 'usersOnline': 5},
+        ]
+
+    def nodes_metrics(self):
+        return [{'nodeUuid': 'u1', 'inboundsStats': [{'tag': 'VLESS', 'upload': '1.5 GiB', 'download': '0'}],
+                 'outboundsStats': [{'tag': 'WARP', 'upload': '512 KiB', 'download': '12 B'}]},
+                {'nodeUuid': 'u2', 'inboundsStats': [{'tag': 'X', 'upload': '1 MiB', 'download': '1 MiB'}]}]
+
+    def raw_metrics(self):
+        return ('# TYPE remnawave_node_outbound_upload_bytes counter\n'
+                'remnawave_node_outbound_upload_bytes{node_uuid="u1",node_name="Poland 1",tag="WARP"} 524301\n'
+                'remnawave_node_online_users{node_uuid="u1"} 7\n')
+
+    def stats(self):
+        return {'users': {'statusCounts': {'ACTIVE': 10, 'EXPIRED': 2}, 'totalUsers': 12},
+                'onlineStats': {'onlineNow': 7, 'lastDay': 20}}
+
+    def metadata(self):
+        return {'version': '2.3.0'}
+
+
+class ExporterTest(unittest.TestCase):
+    def collect(self, rw, **panel_over):
+        p = make_cfg().panels[0]
+        for k, v in panel_over.items():
+            setattr(p, k, v)
+        lines = exporter.Lines()
+        ok = exporter.collect_panel(p, rw, lines, {})
+        return ok, lines.text()
+
+    def test_collect(self):
+        ok, text = self.collect(FakePanel())
+        self.assertTrue(ok)
+        self.assertIn('rwmon_panel_up{panel="main",panel_title="Основная"} 1', text)
+        self.assertIn('node_name="Poland 1",country="PL"} 1', text)
+        self.assertIn('rwmon_node_online_users{panel="main",panel_title="Основная",node_uuid="u4"} 0', text)
+        self.assertIn('rwmon_node_cpu_load5{panel="main",panel_title="Основная",node_uuid="u1"} 0.25', text)
+        self.assertIn('rwmon_node_memory_used_ratio{panel="main",panel_title="Основная",node_uuid="u1"} 0.25', text)
+        self.assertIn('rwmon_node_inbound_upload_bytes{panel="main",panel_title="Основная",node_uuid="u1",tag="VLESS"} 1610612736', text)
+        self.assertIn('tag="WARP"} 524288', text)
+        self.assertIn('rwmon_panel_traffic_exact{panel="main",panel_title="Основная"} 0', text)
+        self.assertIn('rwmon_users{panel="main",panel_title="Основная",status="ACTIVE"} 10', text)
+        self.assertIn('rwmon_panel_info{panel="main",panel_title="Основная",version="2.3.0"} 1', text)
+        self.assertNotIn('"u2"', text)          # exclude_nodes
+        self.assertNotIn('"u3"', text)          # выключена в панели
+        self.assertIn('# TYPE rwmon_node_inbound_upload_bytes counter', text)
+
+    def test_exact_traffic(self):
+        ok, text = self.collect(FakePanel(), metrics_url='http://x/metrics')
+        self.assertIn('rwmon_node_outbound_upload_bytes{panel="main",panel_title="Основная",node_uuid="u1",tag="WARP"} 524301', text)
+        self.assertIn('rwmon_panel_traffic_exact{panel="main",panel_title="Основная"} 1', text)
+        self.assertNotIn('VLESS', text)
+
+    def test_panel_down(self):
+        ok, text = self.collect(FakePanel(fail=True))
+        self.assertFalse(ok)
+        self.assertIn('rwmon_panel_up{panel="main",panel_title="Основная"} 0', text)
+        self.assertNotIn('rwmon_node_', text)
+
+    def test_parse_size(self):
+        self.assertEqual(exporter.parse_size('0'), 0)
+        self.assertEqual(exporter.parse_size('1.5 KiB'), 1536)
+        self.assertEqual(exporter.parse_size('2 TiB'), 2 * 1024 ** 4)
+        self.assertEqual(exporter.parse_size('100 B'), 100)
+        self.assertIsNone(exporter.parse_size('много'))
+
+
+class RenderTest(unittest.TestCase):
+    def test_render(self):
+        cfg = make_cfg()
+        with tempfile.TemporaryDirectory() as out:
+            render.OUT = out
+            render.SRC = os.path.join(os.path.dirname(__file__), '..', '..')
+            render.render(cfg)
+            def load(path):
+                with open(os.path.join(out, path), encoding='utf-8') as f:
+                    return json.load(f) if path.endswith('.yml') else f.read()
+            prom = load('prometheus/prometheus.yml')
+            relabel = prom['scrape_configs'][1]['metric_relabel_configs']
+            self.assertEqual(relabel[0]['replacement'], 'main')
+            self.assertEqual(relabel[2]['regex'], '.* · Резерв')
+            rules = load('grafana/alerting/rules.yml')['groups'][0]['rules']
+            self.assertEqual(len({r['uid'] for r in rules}), 8)
+            self.assertIn('psiphon-out|WARP', json.dumps(rules))
+            routes = load('grafana/alerting/policies.yml')['policies'][0]['routes']
+            self.assertEqual(routes[0]['object_matchers'], [['scope', '=', 'host'], ['panel', '=', 'main']])
+            self.assertTrue(all(r.get('continue') for r in routes[2:]))
+            self.assertEqual([r['receiver'] for r in routes], ['telegram', 'telegram-reserve'] * 2)
+            cps = load('grafana/alerting/contact-points.yml')['contactPoints']
+            self.assertEqual([c['receivers'][0]['settings']['chatid'] for c in cps], ['-100', '-200'])
+            tpl = load('grafana/alerting/templates.yml')['templates'][0]['template']
+            self.assertTrue(tpl.startswith('{{ define'))
+            self.assertNotIn('__MULTI__', tpl)
+            env = load('checkers/warp.env')
+            self.assertIn("PROXY_IP_CHECK_URL='https://icanhazip.com'", env)
+            self.assertIn("SUBSCRIPTION_URL='file:///links/monitor.txt'", env)
+            self.assertIn("monitor-xray.txt", load('checkers/xray.env'))
+            self.assertTrue(os.path.isdir(os.path.join(out, 'grafana', 'plugins')))
 
 
 if __name__ == '__main__':

@@ -1,0 +1,95 @@
+# ─────────────────────────────────────────────────────────────
+#  remnawave-monitoring — настройки панелей, Telegram и проверок.
+#  cp config.example.toml config.toml && chmod 600 config.toml
+#  После изменений:  ./apply.sh
+#  Всё время — UTC.
+# ─────────────────────────────────────────────────────────────
+
+# Telegram по умолчанию. Можно не заполнять, если у каждой панели свой блок
+# [panel.telegram]. Если заполнено — панели без своего блока берут его.
+# [telegram]
+# bot_token = ""
+# chat_id = ""
+# topic_id = ""        # ID топика в группе с темами; пусто — общий чат
+
+[schedule]
+report_time = "15:00"     # ежедневная сводка
+geocheck_time = "14:30"   # GeoCheck всех нод, результат идёт в сводку
+
+[checks]
+interval = 300            # как часто проверять хосты, секунд
+# Что открываем через ноду:
+url_xray = "https://www.google.com/generate_204"        # напрямую (DIRECT)
+url_warp = "https://icanhazip.com"                      # домен из geosite:category-ip-geo-detect → WARP
+url_psiphon = "http://ip-api.com/line/?fields=query"    # домен, который правилом ноды отправлен в Psiphon
+
+[alerts]
+# «Клиенты пропали»: за прошлый час в среднем было не меньше N человек,
+# а последние 5 минут на ноде не больше M
+clients_drop_min_avg = 3
+clients_drop_max_now = 1
+# Аутбаунды для пассивной проверки «запросы есть, ответов нет»
+outbound_tags = ["psiphon-out", "WARP"]
+
+[geocheck]
+bad_countries = ["RU", "BY"]   # подсвечивать, если сервис видит ноду в этих странах
+attach_images = true           # картинки GeoCheck в HTML-отчёте
+
+# Внешний сторож: reporter раз в 5 минут открывает этот адрес.
+# Если отметки нет — сервис (например, Healthchecks.io) сам напишет, что мониторинг молчит.
+[healthcheck]
+ping_url = ""
+
+# ─── Панели ─────────────────────────────────────────────────
+# Сколько угодно блоков [[panel]]. Куда что уходит в Telegram:
+#   сбои хостов (Подключение / WARP / Psiphon) — в чат своей панели;
+#   ноды, GeoCheck, сводка, сбои самого мониторинга — во все чаты.
+#
+# API-токен (Настройки → API-токены), только чтение:
+#   Nodes: Get nodes · Hosts: Get hosts · Users: Get user by username ·
+#   Subscriptions: Get Raw Subscription by Short UUID, Get connection keys by user id ·
+#   Connections: Request Geocheck for Node, Get Geocheck for Node by Job ID ·
+#   System: Get Stats, Get Nodes Metrics, Get Nodes Statistics, Get Stats Digest,
+#           Get Remnawave Health, Get Remnawave Information ·
+#   Bandwidth Stats: Get Nodes Usage by Range · (по желанию) Infra Billing: Get infra billing nodes
+
+[[panel]]
+id = "main"                      # латиницей, коротко: попадает в метки графиков
+title = "Основная"               # подпись в сообщениях и на графиках
+# Панель на этом же сервере — бэкенд напрямую; другая — её домен: "https://panel.example.com"
+api_url = "http://127.0.0.1:3000"
+api_token = ""
+monitor_user = "monitoring"      # служебный пользователь, по его подписке проверяются хосты
+host_tag = "MONITORING"          # хосты с этим тегом — все три проверки
+host_tag_lite = "MONITORING_LITE"  # только «Подключение» (LTE, лимитированные)
+# host_suffix = ""               # подпись к названиям хостов; у первой панели пусто
+exclude_nodes = []               # не следить за нодами (имена или теги нод); выключенные в панели скрываются сами
+geocheck_exclude = []            # не запускать на них GeoCheck
+# headers = { "Cookie" = "..." } # если панель закрыта дополнительной защитой
+# Точный трафик по аутбаундам (нужен для алерта «аутбаунд не отвечает»):
+# /metrics самой панели — METRICS_PORT и METRICS_USER/METRICS_PASS из .env панели.
+# Без этого трафик берётся из API — округлённый, но для графиков и сводки хватает.
+# metrics_url = "http://127.0.0.1:3001/metrics"
+# metrics_user = ""
+# metrics_password = ""
+[panel.telegram]
+bot_token = ""
+chat_id = ""
+topic_id = ""
+
+# [[panel]]
+# id = "reserve"
+# title = "Резерв"
+# api_url = "https://panel.example.com"
+# api_token = ""
+# monitor_user = "monitoring"
+# host_tag = "MONITORING"
+# host_tag_lite = "MONITORING_LITE"
+# host_suffix = " · R"           # по умолчанию « · <title>»
+# exclude_nodes = []
+# metrics_url = ""               # панель на другом сервере: обычно не нужен
+# geocheck_exclude = []
+# [panel.telegram]
+# bot_token = ""
+# chat_id = ""
+# topic_id = ""

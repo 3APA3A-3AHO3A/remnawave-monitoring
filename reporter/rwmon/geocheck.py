@@ -105,33 +105,52 @@ def pick_nodes(nodes, exclude):
     return out
 
 
-def run(rw, cfg):
+def image_path(folder, key):
+    return os.path.join(folder, 'images', key.replace(':', '_') + '.svg')
+
+
+def run(cfg, clients):
+    """GeoCheck всех нод всех панелей. clients — {panel.id: Remnawave}."""
     folder = os.path.join(cfg.data_dir, 'geocheck')
     baseline = read_json(os.path.join(folder, 'baseline.json'), {})
-    nodes = pick_nodes(rw.nodes(), cfg.geocheck_exclude)
-    log('geocheck', f'запускаю на {len(nodes)} нодах')
-
-    def one(node):
+    jobs = []
+    for p in cfg.panels:
         try:
-            return node, rw.geocheck(node['uuid']), None
+            nodes = pick_nodes(clients[p.id].nodes(), p.exclude_nodes | p.geocheck_exclude)
+        except Exception as e:
+            log('geocheck', f'[{p.title}] список нод не получен: {e}')
+            continue
+        jobs += [(p, n) for n in nodes]
+    log('geocheck', f'запускаю на {len(jobs)} нодах')
+
+    def one(job):
+        p, node = job
+        try:
+            return p, node, clients[p.id].geocheck(node['uuid']), None
         except Exception as e:           # одна упавшая нода не мешает остальным
-            return node, None, str(e)
+            return p, node, None, str(e)
 
     results = {}
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for node, res, err in pool.map(one, nodes):
+        for p, node, res, err in pool.map(one, jobs):
             uid = node['uuid']
-            item = {'name': node.get('name') or uid, 'country': node.get('countryCode') or '',
+            key = f'{p.id}:{uid}'
+            name = node.get('name') or uid
+            if cfg.multi:
+                name += f' · {p.title}'
+            item = {'name': name, 'panel': p.id, 'country': node.get('countryCode') or '',
                     'ok': err is None, 'error': err}
             if err is None:
                 summary = summarize(res.get('rawReport'))
-                main, minor = compare(baseline.get(uid), summary)
+                prev = baseline.get(key) or baseline.get(uid)     # uid — формат до нескольких панелей
+                main, minor = compare(prev, summary)
                 item.update(summary=summary, changes=main, minor=minor,
                             attention=attention(summary, cfg.bad_countries),
-                            first=uid not in baseline)
-                baseline[uid] = summary
+                            first=prev is None)
+                baseline.pop(uid, None)
+                baseline[key] = summary
                 image = (res.get('image') or {}).get('data')
-                path = os.path.join(folder, 'images', f'{uid}.svg')
+                path = image_path(folder, key)
                 if image:
                     os.makedirs(os.path.dirname(path), exist_ok=True)
                     with open(path, 'wb') as f:
@@ -139,14 +158,14 @@ def run(rw, cfg):
                 elif os.path.exists(path):
                     os.remove(path)          # не показывать вчерашнюю картинку
             else:
-                log('geocheck', f'{item["name"]}: {err}')
-            results[uid] = item
+                log('geocheck', f'{name}: {err}')
+            results[key] = item
 
     run_data = {'date': now().strftime('%Y-%m-%d'), 'finished': now().isoformat(), 'results': results}
     write_json(os.path.join(folder, 'baseline.json'), baseline)
     write_json(os.path.join(folder, 'last-run.json'), run_data)
     write_json(os.path.join(folder, 'history', run_data['date'] + '.json'),
-               {uid: r.get('summary') for uid, r in results.items()})
+               {k: r.get('summary') for k, r in results.items()})
     _prune(os.path.join(folder, 'history'), keep=60)
     ok = sum(1 for r in results.values() if r['ok'])
     log('geocheck', f'готово: {ok} из {len(results)}')
@@ -234,7 +253,7 @@ def _cell_class(check, changed_names, bad_countries):
 
 
 def html_report(run_data, cfg, title):
-    folder = os.path.join(cfg.data_dir, 'geocheck', 'images')
+    folder = os.path.join(cfg.data_dir, 'geocheck')
     results = sorted(run_data['results'].items(), key=lambda kv: kv[1]['name'])
     ok = [(u, r) for u, r in results if r['ok']]
 
@@ -298,7 +317,7 @@ def html_report(run_data, cfg, title):
             out.append(f'<tr><td>{esc(c["name"])}</td><td>{GROUPS.get(c["group"], c["group"])}</td>'
                        f'<td class="{_cell_class(c, set(), cfg.bad_countries)}">{esc(c["value"])}</td></tr>')
         out.append('</table></div>')
-        path = os.path.join(folder, f'{uid}.svg')
+        path = image_path(folder, uid)
         if cfg.attach_images and os.path.exists(path):
             with open(path, 'rb') as f:
                 data = base64.b64encode(f.read()).decode()

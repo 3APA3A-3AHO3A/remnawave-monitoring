@@ -1,5 +1,6 @@
 """Обращения к внешним сервисам: API панели, Prometheus, Telegram.
 Только стандартная библиотека Python — без лишних зависимостей."""
+import base64
 import json
 import time
 import urllib.error
@@ -28,17 +29,20 @@ def _open(req, timeout):
 # ── Remnawave ────────────────────────────────────────────────
 
 class Remnawave:
-    def __init__(self, cfg):
-        self.base = cfg.rw_api_url
+    """API одной панели. panel — config.Panel."""
+
+    def __init__(self, panel):
+        self.panel = panel
+        self.base = panel.api_url
         self.headers = {
-            'Authorization': 'Bearer ' + cfg.rw_api_token,
+            'Authorization': 'Bearer ' + panel.api_token,
             'Accept': 'application/json',
             'User-Agent': USER_AGENT,
             # бэкенд панели без этих заголовков не отвечает на прямые запросы по http
             'X-Forwarded-For': '127.0.0.1',
             'X-Forwarded-Proto': 'https',
         }
-        self.headers.update(cfg.rw_api_headers)
+        self.headers.update(panel.headers)
 
     def _call(self, method, path, body=None, timeout=30):
         data = None
@@ -47,11 +51,27 @@ class Remnawave:
             data = json.dumps(body).encode()
             headers['Content-Type'] = 'application/json'
         req = urllib.request.Request(self.base + path, data=data, headers=headers, method=method)
-        raw = _open(req, timeout)
+        try:
+            raw = _open(req, timeout)
+        except ApiError as e:
+            raise ApiError(f'[{self.panel.title}] {e}') from None
         try:
             return json.loads(raw)['response']
         except (ValueError, KeyError, TypeError):
-            raise ApiError(f'{path}: неожиданный ответ панели') from None
+            raise ApiError(f'[{self.panel.title}] {path}: неожиданный ответ панели') from None
+
+    def raw_metrics(self, timeout=20):
+        """Текст /metrics самой панели (точные счётчики трафика). Нужен metrics_url."""
+        p = self.panel
+        headers = {'User-Agent': USER_AGENT}
+        if p.metrics_user:
+            cred = f'{p.metrics_user}:{p.metrics_password}'.encode()
+            headers['Authorization'] = 'Basic ' + base64.b64encode(cred).decode()
+        req = urllib.request.Request(p.metrics_url, headers=headers)
+        try:
+            return _open(req, timeout).decode('utf-8', 'replace')
+        except ApiError as e:
+            raise ApiError(f'[{p.title}] метрики панели: {e}') from None
 
     def nodes(self):
         return self._call('GET', '/api/nodes')
@@ -64,6 +84,23 @@ class Remnawave:
 
     def connection_keys(self, user_id):
         return self._call('GET', f'/api/subscriptions/connection-keys/{user_id}')
+
+    def nodes_metrics(self):
+        """Клиенты и трафик по инбаундам/аутбаундам каждой ноды (то же, что /metrics панели)."""
+        return self._call('GET', '/api/system/nodes/metrics')['nodes']
+
+    def stats(self):
+        return self._call('GET', '/api/system/stats')
+
+    def digest(self, start, end):
+        q = urllib.parse.urlencode({'start': start, 'end': end})
+        return self._call('GET', '/api/system/stats/digest?' + q)
+
+    def metadata(self):
+        return self._call('GET', '/api/system/metadata')
+
+    def billing_nodes(self):
+        return self._call('GET', '/api/infra-billing/nodes')
 
     def geocheck(self, node_uuid, timeout=180, poll=3):
         """Запускает GeoCheck на ноде и ждёт результат (на ноде это до минуты)."""
@@ -125,10 +162,11 @@ class Prometheus:
 class Telegram:
     LIMIT = 4000   # у Telegram 4096, оставляем запас
 
-    def __init__(self, cfg):
-        self.api = f'https://api.telegram.org/bot{cfg.tg_bot_token}/'
-        self.chat = cfg.tg_chat_id
-        self.topic = cfg.tg_topic_id
+    def __init__(self, tg):
+        """tg — config.Telegram (бот, чат, топик)."""
+        self.api = f'https://api.telegram.org/bot{tg.bot_token}/'
+        self.chat = tg.chat_id
+        self.topic = tg.topic_id
 
     def _base(self):
         params = {'chat_id': self.chat}

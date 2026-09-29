@@ -1,0 +1,40 @@
+{{/* Текст сообщений в Telegram (HTML). Одно сообщение на правило:
+     сначала «восстановилось», потом «всё ещё не работает».
+     __MULTI__ подставляется при запуске: true, если панелей несколько. */}}
+{{ define "rwmon.target" -}}
+{{ if .Labels.node_name }}{{ .Labels.node_name }}{{ if and __MULTI__ .Labels.panel_title }} · {{ .Labels.panel_title }}{{ end }}{{ else if .Labels.name }}{{ .Labels.name }}{{ else if .Labels.panel_title }}{{ .Labels.panel_title }}{{ else if .Labels.rulename }}{{ .Labels.rulename }}{{ else }}{{ .Labels.alertname }}{{ end }}{{ if .Labels.tag }} · {{ .Labels.tag }}{{ end }}
+{{- end }}
+
+{{ define "rwmon.firing" -}}
+{{ range . }}• {{ template "rwmon.target" . }} — с {{ .StartsAt.UTC.Format "15:04" }} UTC
+{{ end }}
+{{- end }}
+
+{{ define "rwmon.resolved" -}}
+{{ range . }}• {{ template "rwmon.target" . }} — {{ .StartsAt.UTC.Format "15:04" }} → {{ .EndsAt.UTC.Format "15:04" }} UTC
+{{ end }}
+{{- end }}
+
+{{ define "rwmon.message" -}}
+{{- if gt (len .Alerts.Firing) 0 }}{{ if eq (index .Alerts.Firing 0).Labels.alertname "DatasourceError" "DatasourceNoData" -}}
+⚠️ <b>Ошибка в самом мониторинге</b>: правило «{{ (index .Alerts.Firing 0).Labels.rulename }}» не может выполниться и сейчас ничего не проверяет. Смотрите Grafana → Оповещение → Правила.
+{{ else if gt (len .Alerts.Resolved) 0 -}}
+🟢 <b>{{ or (index .Alerts.Resolved 0).Annotations.recovered "Восстановлено" }}</b>
+{{ template "rwmon.resolved" .Alerts.Resolved }}
+🔴 <b>Всё ещё: {{ or (index .Alerts.Firing 0).Annotations.summary (index .Alerts.Firing 0).Labels.alertname }}</b>
+{{ template "rwmon.firing" .Alerts.Firing }}
+{{- else -}}
+🔴 <b>{{ or (index .Alerts.Firing 0).Annotations.summary (index .Alerts.Firing 0).Labels.alertname }}</b>
+{{ template "rwmon.firing" .Alerts.Firing }}
+{{- with (index .Alerts.Firing 0).Annotations.description }}
+<i>{{ . }}</i>
+{{- end }}
+{{- end }}
+{{- else if gt (len .Alerts.Resolved) 0 }}{{ if eq (index .Alerts.Resolved 0).Labels.alertname "DatasourceError" "DatasourceNoData" -}}
+🟢 Правило «{{ (index .Alerts.Resolved 0).Labels.rulename }}» снова работает
+{{- else -}}
+🟢 <b>{{ or (index .Alerts.Resolved 0).Annotations.recovered "Восстановлено" }}</b>
+{{ template "rwmon.resolved" .Alerts.Resolved }}
+{{- end }}{{ end }}
+{{- end }}
+

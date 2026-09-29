@@ -16,6 +16,35 @@
   "templating": {
     "list": [
       {
+        "name": "panel",
+        "label": "Панель",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "rwmon-prometheus"
+        },
+        "query": {
+          "query": "label_values(rwmon_panel_up, panel_title)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery",
+          "qryType": 1
+        },
+        "definition": "label_values(rwmon_panel_up, panel_title)",
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "sort": 0,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        }
+      },
+      {
         "name": "outbound",
         "label": "Аутбаунд",
         "type": "query",
@@ -24,11 +53,11 @@
           "uid": "rwmon-prometheus"
         },
         "query": {
-          "query": "label_values(remnawave_node_outbound_upload_bytes, tag)",
+          "query": "label_values(rwmon_node_outbound_upload_bytes, tag)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery",
           "qryType": 1
         },
-        "definition": "label_values(remnawave_node_outbound_upload_bytes, tag)",
+        "definition": "label_values(rwmon_node_outbound_upload_bytes, tag)",
         "hide": 2,
         "regex": "/^(?!BLOCK$|RW_TB_OUTBOUND_BLOCK$|DIRECT$).*/",
         "multi": true,
@@ -71,7 +100,7 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum(remnawave_node_online_users)",
+          "expr": "sum(rwmon_node_online_users{panel_title=~\"$panel\"})",
           "legendFormat": "",
           "instant": true,
           "range": false
@@ -130,7 +159,7 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum(remnawave_node_status)",
+          "expr": "sum(rwmon_node_connected{panel_title=~\"$panel\"})",
           "legendFormat": "на связи",
           "instant": true,
           "range": false
@@ -141,7 +170,7 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "count(remnawave_node_status)",
+          "expr": "count(rwmon_node_connected{panel_title=~\"$panel\"})",
           "legendFormat": "всего",
           "instant": true,
           "range": false
@@ -200,7 +229,7 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "count(xray_proxy_status == 0) or vector(0)",
+          "expr": "count(xray_proxy_status{panel_title=~\"$panel\"} == 0) or vector(0)",
           "legendFormat": "",
           "instant": true,
           "range": false
@@ -263,7 +292,7 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum(remnawave_users_status{status=\"ACTIVE\"})",
+          "expr": "sum(rwmon_users{status=\"ACTIVE\", panel_title=~\"$panel\"})",
           "legendFormat": "",
           "instant": true,
           "range": false
@@ -322,7 +351,7 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (node_name) (remnawave_node_online_users * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
+          "expr": "sum by (panel_title, node_name) ((rwmon_node_online_users{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\"}))",
           "legendFormat": "",
           "instant": true,
           "range": false,
@@ -334,7 +363,7 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (node_name) ((sum by (node_uuid) (increase(remnawave_node_inbound_upload_bytes[24h]) + increase(remnawave_node_inbound_download_bytes[24h]))) * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
+          "expr": "sum by (panel_title, node_name) ((sum by (panel, node_uuid) (increase(rwmon_node_inbound_upload_bytes{panel_title=~\"$panel\"}[24h]) + increase(rwmon_node_inbound_download_bytes{panel_title=~\"$panel\"}[24h]))) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\"}))",
           "legendFormat": "",
           "instant": true,
           "range": false,
@@ -343,29 +372,26 @@
       ],
       "transformations": [
         {
-          "id": "joinByField",
-          "options": {
-            "byField": "node_name",
-            "mode": "outer"
-          }
+          "id": "merge",
+          "options": {}
         },
         {
           "id": "organize",
           "options": {
             "excludeByName": {
-              "Time": true,
-              "Time 1": true,
-              "Time 2": true
+              "Time": true
             },
             "renameByName": {
               "node_name": "Нода",
               "Value #A": "Клиентов сейчас",
-              "Value #B": "Трафик за сутки"
+              "Value #B": "Трафик за сутки",
+              "panel_title": "Панель"
             },
             "indexByName": {
-              "node_name": 0,
-              "Value #A": 1,
-              "Value #B": 2
+              "node_name": 1,
+              "Value #A": 2,
+              "Value #B": 3,
+              "panel_title": 0
             }
           }
         }
@@ -437,6 +463,18 @@
                 "value": 190
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Панель"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
           }
         ]
       }
@@ -463,7 +501,7 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "max by (name) (xray_proxy_status{check=\"xray\"})",
+          "expr": "max by (panel_title, name) (xray_proxy_status{check=\"xray\", panel_title=~\"$panel\"})",
           "legendFormat": "",
           "instant": true,
           "range": false,
@@ -475,7 +513,7 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "max by (name) (xray_proxy_status{check=\"warp\"})",
+          "expr": "max by (panel_title, name) (xray_proxy_status{check=\"warp\", panel_title=~\"$panel\"})",
           "legendFormat": "",
           "instant": true,
           "range": false,
@@ -487,7 +525,7 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "max by (name) (xray_proxy_status{check=\"psiphon\"})",
+          "expr": "max by (panel_title, name) (xray_proxy_status{check=\"psiphon\", panel_title=~\"$panel\"})",
           "legendFormat": "",
           "instant": true,
           "range": false,
@@ -496,32 +534,28 @@
       ],
       "transformations": [
         {
-          "id": "joinByField",
-          "options": {
-            "byField": "name",
-            "mode": "outer"
-          }
+          "id": "merge",
+          "options": {}
         },
         {
           "id": "organize",
           "options": {
             "excludeByName": {
-              "Time": true,
-              "Time 1": true,
-              "Time 2": true,
-              "Time 3": true
+              "Time": true
             },
             "renameByName": {
               "name": "Хост",
               "Value #A": "Подключение",
               "Value #B": "WARP",
-              "Value #C": "Psiphon"
+              "Value #C": "Psiphon",
+              "panel_title": "Панель"
             },
             "indexByName": {
-              "name": 0,
-              "Value #A": 1,
-              "Value #B": 2,
-              "Value #C": 3
+              "name": 1,
+              "Value #A": 2,
+              "Value #B": 3,
+              "Value #C": 4,
+              "panel_title": 0
             }
           }
         }
@@ -617,6 +651,18 @@
                 "value": []
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Панель"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
           }
         ]
       }
@@ -655,8 +701,8 @@
                 "type": "prometheus",
                 "uid": "rwmon-prometheus"
               },
-              "expr": "sum by (node_name) (remnawave_node_online_users * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
-              "legendFormat": "{{node_name}}"
+              "expr": "sum by (panel_title, node_name) ((rwmon_node_online_users{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\"}))",
+              "legendFormat": "{{node_name}} · {{panel_title}}"
             }
           ],
           "options": {
@@ -709,8 +755,8 @@
                 "type": "prometheus",
                 "uid": "rwmon-prometheus"
               },
-              "expr": "sum by (node_name) ((sum by (node_uuid) (rate(remnawave_node_inbound_upload_bytes[5m]) + rate(remnawave_node_inbound_download_bytes[5m]))) * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
-              "legendFormat": "{{node_name}}"
+              "expr": "sum by (panel_title, node_name) ((sum by (panel, node_uuid) (rate(rwmon_node_inbound_upload_bytes{panel_title=~\"$panel\"}[5m]) + rate(rwmon_node_inbound_download_bytes{panel_title=~\"$panel\"}[5m]))) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\"}))",
+              "legendFormat": "{{node_name}} · {{panel_title}}"
             }
           ],
           "options": {
@@ -777,8 +823,8 @@
                 "type": "prometheus",
                 "uid": "rwmon-prometheus"
               },
-              "expr": "sum by (node_name) ((sum by (node_uuid) (rate(remnawave_node_outbound_download_bytes{tag=\"$outbound\"}[5m]))) * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
-              "legendFormat": "{{node_name}} ↓"
+              "expr": "sum by (panel_title, node_name) ((sum by (panel, node_uuid) (rate(rwmon_node_outbound_download_bytes{tag=\"$outbound\", panel_title=~\"$panel\"}[5m]))) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\"}))",
+              "legendFormat": "{{node_name}} · {{panel_title}} ↓"
             },
             {
               "refId": "B",
@@ -786,8 +832,8 @@
                 "type": "prometheus",
                 "uid": "rwmon-prometheus"
               },
-              "expr": "-sum by (node_name) ((sum by (node_uuid) (rate(remnawave_node_outbound_upload_bytes{tag=\"$outbound\"}[5m]))) * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
-              "legendFormat": "{{node_name}} ↑"
+              "expr": "-sum by (panel_title, node_name) ((sum by (panel, node_uuid) (rate(rwmon_node_outbound_upload_bytes{tag=\"$outbound\", panel_title=~\"$panel\"}[5m]))) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\"}))",
+              "legendFormat": "{{node_name}} · {{panel_title}} ↑"
             }
           ],
           "options": {
@@ -856,7 +902,7 @@
                 "type": "prometheus",
                 "uid": "rwmon-prometheus"
               },
-              "expr": "xray_proxy_status{check=\"xray\"}",
+              "expr": "xray_proxy_status{check=\"xray\", panel_title=~\"$panel\"}",
               "legendFormat": "{{name}}"
             }
           ],
@@ -927,7 +973,7 @@
                 "type": "prometheus",
                 "uid": "rwmon-prometheus"
               },
-              "expr": "xray_proxy_status{check=\"warp\"}",
+              "expr": "xray_proxy_status{check=\"warp\", panel_title=~\"$panel\"}",
               "legendFormat": "{{name}}"
             }
           ],
@@ -998,7 +1044,7 @@
                 "type": "prometheus",
                 "uid": "rwmon-prometheus"
               },
-              "expr": "xray_proxy_status{check=\"psiphon\"}",
+              "expr": "xray_proxy_status{check=\"psiphon\", panel_title=~\"$panel\"}",
               "legendFormat": "{{name}}"
             }
           ],
@@ -1070,7 +1116,7 @@
                 "type": "prometheus",
                 "uid": "rwmon-prometheus"
               },
-              "expr": "xray_proxy_latency_ms{check=\"xray\"} > 0",
+              "expr": "xray_proxy_latency_ms{check=\"xray\", panel_title=~\"$panel\"} > 0",
               "legendFormat": "{{name}}"
             }
           ],
@@ -1138,8 +1184,8 @@
                 "type": "prometheus",
                 "uid": "rwmon-prometheus"
               },
-              "expr": "sum by (node_name) ((remnawave_node_cpu_load_avg_5m / remnawave_node_cpu_count) * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
-              "legendFormat": "{{node_name}}"
+              "expr": "sum by (panel_title, node_name) ((rwmon_node_cpu_load5{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\"}))",
+              "legendFormat": "{{node_name}} · {{panel_title}}"
             }
           ],
           "options": {
@@ -1192,8 +1238,8 @@
                 "type": "prometheus",
                 "uid": "rwmon-prometheus"
               },
-              "expr": "sum by (node_name) ((1 - remnawave_node_memory_free_bytes / remnawave_node_memory_total_bytes) * on (node_uuid) group_left (node_name) topk by (node_uuid) (1, remnawave_node_basic_info))",
-              "legendFormat": "{{node_name}}"
+              "expr": "sum by (panel_title, node_name) ((rwmon_node_memory_used_ratio{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\"}))",
+              "legendFormat": "{{node_name}} · {{panel_title}}"
             }
           ],
           "options": {
@@ -1226,5 +1272,6 @@
         }
       ]
     }
-  ]
+  ],
+  "version": 2
 }

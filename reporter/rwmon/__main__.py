@@ -1,23 +1,28 @@
-"""rwmon-reporter.
+"""rwmon-reporter — мониторинг панелей Remnawave.
 
-  run       — работать постоянно (так запускается контейнер)
-  check     — проверить доступ к панели, Prometheus и Telegram
+  run       — работать постоянно (так запускается контейнер reporter)
+  render    — собрать конфиги Prometheus и Grafana из config.toml (контейнер config)
+  check     — проверить доступ к панелям, Prometheus и Telegram
   links     — обновить список хостов для проверок прямо сейчас
   geocheck  — прогнать GeoCheck сейчас (--send — сразу отправить сводку)
   report    — собрать ежедневную сводку сейчас (--dry-run — только показать)
+  migrate   — напечатать config.toml из старого .env (переход с версии для одной панели)
 
 Пример:  docker compose exec reporter python -m rwmon report --dry-run
 """
+import json
 import os
 import sys
 import time
+import urllib.request
 
-from . import config, daily, geocheck, links
+from . import config, daily, exporter, geocheck, links
 from .clients import Prometheus, Remnawave, Telegram
 from .util import log, now, read_json, write_json
 
 TICK = 20            # как часто просыпается планировщик, секунд
 RETRY_AFTER = 600    # если задача упала — повторить через 10 минут
+PING_EVERY = 300     # отметка для внешнего сторожа (healthcheck)
 
 
 def due(state, key, hm):
@@ -30,12 +35,23 @@ def due(state, key, hm):
     return (t.hour, t.minute) >= hm
 
 
+def ping(url):
+    try:
+        urllib.request.urlopen(url, timeout=10).read()
+    except Exception as e:
+        log('healthcheck', f'не удалось отметиться: {e}')
+
+
 def run_forever(cfg):
-    rw, prom, tg = Remnawave(cfg), Prometheus(cfg.prometheus_url), Telegram(cfg)
+    metrics = exporter.Exporter(cfg)
+    metrics.start()
+    clients = metrics.clients
+    prom = Prometheus(cfg.prometheus_url)
     state_path = os.path.join(cfg.data_dir, 'state.json')
     state = read_json(state_path, {})
-    next_links = 0
-    log('main', f'запущен; GeoCheck в {cfg.geocheck_time[0]:02d}:{cfg.geocheck_time[1]:02d}, '
+    next_links = next_ping = 0
+    log('main', f'запущен для панелей: {", ".join(p.title for p in cfg.panels)}; '
+                f'GeoCheck в {cfg.geocheck_time[0]:02d}:{cfg.geocheck_time[1]:02d}, '
                 f'сводка в {cfg.report_time[0]:02d}:{cfg.report_time[1]:02d} UTC')
 
     def task(key, fn):
@@ -51,15 +67,17 @@ def run_forever(cfg):
     while True:
         if time.time() >= next_links:
             try:
-                links.refresh(rw, cfg)
+                links.refresh(cfg, clients)
             except Exception as e:
                 log('links', f'ошибка: {e}')
             next_links = time.time() + cfg.links_interval
-
         if due(state, 'geocheck', cfg.geocheck_time):
-            task('geocheck', lambda: geocheck.run(rw, cfg))
+            task('geocheck', lambda: geocheck.run(cfg, clients))
         if due(state, 'report', cfg.report_time):
-            task('report', lambda: daily.send(prom, rw, tg, cfg))
+            task('report', lambda: daily.send(prom, clients, cfg))
+        if cfg.healthcheck_url and time.time() >= next_ping:
+            ping(cfg.healthcheck_url)
+            next_ping = time.time() + PING_EVERY
         time.sleep(TICK)
 
 
@@ -69,57 +87,153 @@ def check(cfg):
     def step(title, fn):
         nonlocal ok
         try:
-            print(f'✓ {title}: {fn()}')
+            print(f'  ✓ {title}: {fn()}')
         except Exception as e:
             ok = False
-            print(f'✗ {title}: {e}')
+            print(f'  ✗ {title}: {e}')
 
-    rw, prom, tg = Remnawave(cfg), Prometheus(cfg.prometheus_url), Telegram(cfg)
-    step('API панели, ноды', lambda: f'{len(rw.nodes())} шт.')
-    step(f'служебный пользователь «{cfg.monitor_username}» и хосты {cfg.monitor_host_tag} / {cfg.monitor_host_tag_lite}',
-         lambda: ', '.join(links.refresh(rw, cfg)) or 'хостов с тегом нет')
-    def panel_metrics():
-        states = prom.targets('remnawave')
+    prom = Prometheus(cfg.prometheus_url)
+    for p in cfg.panels:
+        rw = Remnawave(p)
+        print(f'{p.title} ({p.id}), {p.api_url}')
+        step('ноды', lambda: f'{len(rw.nodes())} шт.')
+        step('клиенты и трафик нод (System → Get Nodes Metrics)', lambda: f'{len(rw.nodes_metrics())} нод')
+        if p.metrics_url:
+            step('точный трафик (metrics_url)',
+                 lambda: f'{len(exporter.parse_panel_metrics(rw.raw_metrics()))} счётчиков')
+        step('пользователи (System → Get Stats)',
+             lambda: f'всего {rw.stats().get("users", {}).get("totalUsers", "?")}')
+        step(f'хосты для проверок (пользователь «{p.monitor_user}»)', lambda: _hosts(rw, p))
+        step('Telegram-бот', lambda: '@' + Telegram(p.telegram).get_me().get('username', '?'))
+
+    def reporter_metrics():
+        states = prom.targets('reporter')
         if not states:
-            raise RuntimeError('Prometheus не знает о метриках панели — проверьте prometheus.yml')
+            raise RuntimeError('Prometheus не знает о reporter — перезапустите: ./apply.sh')
         url, health, error = states[0]
         if health == 'up':
-            return f'есть ({url})'
+            return 'есть'
         if health == 'unknown':
-            raise RuntimeError('Prometheus ещё не успел опросить панель — повторите check через минуту')
-        hint = ' — неверный RW_METRICS_USER / RW_METRICS_PASS' if '401' in error else ''
-        raise RuntimeError(f'{url}: {error}{hint}')
+            raise RuntimeError('Prometheus ещё не успел опросить reporter — повторите через минуту')
+        raise RuntimeError(f'{url}: {error}')
 
-    def checks():
-        n = len(prom.query('xray_proxy_status'))
-        if n:
-            return f'{n} результатов'
-        return 'пока нет — первые появятся через 5–10 минут после запуска'
-
-    step('Prometheus, метрики панели', panel_metrics)
-    step('Prometheus, проверки хостов', checks)
-    step('Telegram-бот', lambda: '@' + tg.get_me().get('username', '?'))
+    print('Prometheus')
+    step('метрики панелей от reporter', reporter_metrics)
+    step('проверки хостов', lambda: f'{len(prom.query("xray_proxy_status"))} результатов '
+                                     '(первые появляются через 5–10 минут после запуска)')
     return 0 if ok else 1
+
+
+def _hosts(rw, p):
+    full, lite, names, lite_names = links.panel_links(rw, p)
+    parts = [f'{len(full)} полных']
+    if lite:
+        parts.append(f'{len(lite)} лёгких ({", ".join(lite_names)})')
+    return ', '.join(parts)
+
+
+# ── переход со старого .env ──────────────────────────────────
+
+def _toml_str(v):
+    return json.dumps(str(v), ensure_ascii=False)
+
+
+def migrate(env=os.environ):
+    g = env.get
+    lst = lambda v: '[' + ', '.join(_toml_str(x.strip()) for x in (v or '').split(',') if x.strip()) + ']'
+    tags = [t for t in (g('OUTBOUND_TAGS') or 'psiphon-out|WARP').split('|') if t]
+    metrics = '# metrics_url = ""'
+    if g('RW_METRICS_PASS'):
+        # раньше Prometheus читал /metrics панели напрямую — сохраняем точный трафик
+        metrics = (f'metrics_url = {_toml_str("http://127.0.0.1:" + (g("RW_METRICS_PORT") or "3001") + "/metrics")}\n'
+                   f'metrics_user = {_toml_str(g("RW_METRICS_USER") or "admin")}\n'
+                   f'metrics_password = {_toml_str(g("RW_METRICS_PASS"))}')
+    print(f'''# config.toml — перенесено из .env. Проверьте и дополните.
+
+[schedule]
+report_time = {_toml_str(g('REPORT_TIME', '15:00'))}
+geocheck_time = {_toml_str(g('GEOCHECK_TIME', '14:30'))}
+
+[checks]
+interval = {int(g('CHECK_INTERVAL') or 300)}
+url_xray = {_toml_str(g('CHECK_URL_XRAY') or 'https://www.google.com/generate_204')}
+url_warp = {_toml_str(g('CHECK_URL_WARP') or 'https://icanhazip.com')}
+url_psiphon = {_toml_str(g('CHECK_URL_PSIPHON') or 'http://ip-api.com/line/?fields=query')}
+
+[alerts]
+clients_drop_min_avg = {g('CLIENTS_DROP_MIN_AVG') or 3}
+clients_drop_max_now = {g('CLIENTS_DROP_MAX_NOW') or 1}
+outbound_tags = [{', '.join(_toml_str(t) for t in tags)}]
+
+[geocheck]
+bad_countries = {lst(g('GEOCHECK_BAD_COUNTRIES') or 'RU,BY')}
+attach_images = {str((g('GEOCHECK_ATTACH_IMAGES') or 'true').lower() in ('1', 'true', 'yes')).lower()}
+
+[[panel]]
+id = "main"
+title = {_toml_str(g('PANEL_NAME') or 'Основная')}
+api_url = {_toml_str(g('RW_API_URL') or 'http://127.0.0.1:3000')}
+api_token = {_toml_str(g('RW_API_TOKEN', ''))}
+monitor_user = {_toml_str(g('MONITOR_USERNAME') or 'monitoring')}
+host_tag = {_toml_str(g('MONITOR_HOST_TAG') or 'MONITORING')}
+host_tag_lite = {_toml_str(g('MONITOR_HOST_TAG_LITE') or 'MONITORING_LITE')}
+exclude_nodes = []                # например ["Panel"] — ноды, за которыми не следить
+geocheck_exclude = {lst(g('GEOCHECK_EXCLUDE'))}
+{metrics}
+[panel.telegram]
+bot_token = {_toml_str(g('TG_BOT_TOKEN', ''))}
+chat_id = {_toml_str(g('TG_CHAT_ID', ''))}
+topic_id = {_toml_str(g('TG_TOPIC_ID', ''))}
+
+# Вторая панель — раскомментируйте и заполните:
+# [[panel]]
+# id = "reserve"
+# title = "Резерв"
+# api_url = "https://panel.example.com"
+# api_token = ""
+# monitor_user = "monitoring"
+# host_tag = "MONITORING"
+# host_tag_lite = "MONITORING_LTE"
+# host_suffix = " · R"
+# exclude_nodes = []
+# geocheck_exclude = []
+# [panel.telegram]
+# bot_token = ""
+# chat_id = ""
+# topic_id = ""
+''')
 
 
 def main(argv):
     cmd = argv[1] if len(argv) > 1 else 'run'
+    if cmd == 'migrate':
+        migrate()
+        return 0
+    if cmd in ('-h', '--help', 'help'):
+        print(__doc__)
+        return 0
     cfg = config.load()
+    clients = {p.id: Remnawave(p) for p in cfg.panels}
     if cmd == 'run':
         run_forever(cfg)
+    elif cmd == 'render':
+        from .render import render
+        render(cfg)
     elif cmd == 'check':
         return check(cfg)
     elif cmd == 'links':
-        print('\n'.join(links.refresh(Remnawave(cfg), cfg)) or 'хостов нет')
+        for p, names, lite_names in links.refresh(cfg, clients):
+            print(f'{p.title}:')
+            print('\n'.join(f'  {n}' for n in names) or '  — полных нет')
+            print('\n'.join(f'  {n} (только «Подключение»)' for n in lite_names))
     elif cmd == 'geocheck':
-        geocheck.run(Remnawave(cfg), cfg)
+        geocheck.run(cfg, clients)
         if '--send' in argv:
-            daily.send(Prometheus(cfg.prometheus_url), Remnawave(cfg), Telegram(cfg), cfg)
+            daily.send(Prometheus(cfg.prometheus_url), clients, cfg)
         else:
             print('\n'.join(geocheck.telegram_section(geocheck.load_last(cfg))))
     elif cmd == 'report':
-        daily.send(Prometheus(cfg.prometheus_url), Remnawave(cfg), Telegram(cfg), cfg,
-                   dry_run='--dry-run' in argv)
+        daily.send(Prometheus(cfg.prometheus_url), clients, cfg, dry_run='--dry-run' in argv)
     else:
         print(__doc__)
         return 2

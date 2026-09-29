@@ -1,7 +1,9 @@
 # секреты
 .env
 *.env
+.env.bak
 !.env.example
+config.toml
 
 # Python
 __pycache__/

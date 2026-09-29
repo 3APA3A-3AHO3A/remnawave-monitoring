@@ -1,8 +1,10 @@
 """Список хостов для xray-checker.
 
-Берём подписку служебного пользователя и оставляем в ней только хосты
-с тегом MONITOR_HOST_TAG. Результат — обычный файл со ссылками vless://…,
-его читают три контейнера xray-checker.
+У каждой панели берём подписку служебного пользователя и оставляем только
+хосты с тегами host_tag (все три проверки) и host_tag_lite (только «Xray жив»).
+К названиям хостов добавляется host_suffix панели, чтобы одинаковые хосты
+разных панелей не смешались. Результат — два файла со ссылками, их читают
+контейнеры xray-checker.
 """
 import base64
 import json
@@ -37,6 +39,22 @@ def fix_link(link):
             base += ('&' if '?' in base else '?') + 'alpn=h3'
         return base + sep + remark
     return link
+
+
+def rename(link, suffix):
+    """Дописать к названию хоста в ссылке подпись панели."""
+    if not suffix:
+        return link
+    if link.startswith('vmess://'):
+        try:
+            payload = link[8:] + '=' * (-len(link[8:]) % 4)
+            data = json.loads(base64.b64decode(payload))
+            data['ps'] = data.get('ps', '') + suffix
+            return 'vmess://' + base64.b64encode(json.dumps(data, ensure_ascii=False).encode()).decode()
+        except ValueError:
+            return link
+    base, _, remark = link.partition('#')
+    return base + '#' + urllib.parse.quote(urllib.parse.unquote(remark) + suffix, safe='')
 
 
 def select_links(raw_configs, keys, tag):
@@ -77,27 +95,49 @@ def write_if_changed(path, text):
     return True
 
 
-def refresh(rw, cfg):
-    """Пишет два файла:
-    monitor.txt      — хосты с тегом MONITORING: все три проверки (Xray, WARP, Psiphon);
-    monitor-xray.txt — они же плюс хосты с тегом MONITORING_LITE: только «Xray жив».
-    LITE — для хостов с лимитом трафика (LTE, цепочки через CDN): одна лёгкая проверка."""
-    user = rw.user_by_username(cfg.monitor_username)
+def panel_links(rw, panel):
+    """Ссылки одной панели: (полные, лёгкие, названия, лёгкие названия)."""
+    user = rw.user_by_username(panel.monitor_user)
     raw = rw.raw_subscription(user['shortUuid'])
     keys = rw.connection_keys(user['id'])
     configs = raw.get('resolvedProxyConfigs') or []
-    full, names, missing = select_links(configs, keys, cfg.monitor_host_tag)
-    lite, lite_names, lite_missing = select_links(configs, keys, cfg.monitor_host_tag_lite)
+    full, names, missing = select_links(configs, keys, panel.host_tag)
+    lite, lite_names, lite_missing = select_links(configs, keys, panel.host_tag_lite)
     lite = [x for x in lite if x not in full]
     lite_names = [n for n in lite_names if n not in names]
     if missing or lite_missing:
-        log('links', 'не нашёл ссылку для хостов: ' + ', '.join(missing + lite_missing))
+        log('links', f'[{panel.title}] не нашёл ссылку для хостов: ' + ', '.join(missing + lite_missing))
     if not full and not lite:
-        log('links', f'у пользователя «{cfg.monitor_username}» нет хостов с тегами '
-                     f'{cfg.monitor_host_tag} / {cfg.monitor_host_tag_lite} — проверять нечего')
-    changed = write_if_changed(cfg.links_file, '\n'.join(full) + '\n')
-    changed |= write_if_changed(cfg.links_file_xray, '\n'.join(full + lite) + '\n')
+        log('links', f'[{panel.title}] у пользователя «{panel.monitor_user}» нет хостов с тегами '
+                     f'{panel.host_tag} / {panel.host_tag_lite}')
+    sfx = panel.host_suffix
+    return ([rename(x, sfx) for x in full], [rename(x, sfx) for x in lite],
+            [n + sfx for n in names], [n + sfx for n in lite_names])
+
+
+def refresh(cfg, clients):
+    """Обновить файлы ссылок по всем панелям. Если панель не ответила —
+    её хосты берём из прошлого удачного списка, чтобы проверки не пропали."""
+    folder = os.path.dirname(cfg.links_file) or '.'
+    full_all, lite_all, report = [], [], []
+    for p in cfg.panels:
+        cache = os.path.join(folder, f'.panel-{p.id}.json')
+        try:
+            full, lite, names, lite_names = panel_links(clients[p.id], p)
+            write_if_changed(cache, json.dumps([full, lite, names, lite_names], ensure_ascii=False))
+        except Exception as e:
+            log('links', f'[{p.title}] список хостов не обновлён: {e}')
+            try:
+                with open(cache, encoding='utf-8') as f:
+                    full, lite, names, lite_names = json.load(f)
+            except (OSError, ValueError):
+                full, lite, names, lite_names = [], [], [], []
+        full_all += full
+        lite_all += lite
+        report.append((p, names, lite_names))
+    changed = write_if_changed(cfg.links_file, '\n'.join(full_all) + '\n')
+    changed |= write_if_changed(cfg.links_file_xray, '\n'.join(full_all + lite_all) + '\n')
     if changed:
-        log('links', f'список обновлён: {len(full)} полных + {len(lite)} лёгких — '
-                     + ', '.join(names + [f'{n} (лёгкая)' for n in lite_names]))
-    return names + [f'{n} (только Xray)' for n in lite_names]
+        log('links', 'список обновлён: ' + '; '.join(
+            f'{p.title} — {len(n)} полных + {len(ln)} лёгких' for p, n, ln in report))
+    return report
