@@ -341,7 +341,8 @@ class ExporterTest(unittest.TestCase):
                                     'place': 'Madrid, ES', 'consensus': 'ES 90%',
                                     'checks': {'services:google': {'name': 'Google', 'group': 'services',
                                                                    'kind': 'country', 'value': 'ES'}}}},
-            'reserve:u2': {'ok': False, 'error': 'timeout'}}}
+            'reserve:u2': {'ok': False, 'error': 'timeout'},
+            'u3': {'summary': {'checks': {}, 'risk': 1}}}}           # старый формат ключа
         lines = exporter.Lines()
         exporter.geocheck_lines(run, lines, cfg)
         text = lines.text()
@@ -349,6 +350,7 @@ class ExporterTest(unittest.TestCase):
                       'service="Google",value="ES"} 1', text)
         self.assertIn('rwmon_geocheck_risk{panel="main",panel_title="Основная",node_uuid="u1"} 5', text)
         self.assertNotIn('u2', text)
+        self.assertIn('rwmon_geocheck_risk{panel="main",panel_title="Основная",node_uuid="u3"} 1', text)
 
     def test_site(self):
         import http.server

@@ -285,7 +285,9 @@ def geocheck_lines(run, lines, cfg):
     titles = {p.id: p.title for p in cfg.panels}
     for key, r in (run.get('results') or {}).items():
         pid, _, uid = key.partition(':')
-        if not uid or not r.get('summary'):
+        if not uid:                   # прогон версии для одной панели: ключ — просто uuid ноды
+            pid, uid = cfg.panels[0].id, key
+        if not r.get('summary'):
             continue
         base = {'panel': pid, 'panel_title': titles.get(pid, pid), 'node_uuid': uid}
         sm = r['summary']
