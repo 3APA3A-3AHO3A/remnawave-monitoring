@@ -2,7 +2,7 @@
      сначала «восстановилось», потом «всё ещё не работает».
      __MULTI__ подставляется при запуске: true, если панелей несколько. */}}
 {{ define "rwmon.target" -}}
-{{ if .Labels.node_name }}{{ .Labels.node_name | html }}{{ if and __MULTI__ .Labels.panel_title }} · {{ .Labels.panel_title | html }}{{ end }}{{ else if .Labels.host }}{{ .Labels.host | html }}{{ if and __MULTI__ .Labels.panel_title }} · {{ .Labels.panel_title | html }}{{ end }}{{ else if .Labels.name }}{{ .Labels.name | html }}{{ else if .Labels.site }}{{ .Labels.site | html }}{{ else if .Labels.panel_title }}{{ .Labels.panel_title | html }}{{ else if .Labels.probe }}проба «{{ .Labels.probe | html }}»{{ else if .Labels.check }}проверка «{{ .Labels.check }}»{{ else if .Labels.rulename }}{{ .Labels.rulename | html }}{{ else }}{{ .Labels.alertname | html }}{{ end }}{{ if .Labels.tag }} · {{ .Labels.tag | html }}{{ end }}
+{{ if .Labels.node_name }}{{ .Labels.node_name | html }}{{ if and __MULTI__ .Labels.panel_title }} · {{ .Labels.panel_title | html }}{{ end }}{{ else if .Labels.host }}{{ .Labels.host | html }}{{ if and __MULTI__ .Labels.panel_title }} · {{ .Labels.panel_title | html }}{{ end }}{{ else if .Labels.name }}{{ .Labels.name | html }}{{ else if .Labels.site }}{{ .Labels.site | html }}{{ else if .Labels.panel_title }}{{ .Labels.panel_title | html }}{{ else if .Labels.probe }}проба «{{ .Labels.probe | html }}»{{ else if .Labels.check }}проверка «{{ .Labels.check }}»{{ else if .Labels.rulename }}{{ .Labels.rulename | html }}{{ else }}{{ .Labels.alertname | html }}{{ end }}{{ if .Labels.tag }} · {{ .Labels.tag | html }}{{ end }}{{ if .Labels.process }} · процесс «{{ .Labels.process | html }}»{{ end }}
 {{- end }}
 
 {{ define "rwmon.firing" -}}

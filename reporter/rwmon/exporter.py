@@ -68,6 +68,11 @@ HELP = {
     'rwmon_users_total': ('gauge', 'Всего пользователей'),
     'rwmon_panel_traffic_exact': ('gauge', 'Трафик точный (из /metrics панели) — 1, приблизительный (из API) — 0'),
     'rwmon_panel_last_poll_seconds': ('gauge', 'Время последнего успешного опроса панели'),
+    'rwmon_panel_process_memory_bytes': ('gauge', 'Процесс панели: занятая память (RSS)'),
+    'rwmon_panel_process_heap_bytes': ('gauge', 'Процесс панели: память под данные JavaScript (heap)'),
+    'rwmon_panel_process_lag_ms': ('gauge', 'Процесс панели: задержка очереди дел, мс (99-й перцентиль)'),
+    'rwmon_panel_process_uptime_seconds': ('gauge', 'Процесс панели: сколько секунд работает без перезапуска'),
+    'rwmon_panel_process_handles': ('gauge', 'Процесс панели: открытые соединения и таймеры'),
 }
 
 
@@ -270,8 +275,33 @@ def collect_panel(panel, rw, lines, state, multi=False):
         state[panel.id + ':version'], state[panel.id + ':version_at'] = version, time.time()
     if version:
         lines.add('rwmon_panel_info', dict(base, version=version), 1)
+
+    try:
+        health_lines(base, rw.health(), lines)
+        state.pop(panel.id + ':health', None)
+    except ApiError as e:                # старые версии панели этого не умеют — просто пропускаем
+        _warn(state, panel.id + ':health', e)
     state.pop(panel.id + ':nodes', None)
     return True
+
+
+HEALTH_FIELDS = (('rwmon_panel_process_memory_bytes', 'rss'),
+                 ('rwmon_panel_process_heap_bytes', 'heapUsed'),
+                 ('rwmon_panel_process_lag_ms', 'eventLoopP99Ms'),
+                 ('rwmon_panel_process_uptime_seconds', 'uptime'),
+                 ('rwmon_panel_process_handles', 'activeHandles'))
+
+
+def health_lines(base, metrics, lines):
+    """Здоровье процессов панели. pid в метки не кладём: после перезапуска он другой,
+    и Prometheus увидел бы новую серию вместо сброса uptime."""
+    for m in metrics:
+        if not isinstance(m, dict) or not m.get('instanceType'):
+            continue
+        pl = dict(base, process=str(m['instanceType']), instance=str(m.get('instanceId', '0')))
+        for name, key in HEALTH_FIELDS:
+            if isinstance(m.get(key), (int, float)):
+                lines.add(name, pl, m[key])
 
 
 def geocheck_lines(run, lines, cfg):

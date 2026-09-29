@@ -299,6 +299,16 @@ class FakePanel:
     def metadata(self):
         return {'version': '2.3.0'}
 
+    def health(self):
+        return [{'rss': 267890688, 'eventLoopP99Ms': 1.5, 'uptime': 74252.7, 'activeHandles': 30,
+                 'heapUsed': 100, 'pid': 121, 'instanceId': '0', 'instanceType': 'api'},
+                {'rss': 'bad', 'instanceType': 'scheduler'}, 'мусор']
+
+
+class OldPanel(FakePanel):
+    def health(self):
+        raise ApiError('404')
+
 
 class ExporterTest(unittest.TestCase):
     def collect(self, rw, **panel_over):
@@ -327,6 +337,17 @@ class ExporterTest(unittest.TestCase):
         self.assertIn('# TYPE rwmon_node_inbound_upload_bytes counter', text)
         self.assertIn('rwmon_node_network_tx_bytes_per_second{panel="main",panel_title="Основная",node_uuid="u1"} 5000', text)
         self.assertIn('rwmon_node_network_rx_bytes{panel="main",panel_title="Основная",node_uuid="u1"} 123456789012', text)
+        pl = 'panel="main",panel_title="Основная",process="api",instance="0"'
+        self.assertIn(f'rwmon_panel_process_memory_bytes{{{pl}}} 267890688', text)
+        self.assertIn(f'rwmon_panel_process_lag_ms{{{pl}}} 1.5', text)
+        self.assertIn(f'rwmon_panel_process_uptime_seconds{{{pl}}} 74252.7', text)
+        self.assertNotIn('pid', text)                       # pid меняется при перезапуске — не метка
+        self.assertNotIn('rwmon_panel_process_memory_bytes{panel="main",panel_title="Основная",process="scheduler"', text)
+
+    def test_health_unsupported(self):
+        ok, text = self.collect(OldPanel())
+        self.assertTrue(ok)                                 # старая панель без /api/system/health — не ошибка
+        self.assertNotIn('rwmon_panel_process_', text)
 
     def test_node_extras(self):
         _, text = self.collect(FakePanel())
@@ -422,7 +443,8 @@ class RenderTest(unittest.TestCase):
             prom = load('prometheus/prometheus.yml')
             self.assertEqual(prom['scrape_configs'][1]['static_configs'][1]['labels'], {'check': 'warp'})
             rules = load('grafana/alerting/rules.yml')['groups'][0]['rules']
-            self.assertEqual(len({r['uid'] for r in rules}), 16)
+            self.assertEqual(len({r['uid'] for r in rules}), 19)
+            self.assertIn('rwmon_panel_process_lag_ms[5m]) > 200', json.dumps(rules))
             self.assertIn('psiphon-out|WARP', json.dumps(rules))
             routes = load('grafana/alerting/policies.yml')['policies'][0]['routes']
             self.assertEqual(routes[0]['object_matchers'], [['scope', '=', 'host'], ['panel', '=', 'main']])

@@ -99,6 +99,10 @@ class Remnawave:
     def metadata(self):
         return self._call('GET', '/api/system/metadata')
 
+    def health(self):
+        """Память, задержка и время работы процессов самой панели (api, scheduler, processor)."""
+        return (self._call('GET', '/api/system/health') or {}).get('runtimeMetrics') or []
+
     def billing_nodes(self):
         return self._call('GET', '/api/infra-billing/nodes')
 

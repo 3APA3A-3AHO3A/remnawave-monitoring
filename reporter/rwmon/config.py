@@ -73,6 +73,8 @@ class Config:
     url_psiphon: str = 'http://ip-api.com/line/?fields=query'
     clients_drop_min_avg: float = 3
     clients_drop_max_now: float = 1
+    panel_lag_ms: float = 200       # «панель тормозит»: задержка процесса, мс
+    panel_memory_mb: float = 1024   # «панель ест много памяти»: RSS процесса, МБ
     outbound_tags: list = field(default_factory=lambda: ['psiphon-out', 'WARP'])
     bad_countries: set = field(default_factory=lambda: {'RU', 'BY'})
     attach_images: bool = True
@@ -203,6 +205,8 @@ def parse(data, env=os.environ):
         url_psiphon=chk.get('url_psiphon', Config.url_psiphon),
         clients_drop_min_avg=num(al, 'clients_drop_min_avg', 3, 'alerts', kind=float),
         clients_drop_max_now=num(al, 'clients_drop_max_now', 1, 'alerts', kind=float),
+        panel_lag_ms=num(al, 'panel_lag_ms', 200, 'alerts', minimum=1, kind=float),
+        panel_memory_mb=num(al, 'panel_memory_mb', 1024, 'alerts', minimum=64, kind=float),
         outbound_tags=[str(t) for t in al.get('outbound_tags', ['psiphon-out', 'WARP'])],
         bad_countries={str(c).upper() for c in geo.get('bad_countries', ['RU', 'BY'])},
         attach_images=bool(geo.get('attach_images', True)),

@@ -1794,7 +1794,7 @@
       "id": 9,
       "type": "table",
       "title": "Панели",
-      "description": "Трафик «из API» округлён панелью — для точного укажите metrics_url в config.toml",
+      "description": "«Без рестарта» — сколько работает самый «молодой» процесс панели (жёлтым — меньше часа). «Задержка» — насколько подтормаживает самый медленный процесс: до 50 мс норма, от 200 мс админка и подписки начинают подвисать. Подробно — ряд «Здоровье панелей»",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
@@ -1831,24 +1831,36 @@
           "format": "table"
         },
         {
-          "refId": "C",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "max by (panel_title) (rwmon_panel_traffic_exact{panel_title=~\"$panel\"})",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        },
-        {
           "refId": "D",
           "datasource": {
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
           "expr": "sum by (panel_title) (rwmon_users_total{panel_title=~\"$panel\"})",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "U",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "min by (panel_title) (rwmon_panel_process_uptime_seconds{panel_title=~\"$panel\"})",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "L",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (panel_title) (rwmon_panel_process_lag_ms{panel_title=~\"$panel\"})",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -1872,14 +1884,16 @@
               "Value #A": 1,
               "version": 2,
               "Value #D": 3,
-              "Value #C": 4
+              "Value #U": 4,
+              "Value #L": 5
             },
             "renameByName": {
               "panel_title": "Панель",
               "Value #A": "API",
               "version": "версия",
               "Value #D": "польз.",
-              "Value #C": "трафик"
+              "Value #U": "без рестарта",
+              "Value #L": "задержка"
             }
           }
         }
@@ -1968,30 +1982,6 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "трафик"
-            },
-            "properties": [
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "1": {
-                        "text": "точный"
-                      },
-                      "0": {
-                        "text": "≈ из API"
-                      }
-                    }
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
               "options": "польз."
             },
             "properties": [
@@ -2008,12 +1998,88 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "трафик"
+              "options": "без рестарта"
             },
             "properties": [
               {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
                 "id": "custom.width",
-                "value": 75
+                "value": 80
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "yellow",
+                      "value": null
+                    },
+                    {
+                      "color": "text",
+                      "value": 3600
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "задержка"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 70
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 50
+                    },
+                    {
+                      "color": "red",
+                      "value": 200
+                    }
+                  ]
+                }
               }
             ]
           }
@@ -3248,9 +3314,9 @@
       ]
     },
     {
-      "id": 27,
+      "id": 26,
       "type": "row",
-      "title": "Проверки хостов",
+      "title": "Здоровье панелей",
       "collapsed": true,
       "gridPos": {
         "h": 1,
@@ -3261,6 +3327,238 @@
       "panels": [
         {
           "id": 23,
+          "type": "timeseries",
+          "title": "Память процессов панели",
+          "description": "Сколько памяти занимает каждый процесс. Норма — ровная линия; если растёт день за днём и не падает — утечка. Красная линия — порог алерта по умолчанию (panel_memory_mb = 1024)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 44
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "max by (panel_title, process) (rwmon_panel_process_memory_bytes{panel_title=~\"$panel\"})",
+              "legendFormat": "{{panel_title}} · {{process}}",
+              "range": true,
+              "instant": false
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "min": 0,
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "gradientMode": "opacity",
+                "showPoints": "never",
+                "spanNulls": 120000,
+                "stacking": {
+                  "mode": "none"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "dashed"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1073741824
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 24,
+          "type": "timeseries",
+          "title": "Задержка процессов панели",
+          "description": "Насколько процесс не успевает разбирать свою очередь дел (99-й перцентиль). До 50 мс — норма. Красная линия — порог алерта «Панель тормозит» по умолчанию (panel_lag_ms = 200)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 44
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "max by (panel_title, process) (rwmon_panel_process_lag_ms{panel_title=~\"$panel\"})",
+              "legendFormat": "{{panel_title}} · {{process}}",
+              "range": true,
+              "instant": false
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "min": 0,
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "gradientMode": "opacity",
+                "showPoints": "never",
+                "spanNulls": 120000,
+                "stacking": {
+                  "mode": "none"
+                },
+                "axisSoftMin": 0,
+                "thresholdsStyle": {
+                  "mode": "dashed"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 200
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 25,
+          "type": "timeseries",
+          "title": "Работает без перезапуска",
+          "description": "Линия растёт, пока процесс работает; падение в ноль — перезапуск (обновление панели или падение)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 44
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "max by (panel_title, process) (rwmon_panel_process_uptime_seconds{panel_title=~\"$panel\"})",
+              "legendFormat": "{{panel_title}} · {{process}}",
+              "range": true,
+              "instant": false
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "min": 0,
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "gradientMode": "opacity",
+                "showPoints": "never",
+                "spanNulls": 120000,
+                "stacking": {
+                  "mode": "none"
+                },
+                "axisSoftMin": 0
+              }
+            },
+            "overrides": []
+          }
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "row",
+      "title": "Проверки хостов",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 44
+      },
+      "panels": [
+        {
+          "id": 27,
           "type": "table",
           "title": "Подключение",
           "description": "Строка — хост, колонка — панель. Одинаковые хосты разных панелей проверяются один раз",
@@ -3272,7 +3570,7 @@
             "h": 12,
             "w": 8,
             "x": 0,
-            "y": 44
+            "y": 45
           },
           "targets": [
             {
@@ -3390,7 +3688,7 @@
           }
         },
         {
-          "id": 24,
+          "id": 28,
           "type": "table",
           "title": "WARP",
           "description": "Строка — хост, колонка — панель. Одинаковые хосты разных панелей проверяются один раз. Лёгкие (LTE) хосты здесь не проверяются",
@@ -3402,7 +3700,7 @@
             "h": 12,
             "w": 8,
             "x": 8,
-            "y": 44
+            "y": 45
           },
           "targets": [
             {
@@ -3520,7 +3818,7 @@
           }
         },
         {
-          "id": 25,
+          "id": 29,
           "type": "table",
           "title": "Psiphon",
           "description": "Строка — хост, колонка — панель. Одинаковые хосты разных панелей проверяются один раз. Лёгкие (LTE) хосты здесь не проверяются",
@@ -3532,7 +3830,7 @@
             "h": 12,
             "w": 8,
             "x": 16,
-            "y": 44
+            "y": 45
           },
           "targets": [
             {
@@ -3650,7 +3948,7 @@
           }
         },
         {
-          "id": 26,
+          "id": 30,
           "type": "state-timeline",
           "title": "История сбоев",
           "description": "Только хосты, у которых за выбранный период были сбои",
@@ -3662,7 +3960,7 @@
             "h": 10,
             "w": 24,
             "x": 0,
-            "y": 56
+            "y": 57
           },
           "targets": [
             {
@@ -3732,7 +4030,7 @@
       ]
     },
     {
-      "id": 30,
+      "id": 34,
       "type": "row",
       "title": "Проба из РФ",
       "collapsed": true,
@@ -3740,11 +4038,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 45
       },
       "panels": [
         {
-          "id": 28,
+          "id": 32,
           "type": "state-timeline",
           "title": "Не открывалось из РФ",
           "description": "Адреса хостов, которые хотя бы раз за период не открылись с какой-нибудь пробы в России. Если сбой на одной пробе — скорее всего, проблема у самой RU-ноды; если на всех — блокировка.",
@@ -3756,7 +4054,7 @@
             "h": 10,
             "w": 24,
             "x": 0,
-            "y": 45
+            "y": 46
           },
           "targets": [
             {
@@ -3824,7 +4122,7 @@
           }
         },
         {
-          "id": 29,
+          "id": 33,
           "type": "timeseries",
           "title": "Время соединения из РФ",
           "description": "Сколько занимает установка соединения с проб в России до каждого адреса",
@@ -3836,7 +4134,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 55
+            "y": 56
           },
           "targets": [
             {
@@ -3888,7 +4186,7 @@
       ]
     },
     {
-      "id": 35,
+      "id": 39,
       "type": "row",
       "title": "GeoCheck: как видят ноды",
       "collapsed": true,
@@ -3896,11 +4194,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 45
+        "y": 46
       },
       "panels": [
         {
-          "id": 31,
+          "id": 35,
           "type": "table",
           "title": "Как сервисы видят ноды",
           "description": "Страна, которую определяет каждый сервис (последний GeoCheck). Красным — RU и BY. yes/no — ответы на вопросы вроде «показывает ли Google капчу»",
@@ -3912,7 +4210,7 @@
             "h": 16,
             "w": 24,
             "x": 0,
-            "y": 46
+            "y": 47
           },
           "targets": [
             {
@@ -4048,7 +4346,7 @@
           }
         },
         {
-          "id": 32,
+          "id": 36,
           "type": "table",
           "title": "Доступ к сервисам",
           "description": "Открывается ли сервис с IP ноды: ✓ — да, ✗ — нет, рядом — регион, который он определил",
@@ -4060,7 +4358,7 @@
             "h": 16,
             "w": 24,
             "x": 0,
-            "y": 62
+            "y": 63
           },
           "targets": [
             {
@@ -4230,7 +4528,7 @@
           }
         },
         {
-          "id": 33,
+          "id": 37,
           "type": "table",
           "title": "GeoIP-базы и CDN",
           "description": "Что о стране IP ноды записано в базах GeoIP и что видят CDN",
@@ -4242,7 +4540,7 @@
             "h": 16,
             "w": 24,
             "x": 0,
-            "y": 78
+            "y": 79
           },
           "targets": [
             {
@@ -4378,7 +4676,7 @@
           }
         },
         {
-          "id": 34,
+          "id": 38,
           "type": "table",
           "title": "IP нод",
           "description": "IP, сеть и тип IP по последнему GeoCheck. Риск — оценка репутации IP (0–100)",
@@ -4390,7 +4688,7 @@
             "h": 16,
             "w": 24,
             "x": 0,
-            "y": 94
+            "y": 95
           },
           "targets": [
             {

@@ -318,26 +318,34 @@ def build():
     p.append(table('Панели', {'h': 8, 'w': 6, 'x': 10, 'y': y}, [
         target(f'max by (panel_title) (rwmon_panel_up{{{F}}})', 'A', instant=True, fmt='table'),
         target(f'max by (panel_title, version) (rwmon_panel_info{{{F}}})', 'B', instant=True, fmt='table'),
-        target(f'max by (panel_title) (rwmon_panel_traffic_exact{{{F}}})', 'C', instant=True, fmt='table'),
         target(f'sum by (panel_title) (rwmon_users_total{{{F}}})', 'D', instant=True, fmt='table'),
+        target(f'min by (panel_title) (rwmon_panel_process_uptime_seconds{{{F}}})', 'U', instant=True, fmt='table'),
+        target(f'max by (panel_title) (rwmon_panel_process_lag_ms{{{F}}})', 'L', instant=True, fmt='table'),
     ], [
         {'id': 'merge', 'options': {}},
         {'id': 'organize', 'options': {
             'excludeByName': {'Time': True, 'Value #B': True},
-            'indexByName': {'panel_title': 0, 'Value #A': 1, 'version': 2, 'Value #D': 3, 'Value #C': 4},
+            'indexByName': {'panel_title': 0, 'Value #A': 1, 'version': 2, 'Value #D': 3, 'Value #U': 4,
+                            'Value #L': 5},
             'renameByName': {'panel_title': 'Панель', 'Value #A': 'API', 'version': 'версия',
-                             'Value #D': 'польз.', 'Value #C': 'трафик'}}},
+                             'Value #D': 'польз.', 'Value #U': 'без рестарта', 'Value #L': 'задержка'}}},
     ], [
         by_name('Панель', custom__minWidth=90),
         by_name('версия', custom__width=65),
         by_name('API', custom__width=50, custom__cellOptions={'type': 'color-background'},
                 mappings=[{'type': 'value', 'options': {'1': {'text': 'OK', 'color': GREEN},
                                                         '0': {'text': 'НЕТ', 'color': RED}}}]),
-        by_name('трафик', mappings=[{'type': 'value', 'options': {'1': {'text': 'точный'},
-                                                                  '0': {'text': '≈ из API'}}}]),
         by_name('польз.', decimals=0, custom__width=60),
-        by_name('трафик', custom__width=75),
-    ], desc='Трафик «из API» округлён панелью — для точного укажите metrics_url в config.toml'))
+        by_name('без рестарта', unit='s', decimals=0, custom__width=80, custom__cellOptions={'type': 'color-text'},
+                thresholds={'mode': 'absolute', 'steps': [{'color': YELLOW, 'value': None},
+                                                          {'color': 'text', 'value': 3600}]}),
+        by_name('задержка', unit='ms', decimals=0, custom__width=70, custom__cellOptions={'type': 'color-text'},
+                thresholds={'mode': 'absolute', 'steps': [{'color': 'text', 'value': None},
+                                                          {'color': YELLOW, 'value': 50},
+                                                          {'color': RED, 'value': 200}]}),
+    ], desc='«Без рестарта» — сколько работает самый «молодой» процесс панели (жёлтым — меньше часа). '
+            '«Задержка» — насколько подтормаживает самый медленный процесс: до 50 мс норма, от 200 мс '
+            'админка и подписки начинают подвисать. Подробно — ряд «Здоровье панелей»'))
 
     p.append(table('Сайты', {'h': 8, 'w': 8, 'x': 16, 'y': y}, [
         target('max by (site) (rwmon_site_up)', 'A', instant=True, fmt='table'),
@@ -458,6 +466,33 @@ def build():
         c['options']['legend']['sortBy'] = 'Last *'
         c['options']['legend']['sortDesc'] = True
     p.append(row('Сравнение нод', y, compare))
+    y += 1
+
+    # 6а. Здоровье самой панели: процессы api / scheduler / processor
+    proc = '{{panel_title}} · {{process}}'
+    health = [
+        timeseries('Память процессов панели', {'h': 8, 'w': 8, 'x': 0, 'y': y + 1}, [
+            target(f'max by (panel_title, process) (rwmon_panel_process_memory_bytes{{{F}}})', 'A', proc),
+        ], 'bytes', legend='table', placement='bottom', fill=0,
+            desc='Сколько памяти занимает каждый процесс. Норма — ровная линия; если растёт день за днём '
+                 'и не падает — утечка. Красная линия — порог алерта по умолчанию (panel_memory_mb = 1024)'),
+        timeseries('Задержка процессов панели', {'h': 8, 'w': 8, 'x': 8, 'y': y + 1}, [
+            target(f'max by (panel_title, process) (rwmon_panel_process_lag_ms{{{F}}})', 'A', proc),
+        ], 'ms', legend='table', placement='bottom', fill=0,
+            desc='Насколько процесс не успевает разбирать свою очередь дел (99-й перцентиль). До 50 мс — норма. '
+                 'Красная линия — порог алерта «Панель тормозит» по умолчанию (panel_lag_ms = 200)'),
+        timeseries('Работает без перезапуска', {'h': 8, 'w': 8, 'x': 16, 'y': y + 1}, [
+            target(f'max by (panel_title, process) (rwmon_panel_process_uptime_seconds{{{F}}})', 'A', proc),
+        ], 's', legend='table', placement='bottom', fill=0,
+            desc='Линия растёт, пока процесс работает; падение в ноль — перезапуск (обновление панели или падение)'),
+    ]
+    for c, limit in ((health[0], 1024 * 1048576), (health[1], 200)):
+        c['fieldConfig']['defaults']['thresholds'] = {'mode': 'absolute', 'steps': [
+            {'color': 'transparent', 'value': None}, {'color': RED, 'value': limit}]}
+        c['fieldConfig']['defaults']['custom']['thresholdsStyle'] = {'mode': 'dashed'}
+    for c in health:
+        c['options']['legend']['calcs'] = ['lastNotNull', 'max']
+    p.append(row('Здоровье панелей', y, health))
     y += 1
 
     # 7. Проверки хостов

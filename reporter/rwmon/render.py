@@ -173,6 +173,26 @@ def rules(cfg):
               '(rwmon_panel_up == 0) * 0 + 1', '5m',
               'API панели не отвечает', 'API панели снова отвечает',
               'reporter не может получить данные панели: проверьте панель, адрес api_url и токен.', 'all'),
+        _rule('rwmon-panel-slow', 'Панель тормозит',
+              f'(avg_over_time(rwmon_panel_process_lag_ms[5m]) > {cfg.panel_lag_ms:g}) * 0 + 1', '5m',
+              'Панель тормозит', 'Панель снова работает быстро',
+              f'Процесс панели дольше 5 минут отвечает с задержкой больше {cfg.panel_lag_ms:g} мс: '
+              'админка, бот и выдача подписок могут подвисать. Обычно это нехватка CPU на сервере панели '
+              'или тяжёлая задача (массовые изменения пользователей). Графики — Grafana, «Здоровье панелей».',
+              'all', severity='warning', window=1200),
+        _rule('rwmon-panel-restart', 'Процесс панели перезапустился',
+              '(resets(rwmon_panel_process_uptime_seconds[15m]) > 0) * 0 + 1', '0s',
+              'Процесс панели перезапустился', 'Процесс панели работает без перезапусков 15 минут',
+              'Время работы процесса сбросилось в ноль. Если вы обновляли или перезапускали панель — '
+              'всё в порядке. Если нет — процесс упал: docker logs --tail 100 remnawave',
+              'all', severity='warning', window=1200),
+        _rule('rwmon-panel-memory', 'Панель ест много памяти',
+              f'(avg_over_time(rwmon_panel_process_memory_bytes[15m]) > {cfg.panel_memory_mb:g} * 1048576) * 0 + 1',
+              '15m', 'Панель ест много памяти', 'Память панели в норме',
+              f'Процесс панели занимает больше {cfg.panel_memory_mb:g} МБ дольше 15 минут. Если на графике '
+              'память растёт день за днём — это утечка, панель скоро упадёт; поможет перезапуск '
+              '(docker compose restart remnawave) и обновление панели.',
+              'all', severity='warning', window=1800),
         _rule('rwmon-reporter-down', 'reporter не отвечает', '(up{job="reporter"} == 0) * 0 + 1', '3m',
               'reporter не отвечает — данные панелей не собираются', 'reporter снова работает',
               'Посмотрите журнал: docker compose logs --tail 50 reporter', 'all'),
