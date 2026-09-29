@@ -78,16 +78,26 @@ def write_if_changed(path, text):
 
 
 def refresh(rw, cfg):
+    """Пишет два файла:
+    monitor.txt      — хосты с тегом MONITORING: все три проверки (Xray, WARP, Psiphon);
+    monitor-xray.txt — они же плюс хосты с тегом MONITORING_LITE: только «Xray жив».
+    LITE — для хостов с лимитом трафика (LTE, цепочки через CDN): одна лёгкая проверка."""
     user = rw.user_by_username(cfg.monitor_username)
     raw = rw.raw_subscription(user['shortUuid'])
     keys = rw.connection_keys(user['id'])
-    links, names, missing = select_links(raw.get('resolvedProxyConfigs') or [], keys,
-                                         cfg.monitor_host_tag)
-    if missing:
-        log('links', 'не нашёл ссылку для хостов: ' + ', '.join(missing))
-    if not links:
-        log('links', f'у пользователя «{cfg.monitor_username}» нет хостов с тегом '
-                     f'{cfg.monitor_host_tag} — проверять нечего')
-    if write_if_changed(cfg.links_file, '\n'.join(links) + '\n'):
-        log('links', f'список обновлён: {len(links)} хостов — ' + ', '.join(names))
-    return names
+    configs = raw.get('resolvedProxyConfigs') or []
+    full, names, missing = select_links(configs, keys, cfg.monitor_host_tag)
+    lite, lite_names, lite_missing = select_links(configs, keys, cfg.monitor_host_tag_lite)
+    lite = [x for x in lite if x not in full]
+    lite_names = [n for n in lite_names if n not in names]
+    if missing or lite_missing:
+        log('links', 'не нашёл ссылку для хостов: ' + ', '.join(missing + lite_missing))
+    if not full and not lite:
+        log('links', f'у пользователя «{cfg.monitor_username}» нет хостов с тегами '
+                     f'{cfg.monitor_host_tag} / {cfg.monitor_host_tag_lite} — проверять нечего')
+    changed = write_if_changed(cfg.links_file, '\n'.join(full) + '\n')
+    changed |= write_if_changed(cfg.links_file_xray, '\n'.join(full + lite) + '\n')
+    if changed:
+        log('links', f'список обновлён: {len(full)} полных + {len(lite)} лёгких — '
+                     + ', '.join(names + [f'{n} (лёгкая)' for n in lite_names]))
+    return names + [f'{n} (только Xray)' for n in lite_names]

@@ -76,7 +76,7 @@ def check(cfg):
 
     rw, prom, tg = Remnawave(cfg), Prometheus(cfg.prometheus_url), Telegram(cfg)
     step('API панели, ноды', lambda: f'{len(rw.nodes())} шт.')
-    step(f'служебный пользователь «{cfg.monitor_username}» и хосты {cfg.monitor_host_tag}',
+    step(f'служебный пользователь «{cfg.monitor_username}» и хосты {cfg.monitor_host_tag} / {cfg.monitor_host_tag_lite}',
          lambda: ', '.join(links.refresh(rw, cfg)) or 'хостов с тегом нет')
     def panel_metrics():
         states = prom.targets('remnawave')

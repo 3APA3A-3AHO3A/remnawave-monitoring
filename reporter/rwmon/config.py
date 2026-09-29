@@ -60,6 +60,8 @@ class Config:
     attach_images: bool = True
     outbound_tags: str = 'psiphon-out|WARP'
     links_interval: int = 600
+    monitor_host_tag_lite: str = 'MONITORING_LITE'
+    links_file_xray: str = '/links/monitor-xray.txt'
 
 
 def load():
@@ -83,6 +85,8 @@ def load():
         attach_images=_env('GEOCHECK_ATTACH_IMAGES', 'true').lower() in ('1', 'true', 'yes'),
         outbound_tags=_env('OUTBOUND_TAGS', 'psiphon-out|WARP'),
         links_interval=int(_env('LINKS_INTERVAL', '600') or 600),
+        monitor_host_tag_lite=_env('MONITOR_HOST_TAG_LITE', 'MONITORING_LITE'),
+        links_file_xray=_env('LINKS_FILE_XRAY', '/links/monitor-xray.txt'),
     )
     missing = [n for n, v in (('RW_API_TOKEN', cfg.rw_api_token),
                               ('TG_BOT_TOKEN', cfg.tg_bot_token),

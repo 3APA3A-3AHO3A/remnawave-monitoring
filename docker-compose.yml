@@ -119,6 +119,7 @@ services:
     environment:
       TZ: UTC
       LINKS_FILE: /links/monitor.txt
+      LINKS_FILE_XRAY: /links/monitor-xray.txt
       DATA_DIR: /data
       PROMETHEUS_URL: http://127.0.0.1:${PROMETHEUS_PORT:-9090}
     volumes:
@@ -134,6 +135,8 @@ services:
       <<: *checker-env
       METRICS_PORT: "2112"
       XRAY_START_PORT: "21000"
+      # MONITORING + MONITORING_LITE (лёгкие хосты проверяются только здесь)
+      SUBSCRIPTION_URL: file:///links/monitor-xray.txt
       PROXY_CHECK_METHOD: status
       PROXY_STATUS_CHECK_URL: ${CHECK_URL_XRAY:-https://www.google.com/generate_204}
 
