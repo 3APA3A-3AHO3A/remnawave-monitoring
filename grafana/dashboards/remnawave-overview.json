@@ -1022,7 +1022,7 @@
               },
               {
                 "id": "custom.width",
-                "value": 70
+                "value": 92
               },
               {
                 "id": "custom.align",
@@ -2422,7 +2422,7 @@
       "id": 12,
       "type": "timeseries",
       "title": "Сеть всех нод",
-      "description": "Вверх от нуля — принято серверами (RX), вниз пунктиром — отправлено (TX)",
+      "description": "Вверх от нуля — принято серверами (RX), вниз пунктиром — отправлено (TX). Сглажено: среднее за шаг графика",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
@@ -2440,7 +2440,7 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (panel_title) (rwmon_node_network_rx_bytes_per_second{panel_title=~\"$panel\"}) * 8",
+          "expr": "sum by (panel_title) (avg_over_time(rwmon_node_network_rx_bytes_per_second{panel_title=~\"$panel\"}[$__interval])) * 8",
           "legendFormat": "{{panel_title}} ↓ RX",
           "range": true,
           "instant": false
@@ -2451,7 +2451,7 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (panel_title) (rwmon_node_network_tx_bytes_per_second{panel_title=~\"$panel\"}) * 8",
+          "expr": "sum by (panel_title) (avg_over_time(rwmon_node_network_tx_bytes_per_second{panel_title=~\"$panel\"}[$__interval])) * 8",
           "legendFormat": "{{panel_title}} ↑ TX",
           "range": true,
           "instant": false
@@ -2513,7 +2513,8 @@
             ]
           }
         ]
-      }
+      },
+      "interval": "2m"
     },
     {
       "id": 13,
@@ -2629,7 +2630,7 @@
       "id": 15,
       "type": "timeseries",
       "title": "$node",
-      "description": "Сеть сервера ноды: вверх (зелёным) — принято, вниз (жёлтым) — отправлено. Белая линия и правая шкала — сколько клиентов на ноде. Показываются ноды, выбранные вверху в «Нода».",
+      "description": "Сеть сервера ноды: вверх (зелёным) — принято, вниз (жёлтым) — отправлено. Сглажено: среднее за шаг графика. Клиентов по нодам — в таблице «Ноды» и в «Сравнении нод». Показываются ноды, выбранные вверху в «Нода».",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
@@ -2647,8 +2648,8 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (node) ((rwmon_node_network_rx_bytes_per_second{panel_title=~\"$panel\"} * 8) * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
-          "legendFormat": "RX",
+          "expr": "sum by (node) ((avg_over_time(rwmon_node_network_rx_bytes_per_second{panel_title=~\"$panel\"}[$__interval]) * 8) * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+          "legendFormat": "↓ принято",
           "range": true,
           "instant": false
         },
@@ -2658,19 +2659,8 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (node) ((rwmon_node_network_tx_bytes_per_second{panel_title=~\"$panel\"} * 8) * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
-          "legendFormat": "TX",
-          "range": true,
-          "instant": false
-        },
-        {
-          "refId": "C",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "sum by (node) (rwmon_node_online_users{panel_title=~\"$panel\"} * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
-          "legendFormat": "клиенты",
+          "expr": "sum by (node) ((avg_over_time(rwmon_node_network_tx_bytes_per_second{panel_title=~\"$panel\"}[$__interval]) * 8) * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+          "legendFormat": "↑ отправлено",
           "range": true,
           "instant": false
         }
@@ -2692,8 +2682,8 @@
           "unit": "bps",
           "min": null,
           "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 25,
+            "lineWidth": 1.5,
+            "fillOpacity": 30,
             "gradientMode": "opacity",
             "showPoints": "never",
             "spanNulls": 120000,
@@ -2707,7 +2697,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "RX"
+              "options": "↓ принято"
             },
             "properties": [
               {
@@ -2722,7 +2712,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "TX"
+              "options": "↑ отправлено"
             },
             "properties": [
               {
@@ -2737,52 +2727,10 @@
                 "value": "negative-Y"
               }
             ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "клиенты"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "none"
-              },
-              {
-                "id": "decimals",
-                "value": 0
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "text"
-                }
-              },
-              {
-                "id": "custom.axisPlacement",
-                "value": "right"
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 0
-              },
-              {
-                "id": "custom.lineWidth",
-                "value": 1
-              },
-              {
-                "id": "custom.axisSoftMin",
-                "value": 0
-              },
-              {
-                "id": "min",
-                "value": 0
-              }
-            ]
           }
         ]
       },
+      "interval": "2m",
       "repeat": "node",
       "repeatDirection": "h",
       "maxPerRow": 4

@@ -147,6 +147,11 @@ def negative_tx():
                      custom__lineStyle={'fill': 'dash', 'dash': [6, 4]}, custom__fillOpacity=0)]
 
 
+def smooth(metric, flt):
+    """Среднее значение за шаг графика: линии без «зубьев» от опроса раз в 30 секунд."""
+    return f'avg_over_time({metric}{{{flt}}}[$__interval])'
+
+
 def history(title, pos, expr, legend, desc):
     """Полоски «OK/СБОЙ» по времени — только для тех, у кого были сбои."""
     return {
@@ -246,7 +251,7 @@ def build():
         by_name('Связь', custom__width=60, custom__cellOptions={'type': 'color-text'}, custom__align='center',
                 mappings=[{'type': 'value', 'options': {'1': {'text': 'да', 'color': GREEN},
                                                         '0': {'text': 'нет', 'color': RED}}}]),
-        by_name('Онлайн', decimals=0, custom__width=70, custom__align='right'),
+        by_name('Онлайн', decimals=0, custom__width=92, custom__align='right'),
         by_name('онлайн за период', custom__cellOptions={'type': 'sparkline', 'hideValue': True},
                 color={'mode': 'fixed', 'fixedColor': GREEN}, custom__width=170),
         *[by_name(n, custom__width=72, custom__align='center', mappings=OK_MAP,
@@ -370,12 +375,14 @@ def build():
         target(f'sum by (panel_title) (rwmon_node_online_users{{{F}}})', 'A', '{{panel_title}}'),
     ], 'none', stack=True, fill=35, desc='По панелям, слоями: высота — сколько всего клиентов'))
     p.append(timeseries('Сеть всех нод', {'h': 8, 'w': 8, 'x': 8, 'y': y}, [
-        target(f'sum by (panel_title) (rwmon_node_network_rx_bytes_per_second{{{F}}}) * 8', 'A',
+        target(f'sum by (panel_title) ({smooth("rwmon_node_network_rx_bytes_per_second", F)}) * 8', 'A',
                '{{panel_title}} ↓ RX'),
-        target(f'sum by (panel_title) (rwmon_node_network_tx_bytes_per_second{{{F}}}) * 8', 'B',
+        target(f'sum by (panel_title) ({smooth("rwmon_node_network_tx_bytes_per_second", F)}) * 8', 'B',
                '{{panel_title}} ↑ TX'),
     ], 'bps', overrides=negative_tx(),
-        desc='Вверх от нуля — принято серверами (RX), вниз пунктиром — отправлено (TX)'))
+        desc='Вверх от нуля — принято серверами (RX), вниз пунктиром — отправлено (TX). '
+             'Сглажено: среднее за шаг графика'))
+    p[-1]['interval'] = '2m'
     p.append(timeseries('Аутбаунды: $outbound', {'h': 8, 'w': 8, 'x': 16, 'y': y}, [
         target(f'sum by (tag) (rate(rwmon_node_outbound_download_bytes{{tag=~"$outbound", {F}}}[5m])) * 8',
                'A', '{{tag}} ответы'),
@@ -392,21 +399,21 @@ def build():
     p.append({'id': _next(), 'type': 'row', 'title': 'Каждая нода отдельно', 'collapsed': False,
               'gridPos': {'h': 1, 'w': 24, 'x': 0, 'y': y}, 'panels': []})
     card = timeseries('$node', {'h': 6, 'w': 6, 'x': 0, 'y': y + 1}, [
-        target(f'sum by (node) ((rwmon_node_network_rx_bytes_per_second{{{F}}} * 8) {one_by})', 'A', 'RX'),
-        target(f'sum by (node) ((rwmon_node_network_tx_bytes_per_second{{{F}}} * 8) {one_by})', 'B', 'TX'),
-        target(f'sum by (node) (rwmon_node_online_users{{{F}}} {one_by})', 'C', 'клиенты'),
-    ], 'bps', fill=25, overrides=[
-        by_name('RX', color={'mode': 'fixed', 'fixedColor': GREEN}),
-        by_name('TX', color={'mode': 'fixed', 'fixedColor': YELLOW}, custom__transform='negative-Y'),
-        by_name('клиенты', unit='none', decimals=0, color={'mode': 'fixed', 'fixedColor': 'text'},
-                custom__axisPlacement='right', custom__fillOpacity=0, custom__lineWidth=1,
-                custom__axisSoftMin=0, min=0),
+        target(f'sum by (node) (({smooth("rwmon_node_network_rx_bytes_per_second", F)} * 8) {one_by})',
+               'A', '↓ принято'),
+        target(f'sum by (node) (({smooth("rwmon_node_network_tx_bytes_per_second", F)} * 8) {one_by})',
+               'B', '↑ отправлено'),
+    ], 'bps', fill=30, overrides=[
+        by_name('↓ принято', color={'mode': 'fixed', 'fixedColor': GREEN}),
+        by_name('↑ отправлено', color={'mode': 'fixed', 'fixedColor': YELLOW}, custom__transform='negative-Y'),
     ], desc='Сеть сервера ноды: вверх (зелёным) — принято, вниз (жёлтым) — отправлено. '
-            'Белая линия и правая шкала — сколько клиентов на ноде. Показываются ноды, выбранные вверху в «Нода».')
+            'Сглажено: среднее за шаг графика. Клиентов по нодам — в таблице «Ноды» и в «Сравнении нод». '
+            'Показываются ноды, выбранные вверху в «Нода».')
+    card['interval'] = '2m'
     card.update({'repeat': 'node', 'repeatDirection': 'h', 'maxPerRow': 4})
     card['options']['legend'] = {'showLegend': False, 'displayMode': 'hidden', 'placement': 'bottom', 'calcs': []}
     card['options']['tooltip'] = {'mode': 'multi', 'sort': 'none'}
-    card['fieldConfig']['defaults']['custom']['lineWidth'] = 1
+    card['fieldConfig']['defaults']['custom']['lineWidth'] = 1.5
     p.append(card)
     y += 7
 
