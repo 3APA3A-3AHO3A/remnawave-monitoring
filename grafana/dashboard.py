@@ -425,6 +425,30 @@ def build():
     p.append(card)
     y += 7
 
+    # 5а. Аутбаунды по нодам: такие же карточки, но только выходы из фильтра «Аутбаунд»
+    out_by = f'* on (panel, node_uuid) group_left (node) {one}'
+    ocard = timeseries('$node', {'h': 7, 'w': 6, 'x': 0, 'y': y + 1}, [
+        target(f'sum by (tag) ((rate(rwmon_node_outbound_download_bytes{{tag=~"$outbound", {F}}}[5m]) * 8) '
+               f'{out_by})', 'A', '{{tag}} ответы'),
+        target(f'sum by (tag) ((rate(rwmon_node_outbound_upload_bytes{{tag=~"$outbound", {F}}}[5m]) * 8) '
+               f'{out_by})', 'B', '{{tag}} запросы'),
+    ], 'bps', fill=20, overrides=negative_tx() + [
+        by_regex('^WARP .*', color={'mode': 'fixed', 'fixedColor': 'orange'}),
+        # через Psiphon идёт в десятки раз меньше, чем через WARP — своя шкала справа, иначе линия в нуле
+        by_regex('^psiphon.*', color={'mode': 'fixed', 'fixedColor': 'purple'}, custom__axisPlacement='right'),
+    ], desc='Трафик ноды через выходы, выбранные вверху в «Аутбаунд»: вверх — ответы из выхода, '
+            'вниз пунктиром — запросы в него. Psiphon — по правой шкале: через него идёт намного меньше. '
+            'Запросы есть, а ответов нет — выход на этой ноде сломан. '
+            'Пусто — через выход на этой ноде никто не ходил.')
+    ocard.update({'repeat': 'node', 'repeatDirection': 'h', 'maxPerRow': 4})
+    ocard['options']['legend'] = {'showLegend': True, 'displayMode': 'list', 'placement': 'bottom', 'calcs': []}
+    ocard['options']['tooltip'] = {'mode': 'multi', 'sort': 'none'}
+    ocard['fieldConfig']['defaults']['custom']['lineWidth'] = 1.5
+    ocard['fieldConfig']['defaults']['custom']['axisCenteredZero'] = True   # ноль обеих шкал на одной высоте
+    ocard['fieldConfig']['defaults']['noValue'] = 'Нет трафика через выбранные выходы'
+    p.append(row('Аутбаунды по нодам: $outbound', y, [ocard]))
+    y += 1
+
     # 6. Сравнение нод: все выбранные ноды на одном графике — видно, какая выделяется
     def node_ts(expr, ref, legend='{{node_name}} · {{panel_title}}'):
         return target(f'sum by (panel_title, node_name) (({expr}) {BY_NODE})', ref, legend)

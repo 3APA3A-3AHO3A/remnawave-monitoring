@@ -2806,9 +2806,9 @@
       "maxPerRow": 4
     },
     {
-      "id": 22,
+      "id": 17,
       "type": "row",
-      "title": "Сравнение нод",
+      "title": "Аутбаунды по нодам: $outbound",
       "collapsed": true,
       "gridPos": {
         "h": 1,
@@ -2820,6 +2820,156 @@
         {
           "id": 16,
           "type": "timeseries",
+          "title": "$node",
+          "description": "Трафик ноды через выходы, выбранные вверху в «Аутбаунд»: вверх — ответы из выхода, вниз пунктиром — запросы в него. Psiphon — по правой шкале: через него идёт намного меньше. Запросы есть, а ответов нет — выход на этой ноде сломан. Пусто — через выход на этой ноде никто не ходил.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 0,
+            "y": 43
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "sum by (tag) ((rate(rwmon_node_outbound_download_bytes{tag=~\"$outbound\", panel_title=~\"$panel\"}[5m]) * 8) * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+              "legendFormat": "{{tag}} ответы",
+              "range": true,
+              "instant": false
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "sum by (tag) ((rate(rwmon_node_outbound_upload_bytes{tag=~\"$outbound\", panel_title=~\"$panel\"}[5m]) * 8) * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+              "legendFormat": "{{tag}} запросы",
+              "range": true,
+              "instant": false
+            }
+          ],
+          "options": {
+            "legend": {
+              "showLegend": true,
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bps",
+              "min": null,
+              "custom": {
+                "lineWidth": 1.5,
+                "fillOpacity": 20,
+                "gradientMode": "opacity",
+                "showPoints": "never",
+                "spanNulls": 120000,
+                "stacking": {
+                  "mode": "none"
+                },
+                "axisSoftMin": 0,
+                "axisCenteredZero": true
+              },
+              "noValue": "Нет трафика через выбранные выходы"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": ".*(↑|TX|запрос).*"
+                },
+                "properties": [
+                  {
+                    "id": "custom.transform",
+                    "value": "negative-Y"
+                  },
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "fill": "dash",
+                      "dash": [
+                        6,
+                        4
+                      ]
+                    }
+                  },
+                  {
+                    "id": "custom.fillOpacity",
+                    "value": 0
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^WARP .*"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "orange"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^psiphon.*"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "purple"
+                    }
+                  },
+                  {
+                    "id": "custom.axisPlacement",
+                    "value": "right"
+                  }
+                ]
+              }
+            ]
+          },
+          "repeat": "node",
+          "repeatDirection": "h",
+          "maxPerRow": 4
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "type": "row",
+      "title": "Сравнение нод",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 43
+      },
+      "panels": [
+        {
+          "id": 18,
+          "type": "timeseries",
           "title": "Клиенты на нодах",
           "description": "",
           "datasource": {
@@ -2830,7 +2980,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 43
+            "y": 44
           },
           "targets": [
             {
@@ -2882,7 +3032,7 @@
           }
         },
         {
-          "id": 17,
+          "id": 19,
           "type": "timeseries",
           "title": "Трафик клиентов: к клиентам ↑ / от клиентов ↓",
           "description": "",
@@ -2894,7 +3044,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 43
+            "y": 44
           },
           "targets": [
             {
@@ -2984,7 +3134,7 @@
           }
         },
         {
-          "id": 18,
+          "id": 20,
           "type": "timeseries",
           "title": "CPU: load average на ядро",
           "description": "",
@@ -2996,7 +3146,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 51
+            "y": 52
           },
           "targets": [
             {
@@ -3065,7 +3215,7 @@
           }
         },
         {
-          "id": 19,
+          "id": 21,
           "type": "timeseries",
           "title": "Память",
           "description": "",
@@ -3077,7 +3227,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 51
+            "y": 52
           },
           "targets": [
             {
@@ -3146,7 +3296,7 @@
           }
         },
         {
-          "id": 20,
+          "id": 22,
           "type": "timeseries",
           "title": "Аутбаунды $outbound: ответы ↑ / запросы ↓",
           "description": "",
@@ -3158,7 +3308,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 59
+            "y": 60
           },
           "targets": [
             {
@@ -3248,7 +3398,7 @@
           }
         },
         {
-          "id": 21,
+          "id": 23,
           "type": "timeseries",
           "title": "Задержка подключения к хостам",
           "description": "Сколько занимает проверка «Подключение»: подключение к хосту и загрузка страницы",
@@ -3260,7 +3410,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 59
+            "y": 60
           },
           "targets": [
             {
@@ -3314,7 +3464,7 @@
       ]
     },
     {
-      "id": 26,
+      "id": 28,
       "type": "row",
       "title": "Здоровье панелей",
       "collapsed": true,
@@ -3322,11 +3472,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 44
       },
       "panels": [
         {
-          "id": 23,
+          "id": 25,
           "type": "timeseries",
           "title": "Память процессов панели",
           "description": "Сколько памяти занимает каждый процесс. Норма — ровная линия; если растёт день за днём и не падает — утечка. Красная линия — порог алерта по умолчанию (panel_memory_mb = 1024)",
@@ -3338,7 +3488,7 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 44
+            "y": 45
           },
           "targets": [
             {
@@ -3404,7 +3554,7 @@
           }
         },
         {
-          "id": 24,
+          "id": 26,
           "type": "timeseries",
           "title": "Задержка процессов панели",
           "description": "Насколько процесс не успевает разбирать свою очередь дел (99-й перцентиль). До 50 мс — норма. Красная линия — порог алерта «Панель тормозит» по умолчанию (panel_lag_ms = 200)",
@@ -3416,7 +3566,7 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 44
+            "y": 45
           },
           "targets": [
             {
@@ -3482,7 +3632,7 @@
           }
         },
         {
-          "id": 25,
+          "id": 27,
           "type": "timeseries",
           "title": "Работает без перезапуска",
           "description": "Линия растёт, пока процесс работает; падение в ноль — перезапуск (обновление панели или падение)",
@@ -3494,7 +3644,7 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 44
+            "y": 45
           },
           "targets": [
             {
@@ -3546,7 +3696,7 @@
       ]
     },
     {
-      "id": 31,
+      "id": 33,
       "type": "row",
       "title": "Проверки хостов",
       "collapsed": true,
@@ -3554,11 +3704,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 45
       },
       "panels": [
         {
-          "id": 27,
+          "id": 29,
           "type": "table",
           "title": "Подключение",
           "description": "Строка — хост, колонка — панель. Одинаковые хосты разных панелей проверяются один раз",
@@ -3570,7 +3720,7 @@
             "h": 12,
             "w": 8,
             "x": 0,
-            "y": 45
+            "y": 46
           },
           "targets": [
             {
@@ -3688,7 +3838,7 @@
           }
         },
         {
-          "id": 28,
+          "id": 30,
           "type": "table",
           "title": "WARP",
           "description": "Строка — хост, колонка — панель. Одинаковые хосты разных панелей проверяются один раз. Лёгкие (LTE) хосты здесь не проверяются",
@@ -3700,7 +3850,7 @@
             "h": 12,
             "w": 8,
             "x": 8,
-            "y": 45
+            "y": 46
           },
           "targets": [
             {
@@ -3818,7 +3968,7 @@
           }
         },
         {
-          "id": 29,
+          "id": 31,
           "type": "table",
           "title": "Psiphon",
           "description": "Строка — хост, колонка — панель. Одинаковые хосты разных панелей проверяются один раз. Лёгкие (LTE) хосты здесь не проверяются",
@@ -3830,7 +3980,7 @@
             "h": 12,
             "w": 8,
             "x": 16,
-            "y": 45
+            "y": 46
           },
           "targets": [
             {
@@ -3948,7 +4098,7 @@
           }
         },
         {
-          "id": 30,
+          "id": 32,
           "type": "state-timeline",
           "title": "История сбоев",
           "description": "Только хосты, у которых за выбранный период были сбои",
@@ -3960,7 +4110,7 @@
             "h": 10,
             "w": 24,
             "x": 0,
-            "y": 57
+            "y": 58
           },
           "targets": [
             {
@@ -4030,7 +4180,7 @@
       ]
     },
     {
-      "id": 34,
+      "id": 36,
       "type": "row",
       "title": "Проба из РФ",
       "collapsed": true,
@@ -4038,11 +4188,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 45
+        "y": 46
       },
       "panels": [
         {
-          "id": 32,
+          "id": 34,
           "type": "state-timeline",
           "title": "Не открывалось из РФ",
           "description": "Адреса хостов, которые хотя бы раз за период не открылись с какой-нибудь пробы в России. Если сбой на одной пробе — скорее всего, проблема у самой RU-ноды; если на всех — блокировка.",
@@ -4054,7 +4204,7 @@
             "h": 10,
             "w": 24,
             "x": 0,
-            "y": 46
+            "y": 47
           },
           "targets": [
             {
@@ -4122,7 +4272,7 @@
           }
         },
         {
-          "id": 33,
+          "id": 35,
           "type": "timeseries",
           "title": "Время соединения из РФ",
           "description": "Сколько занимает установка соединения с проб в России до каждого адреса",
@@ -4134,7 +4284,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 56
+            "y": 57
           },
           "targets": [
             {
@@ -4186,7 +4336,7 @@
       ]
     },
     {
-      "id": 39,
+      "id": 41,
       "type": "row",
       "title": "GeoCheck: как видят ноды",
       "collapsed": true,
@@ -4194,11 +4344,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 46
+        "y": 47
       },
       "panels": [
         {
-          "id": 35,
+          "id": 37,
           "type": "table",
           "title": "Как сервисы видят ноды",
           "description": "Страна, которую определяет каждый сервис (последний GeoCheck). Красным — RU и BY. yes/no — ответы на вопросы вроде «показывает ли Google капчу»",
@@ -4210,7 +4360,7 @@
             "h": 16,
             "w": 24,
             "x": 0,
-            "y": 47
+            "y": 48
           },
           "targets": [
             {
@@ -4346,7 +4496,7 @@
           }
         },
         {
-          "id": 36,
+          "id": 38,
           "type": "table",
           "title": "Доступ к сервисам",
           "description": "Открывается ли сервис с IP ноды: ✓ — да, ✗ — нет, рядом — регион, который он определил",
@@ -4358,7 +4508,7 @@
             "h": 16,
             "w": 24,
             "x": 0,
-            "y": 63
+            "y": 64
           },
           "targets": [
             {
@@ -4528,7 +4678,7 @@
           }
         },
         {
-          "id": 37,
+          "id": 39,
           "type": "table",
           "title": "GeoIP-базы и CDN",
           "description": "Что о стране IP ноды записано в базах GeoIP и что видят CDN",
@@ -4540,7 +4690,7 @@
             "h": 16,
             "w": 24,
             "x": 0,
-            "y": 79
+            "y": 80
           },
           "targets": [
             {
@@ -4676,7 +4826,7 @@
           }
         },
         {
-          "id": 38,
+          "id": 40,
           "type": "table",
           "title": "IP нод",
           "description": "IP, сеть и тип IP по последнему GeoCheck. Риск — оценка репутации IP (0–100)",
@@ -4688,7 +4838,7 @@
             "h": 16,
             "w": 24,
             "x": 0,
-            "y": 95
+            "y": 96
           },
           "targets": [
             {
