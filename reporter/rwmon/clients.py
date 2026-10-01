@@ -2,6 +2,7 @@
 Только стандартная библиотека Python — без лишних зависимостей."""
 import base64
 import json
+import socket
 import time
 import urllib.error
 import urllib.parse
@@ -15,15 +16,30 @@ class ApiError(Exception):
     pass
 
 
+DNS_RETRY_DELAY = 2
+
+
+def is_dns_error(e):
+    """Не удалось узнать IP домена (сбой DNS) — запрос до сервера даже не ушёл."""
+    return isinstance(getattr(e, 'reason', e), socket.gaierror)
+
+
 def _open(req, timeout):
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return r.read()
-    except urllib.error.HTTPError as e:
-        body = e.read().decode('utf-8', 'replace')[:300]
-        raise ApiError(f'{req.full_url.split("?")[0]} → HTTP {e.code}: {body}') from None
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
-        raise ApiError(f'{req.full_url.split("?")[0]} → нет ответа: {e}') from None
+    """Один запрос. При сбое DNS — ещё одна попытка через пару секунд: такие сбои
+    обычно мгновенные, и из-за них не стоит считать сервис недоступным."""
+    url = req.full_url.split('?')[0]
+    for attempt in (1, 2):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            body = e.read().decode('utf-8', 'replace')[:300]
+            raise ApiError(f'{url} → HTTP {e.code}: {body}') from None
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            if attempt == 1 and is_dns_error(e):
+                time.sleep(DNS_RETRY_DELAY)
+                continue
+            raise ApiError(f'{url} → нет ответа: {e}') from None
 
 
 # ── Remnawave ────────────────────────────────────────────────

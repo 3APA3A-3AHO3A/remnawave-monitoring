@@ -27,7 +27,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import links
-from .clients import ApiError, Remnawave
+from .clients import DNS_RETRY_DELAY, ApiError, Remnawave, is_dns_error
 from .util import log, read_json
 
 HELP = {
@@ -334,19 +334,23 @@ def geocheck_lines(run, lines, cfg):
 def check_site(site, timeout=15):
     """Открыть страницу как браузер: код ответа, время, ключевое слово и срок сертификата."""
     out = {'up': 0, 'code': None, 'seconds': None, 'cert': None}
-    started = time.time()
     req = urllib.request.Request(site.url, headers=BROWSER)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            body = r.read(512 * 1024).decode('utf-8', 'replace')
-            out['code'] = r.status
-            out['up'] = int((site.any_status or 200 <= r.status < 400)
-                            and (not site.keyword or site.keyword in body))
-    except urllib.error.HTTPError as e:
-        out['code'] = e.code
-        out['up'] = int(site.any_status and not site.keyword)     # сервер ответил — для any_status этого хватает
-    except Exception:
-        pass
+    for attempt in (1, 2):
+        started = time.time()
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                body = r.read(512 * 1024).decode('utf-8', 'replace')
+                out['code'] = r.status
+                out['up'] = int((site.any_status or 200 <= r.status < 400)
+                                and (not site.keyword or site.keyword in body))
+        except urllib.error.HTTPError as e:
+            out['code'] = e.code
+            out['up'] = int(site.any_status and not site.keyword)  # сервер ответил — для any_status этого хватает
+        except Exception as e:
+            if attempt == 1 and is_dns_error(e):      # мгновенный сбой DNS — пробуем ещё раз
+                time.sleep(DNS_RETRY_DELAY)
+                continue
+        break
     out['seconds'] = time.time() - started
     host = urllib.parse.urlsplit(site.url)
     if host.scheme == 'https':

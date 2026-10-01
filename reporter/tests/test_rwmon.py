@@ -430,6 +430,42 @@ class ExporterTest(unittest.TestCase):
         self.assertIsNone(exporter.parse_size('много'))
 
 
+class DnsRetryTest(unittest.TestCase):
+    def test_dns_retry(self):
+        import socket, urllib.error, urllib.request
+        from rwmon import clients
+        calls = []
+
+        class Resp:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self): return b'ok'
+
+        def fake(req, timeout):
+            calls.append(1)
+            if len(calls) == 1:
+                raise urllib.error.URLError(socket.gaierror(-3, 'Try again'))
+            return Resp()
+
+        orig, delay = urllib.request.urlopen, clients.DNS_RETRY_DELAY
+        urllib.request.urlopen, clients.DNS_RETRY_DELAY = fake, 0
+        try:
+            req = urllib.request.Request('https://example.invalid/api/nodes')
+            self.assertEqual(clients._open(req, 5), b'ok')      # сбой DNS → вторая попытка
+            self.assertEqual(len(calls), 2)
+            calls.clear()
+
+            def refused(req, timeout):
+                calls.append(1)
+                raise urllib.error.URLError(ConnectionRefusedError(111, 'refused'))
+            urllib.request.urlopen = refused
+            with self.assertRaises(ApiError):
+                clients._open(req, 5)
+            self.assertEqual(len(calls), 1)                     # другие ошибки не повторяем
+        finally:
+            urllib.request.urlopen, clients.DNS_RETRY_DELAY = orig, delay
+
+
 class RenderTest(unittest.TestCase):
     def test_render(self):
         cfg = make_cfg()
