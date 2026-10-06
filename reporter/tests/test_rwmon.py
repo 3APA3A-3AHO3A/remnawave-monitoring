@@ -6,7 +6,7 @@ import unittest
 import os
 import tempfile
 
-from rwmon import config, exporter, geocheck, links, render
+from rwmon import config, daily, exporter, geocheck, links, render
 from rwmon.clients import ApiError, split_message
 
 TG = {'bot_token': '1:x', 'chat_id': '-100'}
@@ -70,6 +70,32 @@ class GeocheckTest(unittest.TestCase):
         self.assertIn(('maxmind.com', 'SC', 'NL'), minor)
         self.assertEqual(geocheck.attention(new, {'RU'}), ['Google видит RU'])
         self.assertEqual(geocheck.compare(None, new), ([], []))
+
+    def test_routed_and_ru_nodes(self):
+        old = geocheck.summarize(REPORT)
+        rep = json.loads(json.dumps(REPORT))
+        rep['geo']['services'].append({'id': 'tiktok', 'name': 'TikTok', 'kind': 'country', 'ipv4': {'value': 'ru'}})
+        rep['stash_checks'][0]['region'] = 'ru'
+        new = geocheck.summarize(rep)
+        main, minor = geocheck.compare(old, new, ['Netflix', 'TikTok'])
+        self.assertIn(('Netflix', 'available (DE)', 'available (RU)'), minor)    # идёт через WARP
+        self.assertEqual(main, [])
+        self.assertEqual(geocheck.attention(new, {'RU'}), ['TikTok видит RU'])
+        self.assertEqual(geocheck.attention(new, {'RU'}, ['tiktok']), [])
+        self.assertEqual(geocheck.attention(new, {'RU'}, node_country='ru'), [])   # RU-нода
+
+    def test_attention_new_and_same(self):
+        run = {'results': {
+            'a': {'name': 'A', 'ok': True, 'attention': ['Google видит RU', 'YouTube видит RU'],
+                  'attention_new': ['YouTube видит RU']},
+            'b': {'name': 'B', 'ok': True, 'attention': ['Google видит RU'], 'attention_new': []},
+            'c': {'name': 'C', 'ok': True, 'attention': ['Google видит RU']},     # старый last-run.json
+        }}
+        text = '\n'.join(geocheck.telegram_section(run))
+        self.assertIn('<b>A</b>: YouTube видит RU', text)
+        self.assertIn('<b>C</b>: Google видит RU', text)
+        self.assertNotIn('<b>B</b>', text)
+        self.assertIn('Как и вчера (число нод): Google видит RU — 2', text)
 
     def test_pick_nodes(self):
         nodes = [
@@ -466,6 +492,39 @@ class DnsRetryTest(unittest.TestCase):
             urllib.request.urlopen, clients.DNS_RETRY_DELAY = orig, delay
 
 
+class DailyTest(unittest.TestCase):
+    def data(self, **over):
+        d = {'info': {('main', 'n1'): {'node_name': 'Poland 1', 'panel_title': 'Основная'}},
+             'offline': {('main', 'n1'): 1.0},
+             'panel_down': {('main',): 4.0, ('reserve',): 12.0},
+             'checks': [('main', '🇨🇦 Канада', 'ca', 'warp', 40.0), ('reserve', '🇨🇦 Канада', 'ca', 'warp', 40.0),
+                        ('main', '🇸🇪 Швеция 3', 'se', 'xray', 99.0), ('reserve', '🇸🇪 Швеция 2', 'se', 'xray', 99.0),
+                        ('main', '🇵🇱 Польша', 'pl', 'psiphon', 2.0)],
+             'probe_blocked': [('main', '🇨🇦 Канада', '1.2.3.4:443', 1.0), ('reserve', '🇨🇦 Канада', '1.2.3.4:443', 1.0)],
+             'probe_mass': 3.0, 'sites_down': {('Сайт',): 7.0}, 'sites_ru_down': {}}
+        d.update(over)
+        return d
+
+    def test_problem_lines(self):
+        lines, short = daily.problem_lines(self.data(), make_cfg())
+        text = '\n'.join(lines)
+        self.assertIn('🇨🇦 Канада · Основная + Резерв · WARP — не проходила проверка, 40 мин', text)
+        self.assertIn('🇸🇪 Швеция 2 · Резерв / 🇸🇪 Швеция 3 · Основная · Подключение', text)
+        self.assertIn('Резерв — API панели был недоступен, 12 мин', text)
+        self.assertNotIn('Основная — API', text)                  # 4 мин — перезагрузка, не сбой
+        self.assertIn('Пробы из РФ разом не достучались', text)
+        self.assertIn('🌐 Сайт — не открывался, 7 мин', text)
+        self.assertEqual(text.count('Канада'), 1)                  # две панели — одна строка
+        self.assertEqual(short, 3)                 # нода 1 мин, Польша 2 мин, Канада из РФ 1 мин
+
+    def test_build_text_only_short(self):
+        d = self.data(checks=[], panel_down={}, probe_mass=0, sites_down={}, now={}, peak={}, traffic={},
+                      outbound={}, status={}, online={}, total={}, probe_blocked=[])
+        text = daily.build_text(d, {}, None, make_cfg())
+        self.assertIn('Серьёзных сбоев за сутки не было', text)
+        self.assertIn('1 коротких (до 2 мин)', text)
+
+
 class RenderTest(unittest.TestCase):
     def test_render(self):
         cfg = make_cfg()
@@ -482,6 +541,13 @@ class RenderTest(unittest.TestCase):
             self.assertEqual(len({r['uid'] for r in rules}), 19)
             self.assertIn('rwmon_panel_process_lag_ms[5m]) > 200', json.dumps(rules))
             self.assertIn('psiphon-out|WARP', json.dumps(rules))
+            byuid = {r['uid']: r for r in rules}
+            self.assertTrue(byuid['rwmon-outbound-no-response']['isPaused'])
+            self.assertFalse(byuid['rwmon-warp-down']['isPaused'])
+            self.assertEqual(byuid['rwmon-site-cert']['labels']['repeat'], 'daily')
+            pol = load('grafana/alerting/policies.yml')['policies'][0]
+            self.assertEqual(pol['repeat_interval'], '60m')
+            self.assertEqual(pol['routes'][2]['routes'][0]['repeat_interval'], '24h')
             routes = load('grafana/alerting/policies.yml')['policies'][0]['routes']
             self.assertEqual(routes[0]['object_matchers'], [['scope', '=', 'host'], ['panel', '=', 'main']])
             self.assertTrue(all(r.get('continue') for r in routes[2:]))

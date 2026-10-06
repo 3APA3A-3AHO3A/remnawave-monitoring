@@ -64,8 +64,15 @@ def summarize(report):
     return s
 
 
-def compare(prev, cur):
-    """Что изменилось со вчера. Возвращает (главное, второстепенное)."""
+def routed(name, services):
+    """Сервис идёт с ноды не напрямую (WARP / Psiphon): совпадение по части названия."""
+    low = str(name).lower()
+    return any(s.lower() in low for s in services or ())
+
+
+def compare(prev, cur, services=()):
+    """Что изменилось со вчера. Возвращает (главное, второстепенное).
+    services — сервисы, которые идут не с IP ноды: их изменения второстепенные."""
     main, minor = [], []
     if not prev:
         return main, minor
@@ -83,15 +90,21 @@ def compare(prev, cur):
     for key, c in (cur.get('checks') or {}).items():
         before = (old.get(key) or {}).get('value')
         if before and before != c['value']:
-            (main if c['group'] in MAIN_GROUPS else minor).append((c['name'], before, c['value']))
+            important = c['group'] in MAIN_GROUPS and not routed(c['name'], services)
+            (main if important else minor).append((c['name'], before, c['value']))
     return main, minor
 
 
-def attention(summary, bad_countries):
-    """Что плохо прямо сейчас, даже если не менялось: сервис видит ноду в «плохой» стране."""
+def attention(summary, bad_countries, services=(), node_country=''):
+    """Что плохо прямо сейчас, даже если не менялось: сервис видит ноду в «плохой» стране.
+    Нода сама в такой стране (RU-нода) — так и должно быть, не подсвечиваем.
+    Сервисы, которые идут не с IP ноды (WARP / Psiphon), тоже пропускаем."""
+    if str(node_country).upper() in bad_countries:
+        return []
     out = []
-    for c in (summary.get('checks') or {}).values():
-        if c['group'] == 'services' and c['kind'] == 'country' and c['value'] in bad_countries:
+    for c in ((summary or {}).get('checks') or {}).values():
+        if (c['group'] == 'services' and c['kind'] == 'country' and c['value'] in bad_countries
+                and not routed(c['name'], services)):
             out.append(f'{c["name"]} видит {c["value"]}')
     return out
 
@@ -158,9 +171,12 @@ def run(cfg, clients):
                 try:                         # странный ответ по одной ноде не ломает весь прогон
                     summary = summarize((res or {}).get('rawReport'))
                     prev = baseline.get(key) or baseline.get(uid)     # uid — формат до нескольких панелей
-                    main, minor = compare(prev, summary)
-                    item.update(summary=summary, changes=main, minor=minor,
-                                attention=attention(summary, cfg.bad_countries),
+                    main, minor = compare(prev, summary, cfg.routed_services)
+                    country = item['country']
+                    now_bad = attention(summary, cfg.bad_countries, cfg.routed_services, country)
+                    was_bad = attention(prev, cfg.bad_countries, cfg.routed_services, country) if prev else []
+                    item.update(summary=summary, changes=main, minor=minor, attention=now_bad,
+                                attention_new=[x for x in now_bad if x not in was_bad],
                                 first=prev is None)
                     baseline.pop(uid, None)
                     baseline[key] = summary
@@ -211,10 +227,22 @@ def telegram_section(run_data):
             parts = [f'{esc(n)} {esc(a)} → <b>{esc(b)}</b>' for n, a, b in r['changes']]
             lines.append(f'• <b>{esc(r["name"])}</b>: ' + '; '.join(parts))
     bad = [r for r in results if r.get('attention')]
-    if bad:
+    # новое со вчера — по нодам; то, что и вчера было, — одной строкой со счётчиками
+    fresh = [(r, r.get('attention_new', r['attention'])) for r in bad]
+    fresh = [(r, new) for r, new in fresh if new]
+    if fresh:
         lines.append('⚠️ <b>Требует внимания</b>')
-        for r in bad:
-            lines.append(f'• <b>{esc(r["name"])}</b>: ' + ', '.join(esc(x) for x in r['attention']))
+        for r, new in fresh:
+            lines.append(f'• <b>{esc(r["name"])}</b>: ' + ', '.join(esc(x) for x in new))
+    same = {}
+    for r in bad:
+        new = r.get('attention_new', r['attention'])
+        for x in r['attention']:
+            if x not in new:
+                same[x] = same.get(x, 0) + 1
+    if same:
+        parts = ', '.join(f'{esc(x)} — {n}' for x, n in sorted(same.items(), key=lambda kv: (-kv[1], kv[0])))
+        lines.append(f'<i>Как и вчера (число нод): {parts} — список в файле отчёта</i>')
     failed = [r for r in results if not r['ok']]
     if failed:
         lines.append('⚪️ GeoCheck не выполнился: ' + ', '.join(esc(r['name']) for r in failed))

@@ -76,8 +76,12 @@ class Config:
     panel_lag_ms: float = 200       # «панель тормозит»: задержка процесса, мс
     panel_memory_mb: float = 1024   # «панель ест много памяти»: RSS процесса, МБ
     outbound_tags: list = field(default_factory=lambda: ['psiphon-out', 'WARP'])
+    repeat_minutes: int = 60        # как часто напоминать о том, что всё ещё не работает
     bad_countries: set = field(default_factory=lambda: {'RU', 'BY'})
+    routed_services: list = field(default_factory=list)   # сервисы, которые идут не напрямую с IP ноды
     attach_images: bool = True
+    short_minutes: int = 2          # сбои короче — в сводке одной строкой «и ещё N коротких»
+    panel_down_minutes: int = 5     # API панели: меньше — не сбой (перезагрузка, DNS)
     healthcheck_url: str = ''
     sites: list = field(default_factory=list)
     probes: list = field(default_factory=list)
@@ -176,7 +180,7 @@ def parse(data, env=os.environ):
         raise ConfigError('config.toml: host_suffix пустой у нескольких панелей '
                           f'({", ".join(empty)}) — хосты разных панелей будет не различить')
 
-    sch, chk, al, geo = (data.get(k) or {} for k in ('schedule', 'checks', 'alerts', 'geocheck'))
+    sch, chk, al, geo, rep = (data.get(k) or {} for k in ('schedule', 'checks', 'alerts', 'geocheck', 'report'))
 
     def num(section, key, default, where, minimum=0, kind=int):
         try:
@@ -208,8 +212,12 @@ def parse(data, env=os.environ):
         panel_lag_ms=num(al, 'panel_lag_ms', 200, 'alerts', minimum=1, kind=float),
         panel_memory_mb=num(al, 'panel_memory_mb', 1024, 'alerts', minimum=64, kind=float),
         outbound_tags=[str(t) for t in al.get('outbound_tags', ['psiphon-out', 'WARP'])],
+        repeat_minutes=num(al, 'repeat_minutes', 60, 'alerts', minimum=10),
         bad_countries={str(c).upper() for c in geo.get('bad_countries', ['RU', 'BY'])},
+        routed_services=[str(s) for s in geo.get('routed_services', [])],
         attach_images=bool(geo.get('attach_images', True)),
+        short_minutes=num(rep, 'short_minutes', 2, 'report'),
+        panel_down_minutes=num(rep, 'panel_down_minutes', 5, 'report'),
         healthcheck_url=str((data.get('healthcheck') or {}).get('ping_url', '')).strip(),
         sites=_sites(data.get('site') or []),
         probes=_probes(data.get('probe') or []),

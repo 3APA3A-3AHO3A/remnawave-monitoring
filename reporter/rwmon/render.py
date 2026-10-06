@@ -86,7 +86,8 @@ def prometheus(cfg):
 NAMES = '* on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info)'
 
 
-def _rule(uid, title, expr, for_, summary, recovered, description, scope, severity='critical', window=900):
+def _rule(uid, title, expr, for_, summary, recovered, description, scope, severity='critical', window=900,
+          paused=False, labels=None):
     return {
         'uid': uid, 'title': title, 'condition': 'C',
         'data': [
@@ -101,9 +102,9 @@ def _rule(uid, title, expr, for_, summary, recovered, description, scope, severi
                        'conditions': [{'evaluator': {'type': 'gt', 'params': [0]}}]}},
         ],
         'noDataState': 'OK', 'execErrState': 'Error', 'for': for_,
-        'labels': {'severity': severity, 'scope': scope},
+        'labels': {'severity': severity, 'scope': scope, **(labels or {})},
         'annotations': {'summary': summary, 'recovered': recovered, 'description': description},
-        'isPaused': False,
+        'isPaused': paused,
     }
 
 
@@ -167,7 +168,12 @@ def rules(cfg):
 ) {NAMES}''', '10m', 'Аутбаунд не отвечает клиентам', 'Аутбаунд снова отвечает',
               'За 15 минут клиенты отправили запросы в этот аутбаунд, а ответов почти нет. '
               '(Работает для панелей с metrics_url — там трафик точный.)', 'all',
-              severity='warning', window=1800),
+              severity='warning', window=1800,
+              # Выключено: за аутбаундами стоят балансировщики с резервом, отказ одного выхода
+              # клиентов не задевает, а отправка файла (много вверх, мало вниз) выглядит так же,
+              # как поломка. Что цепочка WARP/Psiphon не работает целиком, ловят активные
+              # проверки ниже. Правило остаётся в Grafana — можно включить руками.
+              paused=True),
         # uid от правила прошлой версии («нет метрик панели») — оно заменяется этим
         _rule('rwmon-panel-metrics', 'Панель недоступна по API',
               '(rwmon_panel_up == 0) * 0 + 1', '5m',
@@ -236,7 +242,8 @@ def rules(cfg):
         _rule('rwmon-site-cert', 'Сертификат скоро истекает',
               '((rwmon_site_cert_expiry_timestamp_seconds - time()) < 14 * 86400) * 0 + 1', '1h',
               'Сертификат истекает меньше чем через 14 дней', 'Сертификат обновлён',
-              'Проверьте автопродление сертификата (certbot / acme.sh).', 'all', severity='warning'),
+              'Проверьте автопродление сертификата (certbot / acme.sh).', 'all', severity='warning',
+              labels={'repeat': 'daily'}),
         _rule('rwmon-checker-down', 'Не работает проверка хостов', '(up{job="xray-checker"} == 0) * 0 + 1', '5m',
               'Контейнер проверки хостов не отвечает', 'Проверка хостов снова работает',
               'docker compose logs --tail 50 checker-xray checker-warp checker-psiphon', 'all',
@@ -276,16 +283,19 @@ def contact_points(cfg):
 
 
 def policies(cfg):
-    """Хосты — в чат своей панели; всё остальное — по разу в каждый чат."""
+    """Хосты — в чат своей панели; всё остальное — по разу в каждый чат.
+    Пока алерт горит, он повторяется раз в repeat_minutes; правила с меткой
+    repeat=daily (сертификат) — раз в сутки."""
     rcv = receivers(cfg)
+    daily = [{'object_matchers': [['repeat', '=', 'daily']], 'repeat_interval': '24h'}]
     routes = [{'receiver': rcv[p.telegram.key][0],
                'object_matchers': [['scope', '=', 'host'], ['panel', '=', p.id]]} for p in cfg.panels]
-    routes += [{'receiver': name, 'object_matchers': [['scope', '!=', 'host']], 'continue': True}
-               for name, _, _ in rcv.values()]
+    routes += [{'receiver': name, 'object_matchers': [['scope', '!=', 'host']], 'continue': True,
+                'routes': daily} for name, _, _ in rcv.values()]
     return {'apiVersion': 1, 'policies': [{
         'orgId': 1, 'receiver': routes[0]['receiver'],
         'group_by': ['grafana_folder', 'alertname'],
-        'group_wait': '30s', 'group_interval': '2m', 'repeat_interval': '12h',
+        'group_wait': '30s', 'group_interval': '2m', 'repeat_interval': f'{cfg.repeat_minutes}m',
         'routes': routes}]}
 
 

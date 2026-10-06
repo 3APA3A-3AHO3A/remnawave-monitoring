@@ -11,6 +11,11 @@ from .util import esc, gb, log, minutes, now, promql_regex
 
 CHECK_NAMES = {'xray': 'Подключение', 'warp': 'WARP', 'psiphon': 'Psiphon'}
 BILLING_DAYS = 7
+# хост «не открывается из РФ» (ни одна проба не достучалась) и доля таких хостов
+PROBE_DOWN = '(max by (address) (probe_success{kind="tcp"}) == bool 0)'
+PROBE_SHARE = ('((count(max by (address) (probe_success{kind="tcp"}) == 0) or vector(0))'
+               ' / scalar(count(max by (address) (probe_success{kind="tcp"}))))')
+MASS_SHARE = 0.34
 
 
 def flag(cc):
@@ -41,7 +46,7 @@ def collect(prom, cfg):
         'status': _by(prom, 'rwmon_users', 'panel', 'status'),
         'online': _by(prom, 'rwmon_users_online', 'panel', 'period'),
         'total': _by(prom, 'rwmon_users_total', 'panel'),
-        'panel_up': _by(prom, 'min_over_time(rwmon_panel_up[24h])', 'panel'),
+        'panel_down': _by(prom, 'sum by (panel) (sum_over_time((rwmon_panel_up == bool 0)[24h:1m]))', 'panel'),
         'checks': [],
         'sites_down': _by(prom, 'sum by (site) (sum_over_time((rwmon_site_up == bool 0)[24h:1m]))', 'site'),
         'sites_ru_down': _by(prom, 'sum by (site) (sum_over_time((max by (site) '
@@ -49,11 +54,14 @@ def collect(prom, cfg):
         'site_cert': _by(prom, '(rwmon_site_cert_expiry_timestamp_seconds - time()) / 86400', 'site'),
         'site_up': _by(prom, 'rwmon_site_up', 'site'),
         'probe_blocked': [],
+        # минуты, когда из РФ «не открывалась» сразу треть хостов и больше: сбой самой пробы
+        'probe_mass': (_by(prom, f'sum_over_time(({PROBE_SHARE} >= bool {MASS_SHARE})[24h:1m])') or {}).get((), 0),
     }
-    for m, v in prom.query('rwmon_host * on (address) group_left () sum by (address) (sum_over_time('
-                           '(max by (address) (probe_success{kind="tcp"}) == bool 0)[24h:1m]))'):
+    # минуты массового сбоя пробы отдельным хостам не засчитываем
+    for m, v in prom.query(f'rwmon_host * on (address) group_left () sum by (address) (sum_over_time(('
+                           f'{PROBE_DOWN} * on () group_left () ({PROBE_SHARE} < bool {MASS_SHARE}))[24h:1m]))'):
         if v > 0:
-            d['probe_blocked'].append((m.get('panel', ''), m.get('host', '?'), v))
+            d['probe_blocked'].append((m.get('panel', ''), m.get('host', '?'), m.get('address', ''), v))
     for m, v in prom.query(
             f'sum by (panel, node_uuid, tag) (increase(rwmon_node_outbound_upload_bytes{{tag=~{tags}}}[24h])'
             f' + increase(rwmon_node_outbound_download_bytes{{tag=~{tags}}}[24h]))'):
@@ -64,7 +72,7 @@ def collect(prom, cfg):
                 f'{hosts} * on (name) group_left () '
                 f'sum by (name) (sum_over_time((xray_proxy_status{{check="{check}"}} == bool 0)[24h:1m]))'):
             if v > 0:
-                d['checks'].append((m.get('panel', ''), m.get('host', '?'), check, v))
+                d['checks'].append((m.get('panel', ''), m.get('host', '?'), m.get('name', ''), check, v))
     return d
 
 
@@ -88,6 +96,65 @@ def panel_extras(rw):
     return out
 
 
+def merged_name(hosts, cfg):
+    """Один сервер в двух панелях (через маппер) — одной строкой:
+    «Канада · FixErrorVPN + OVRO» или «Швеция 2 · OVRO / Швеция 3 · FixErrorVPN»."""
+    titles = {p.id: p.title for p in cfg.panels}
+    hosts = sorted(set(hosts), key=lambda x: (x[1], x[0]))
+    if not cfg.multi:
+        return hosts[0][1]
+    names = {h for _, h in hosts}
+    if len(names) == 1:
+        return f'{hosts[0][1]} · ' + ' + '.join(titles.get(p, p) for p, _ in hosts)
+    return ' / '.join(f'{h} · {titles.get(p, p)}' for p, h in hosts)
+
+
+def problem_lines(d, cfg):
+    """Строки «Сбои за сутки» и сколько коротких сбоев свернуть в одну строку."""
+    lim = cfg.short_minutes
+    out, short = [], 0
+
+    def add(label, text, mins):
+        nonlocal short
+        if mins <= lim:
+            short += 1
+        else:
+            out.append((label, f'• {esc(label)} — {text}, {minutes(mins)}'))
+
+    for p in cfg.panels:
+        mins = d['panel_down'].get((p.id,), 0)
+        if mins > cfg.panel_down_minutes:
+            out.append(('', f'• {esc(p.title)} — API панели был недоступен, {minutes(mins)}'))
+    for (pid, uid), mins in d['offline'].items():
+        info = d['info'].get((pid, uid))
+        if mins >= 1 and info:
+            add(_node_name(info, cfg), 'отключалась от панели', mins)
+    checks = {}                     # один сервер в двух панелях проверяется один раз
+    for pid, host, name, check, mins in d['checks']:
+        c = checks.setdefault((name or f'{pid}:{host}', check), {'hosts': [], 'mins': mins})
+        c['hosts'].append((pid, host))
+    for (_, check), c in checks.items():
+        add(f'{merged_name(c["hosts"], cfg)} · {CHECK_NAMES.get(check, check)}', 'не проходила проверка',
+            c['mins'])
+    blocked = {}
+    for pid, host, address, mins in d.get('probe_blocked') or []:
+        blocked.setdefault(address or f'{pid}:{host}', {'hosts': [], 'mins': mins})['hosts'].append((pid, host))
+    for b in blocked.values():
+        add(merged_name(b['hosts'], cfg), 'не открывался из РФ', b['mins'])
+    for (site,), mins in (d.get('sites_down') or {}).items():
+        if mins >= 1:
+            add(f'🌐 {site}', 'не открывался', mins)
+    for (site,), mins in (d.get('sites_ru_down') or {}).items():
+        if mins >= 1:
+            add(f'🌐 {site}', 'не открывался из РФ', mins)
+    lines = [text for _, text in sorted(out, key=lambda x: x[0])]
+    mass = d.get('probe_mass') or 0
+    if mass >= 1:
+        lines.append(f'• Пробы из РФ разом не достучались до трети хостов и больше — {minutes(mass)} '
+                     '(сбой самой пробы, хостам не засчитано)')
+    return lines, short
+
+
 def build_text(d, extras, geo_run, cfg):
     lines = ['📊 <b>Сводка за сутки</b>', f'<i>{now():%d.%m.%Y %H:%M} UTC</i>', '']
     if not d['info']:
@@ -98,30 +165,15 @@ def build_text(d, extras, geo_run, cfg):
     lines.append('')
 
     # Сбои
-    problems = []
-    for p in cfg.panels:
-        if d['panel_up'].get((p.id,), 1) < 1:
-            problems.append(f'• {esc(p.title)} — API панели был недоступен')
-    for (pid, uid), mins in sorted(d['offline'].items()):
-        info = d['info'].get((pid, uid))
-        if mins >= 1 and info:
-            problems.append(f'• {esc(_node_name(info, cfg))} — отключалась от панели, {minutes(mins)}')
-    titles = {p.id: p.title for p in cfg.panels}
-    for pid, host, check, mins in sorted(d['checks'], key=lambda x: (x[1], x[0], x[2])):
-        where = f' · {titles.get(pid, pid)}' if cfg.multi else ''
-        problems.append(f'• {esc(host)}{esc(where)} · {CHECK_NAMES.get(check, check)} — '
-                        f'не проходила проверка, {minutes(mins)}')
-    for pid, host, mins in sorted(d.get('probe_blocked') or [], key=lambda x: (x[1], x[0])):
-        where = f' · {titles.get(pid, pid)}' if cfg.multi else ''
-        problems.append(f'• {esc(host)}{esc(where)} — не открывался из РФ, {minutes(mins)}')
-    for (site,), mins in sorted((d.get('sites_down') or {}).items()):
-        if mins >= 1:
-            problems.append(f'• 🌐 {esc(site)} — не открывался, {minutes(mins)}')
-    for (site,), mins in sorted((d.get('sites_ru_down') or {}).items()):
-        if mins >= 1:
-            problems.append(f'• 🌐 {esc(site)} — не открывался из РФ, {minutes(mins)}')
-    lines.append('⚠️ <b>Сбои за сутки</b>' if problems else '✅ <b>Сбоев за сутки не было</b>')
+    problems, short = problem_lines(d, cfg)
+    if problems:
+        lines.append('⚠️ <b>Сбои за сутки</b>')
+    else:
+        lines.append('✅ <b>Сбоев за сутки не было</b>' if not short else '✅ <b>Серьёзных сбоев за сутки не было</b>')
     lines += problems
+    if short:
+        lines.append(f'<i>{"и ещё " if problems else ""}{short} коротких (до {cfg.short_minutes} мин) — '
+                     'перезапуски и минутные обрывы, без подробностей</i>')
     if d.get('site_up'):
         parts = []
         for (site,), up in sorted(d['site_up'].items()):
