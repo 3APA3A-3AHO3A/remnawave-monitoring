@@ -3,7 +3,7 @@
 # и видит, что доступно изнутри России. Ставится командой ./install.sh (см. README).
 services:
   blackbox:
-    image: prom/blackbox-exporter:v0.27.0
+    image: prom/blackbox-exporter:v0.29.0
     container_name: rwmon-probe
     network_mode: host
     restart: unless-stopped
