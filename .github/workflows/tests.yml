@@ -9,8 +9,8 @@ jobs:
   reporter:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - name: Тесты reporter
@@ -28,6 +28,6 @@ jobs:
   checker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Образ xray-checker с патчами собирается
         run: docker build -t rwmon-xray-checker:ci checker
