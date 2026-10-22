@@ -1,0 +1,94 @@
+# Раз в неделю смотрит последний релиз xray-checker (kutovoys/xray-checker).
+# Мы собираем его сами из XC_VERSION в checker/Dockerfile с двумя патчами, поэтому новая версия
+# сама не подтянется. Если вышла новая:
+#   - патчи легли и образ собрался → PR с новой XC_VERSION (CI запускается на ветке PR);
+#   - не собралось → issue: патчи нужно обновить вручную (или они уже не нужны).
+name: xray-checker release check
+on:
+  schedule:
+    - cron: "23 6 * * 1"   # по понедельникам в 06:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write   # запустить tests.yml для ветки PR и убрать запуск, ждущий ручного одобрения
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Сравнить версии
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LATEST=$(gh api repos/kutovoys/xray-checker/releases/latest --jq .tag_name)
+          CURRENT=$(sed -n 's/^ARG XC_VERSION=//p' checker/Dockerfile)
+          echo "xray-checker: последний $LATEST, у нас $CURRENT"
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+          # обновляем только на более НОВУЮ версию (сравнение по номерам, без буквы v)
+          if [ "$(printf '%s\n%s\n' "${CURRENT#v}" "${LATEST#v}" | sort -V | tail -1)" = "${CURRENT#v}" ]; then
+            echo "Новой версии нет"; echo "update=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if git ls-remote --exit-code --heads origin "xray-checker-$LATEST" >/dev/null 2>&1; then
+            echo "Ветка xray-checker-$LATEST уже есть (PR открыт или закрыт вручную) — пропускаем"; echo "update=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ "$(gh issue list --state open --search "xray-checker $LATEST in:title" --json number --jq length)" != "0" ]; then
+            echo "Issue про $LATEST уже открыт"; echo "update=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "update=true" >> "$GITHUB_OUTPUT"
+
+      - name: Собрать образ с патчами на новой версии
+        id: build
+        if: steps.v.outputs.update == 'true'
+        continue-on-error: true
+        run: |
+          docker build --build-arg XC_VERSION=${{ steps.v.outputs.latest }} -t rwmon-xray-checker:check checker 2>&1 | tee build.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Открыть Pull Request
+        if: steps.v.outputs.update == 'true' && steps.build.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=${{ steps.v.outputs.latest }}
+          sed -i "s/^ARG XC_VERSION=.*/ARG XC_VERSION=$V/" checker/Dockerfile
+          sed -i "1s/xray-checker v[0-9.]*/xray-checker $V/" checker/Dockerfile
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "xray-checker-$V"
+          git commit -am "xray-checker $V (патчи легли, образ собирается)"
+          git push -u origin "xray-checker-$V"
+          BODY="Вышел xray-checker **$V** ([релиз](https://github.com/kutovoys/xray-checker/releases/tag/$V)). Оба патча легли, образ собирается.
+
+          Перед слиянием проверьте в описании релиза, не исправлены ли уже сами проблемы (Salamander \`packetSize\`, повторные попытки) — тогда патч можно убрать."
+          gh pr create --title "xray-checker $V" --body "$BODY" --label dependencies || gh pr create --title "xray-checker $V" --body "$BODY"
+          # PR, открытый роботом, не запускает CI сам — запускаем tests.yml для ветки явно
+          gh workflow run tests.yml --ref "xray-checker-$V"
+          for i in $(seq 1 12); do
+            ID=$(gh run list --workflow tests.yml --branch "xray-checker-$V" --event pull_request --json databaseId,conclusion \
+                 --jq '[.[] | select(.conclusion == "action_required")][0].databaseId // empty' || true)
+            if [ -n "$ID" ]; then gh run delete "$ID" && echo "Удалён запуск $ID, ждавший одобрения"; break; fi
+            sleep 10
+          done
+
+      - name: Открыть issue — патчи не легли
+        if: steps.v.outputs.update == 'true' && steps.build.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=${{ steps.v.outputs.latest }}
+          {
+            echo "Вышел xray-checker **$V** ([релиз](https://github.com/kutovoys/xray-checker/releases/tag/$V)), но образ с нашими патчами не собрался."
+            echo
+            echo "Нужно обновить \`checker/*.patch\` под новую версию или убрать патч, если исправление уже вошло в xray-checker. Конец журнала сборки:"
+            echo
+            echo '```'
+            tail -n 40 build.log
+            echo '```'
+          } > body.md
+          gh issue create --title "xray-checker $V: патчи не легли" --body-file body.md

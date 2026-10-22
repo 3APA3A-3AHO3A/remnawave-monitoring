@@ -1,0 +1,30 @@
+# Бот раз в неделю проверяет новые версии и открывает PR.
+# Каждый PR проходит CI (tests.yml): тесты reporter, сборка дашборда, docker compose config,
+# сборка образа xray-checker. Сам xray-checker (ARG XC_VERSION в checker/Dockerfile)
+# Dependabot не трогает — за ним следит workflow xray-checker-release.yml.
+version: 2
+updates:
+  # образы в docker-compose.yml и probe/docker-compose.yml: Prometheus, Grafana, blackbox exporter
+  - package-ecosystem: docker-compose
+    directories: ["/", "/probe"]
+    schedule:
+      interval: weekly
+    groups:
+      images:
+        update-types: ["minor", "patch"]
+  # базовые образы сборки: python (reporter), golang и alpine (xray-checker)
+  - package-ecosystem: docker
+    directories: ["/reporter", "/checker"]
+    schedule:
+      interval: weekly
+    groups:
+      base-images:
+        update-types: ["minor", "patch"]
+  # инструменты сборки на GitHub — одним общим PR
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]

@@ -3,6 +3,7 @@ name: tests
 on:
   push:
   pull_request:
+  workflow_dispatch:   # запускается и из xray-checker-release.yml для ветки его PR
 
 jobs:
   reporter:

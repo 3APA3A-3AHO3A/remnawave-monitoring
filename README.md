@@ -3,6 +3,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/3APA3A-3AHO3A/remnawave-monitoring/releases/latest"><img alt="release" src="https://img.shields.io/github/v/release/3APA3A-3AHO3A/remnawave-monitoring?label=release&color=1f6feb"></a>
   <a href="https://github.com/3APA3A-3AHO3A/remnawave-monitoring/actions/workflows/tests.yml"><img alt="tests" src="https://img.shields.io/github/actions/workflow/status/3APA3A-3AHO3A/remnawave-monitoring/tests.yml?branch=main&label=tests"></a>
   <a href="https://github.com/remnawave"><img alt="Remnawave" src="https://img.shields.io/badge/Remnawave-3.3%2B-0e8a9e"></a>
   <a href="https://grafana.com"><img alt="Grafana" src="https://img.shields.io/badge/Grafana-13.2-f46800"></a>
@@ -12,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="#установка">🚀 Установка</a> &nbsp;·&nbsp; <a href="#алерты-в-telegram">🔔 Алерты</a> &nbsp;·&nbsp; <a href="#дашборд-grafana">📊 Дашборд</a> &nbsp;·&nbsp; <a href="#проба-из-рф">🇷🇺 Проба из РФ</a> &nbsp;·&nbsp; <a href="#настройки">⚙️ Настройки</a>
+  <a href="#установка">🚀 Установка</a> &nbsp;·&nbsp; <a href="#алерты-в-telegram">🔔 Алерты</a> &nbsp;·&nbsp; <a href="#дашборд-grafana">📊 Дашборд</a> &nbsp;·&nbsp; <a href="#проба-из-рф">🇷🇺 Проба из РФ</a> &nbsp;·&nbsp; <a href="#настройки">⚙️ Настройки</a> &nbsp;·&nbsp; <a href="README.en.md">🇬🇧 English</a>
 </p>
 
 Мониторинг нод [Remnawave](https://docs.rw): графики в Grafana, алерты и ежедневная сводка в Telegram. Одна установка следит за одной или несколькими панелями. Ставится рядом с любой из панелей через `docker compose`.
@@ -393,6 +394,8 @@ docker compose logs -f reporter                                 # журнал
 git pull && ./apply.sh                                          # обновить
 ```
 
+Что изменилось в новой версии — в [`CHANGELOG.md`](CHANGELOG.md) и на странице [релизов](https://github.com/3APA3A-3AHO3A/remnawave-monitoring/releases).
+
 Если контейнер запустили позже времени сводки, сегодняшние GeoCheck и сводка выполнятся сразу после старта. Дальше — каждый день по расписанию.
 
 </details>
@@ -427,6 +430,9 @@ nano config.toml        # проверить; добавить вторую па
 - Тесты reporter: `cd reporter && python -m unittest discover -v tests` (Python 3.13, внешних зависимостей нет).
 - Дашборд не редактируется руками: правьте [`grafana/dashboard.py`](grafana/dashboard.py) и пересоберите JSON — `python3 grafana/dashboard.py`. CI проверяет, что `grafana/dashboards/` совпадает с результатом скрипта.
 - CI ([`tests.yml`](.github/workflows/tests.yml)) на каждый push и PR: тесты reporter, сборка дашборда, проверка `docker-compose.yml` и сборка образа xray-checker с патчами.
+- [Dependabot](.github/dependabot.yml) раз в неделю открывает PR на новые версии образов (Prometheus, Grafana, blackbox exporter, базовые образы) и GitHub Actions.
+- [`xray-checker-release.yml`](.github/workflows/xray-checker-release.yml) раз в неделю смотрит релизы xray-checker: если патчи ложатся на новую версию — открывает PR, если нет — issue.
+- Релиз: добавить раздел в [`CHANGELOG.md`](CHANGELOG.md), затем `git tag vX.Y.Z` и `git push origin vX.Y.Z` — [`release.yml`](.github/workflows/release.yml) создаст релиз с текстом из CHANGELOG.
 
 </details>
 

@@ -1,0 +1,41 @@
+# Релиз по тегу vX.Y.Z: текст берётся из раздела «## X.Y.Z» в CHANGELOG.md.
+#   git tag v1.0.0 && git push origin v1.0.0
+# Если релиз уже создан на сайте вручную с текстом — текст не трогаем.
+name: Release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Текст из CHANGELOG
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          awk -v v="$V" '$0 ~ "^## "v" " {f=1; next} /^## / && f {exit} f' CHANGELOG.md > notes.md
+          if [ -z "$(tr -d '[:space:]' < notes.md)" ]; then
+            echo "В CHANGELOG.md нет раздела «## $V — …» — добавьте его и перевыпустите тег"; exit 1
+          fi
+          {
+            echo
+            echo '---'
+            echo '**Обновление:** `cd /opt/remnawave/monitoring && git pull && ./apply.sh`, затем `docker compose exec reporter python -m rwmon check`. Пробы из РФ: `cd /opt/rwmon-probe/probe && git pull && docker compose up -d`.'
+          } >> notes.md
+          cat notes.md
+
+      - name: Создать релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            BODY=$(gh release view "$GITHUB_REF_NAME" --json body --jq .body)
+            if [ -z "$(echo "$BODY" | tr -d '[:space:]')" ]; then gh release edit "$GITHUB_REF_NAME" --notes-file notes.md; fi
+          else
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md
+          fi
