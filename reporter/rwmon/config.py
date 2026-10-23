@@ -40,6 +40,7 @@ class Panel:
     exclude_nodes: set         # имена или теги нод (в нижнем регистре)
     geocheck_exclude: set
     telegram: Telegram
+    host_exit: dict = field(default_factory=dict)   # название хоста → куда ведёт (нода), для алертов
 
 
 @dataclass
@@ -119,6 +120,16 @@ def _time(value, name):
     return int(m[1]), int(m[2])
 
 
+def _host_exit(value, where):
+    """host_exit = { "LTE 3" = "CDN 1 · FixErrorVPN" } — куда ведёт хост, если по адресу этого не понять
+    (хост через Cloudflare или промежуточный сервер)."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ConfigError(f'config.toml: {where}: host_exit — таблица вида {{ "LTE 1" = "CDN 1" }}')
+    return {str(k).strip(): str(v).strip() for k, v in value.items() if str(k).strip() and str(v).strip()}
+
+
 def _lower_set(values):
     return {str(v).strip().lower() for v in values or [] if str(v).strip()}
 
@@ -174,6 +185,7 @@ def parse(data, env=os.environ):
             exclude_nodes=_lower_set(p.get('exclude_nodes')),
             geocheck_exclude=_lower_set(p.get('geocheck_exclude')),
             telegram=_telegram(p.get('telegram'), f'{where} ({pid})', tg_default),
+            host_exit=_host_exit(p.get('host_exit'), f'{where} ({pid})'),
         ))
     empty = [p.id for p in panels if not p.host_suffix]
     if len(empty) > 1:

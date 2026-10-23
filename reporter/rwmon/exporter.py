@@ -181,8 +181,9 @@ def resolve_ip(address, state):
     return ip
 
 
-def collect_panel(panel, rw, lines, state, multi=False):
-    """Опрос одной панели. Ошибка отдельного запроса не мешает остальным."""
+def collect_panel(panel, rw, lines, state, multi=False, node_ips=None):
+    """Опрос одной панели. Ошибка отдельного запроса не мешает остальным.
+    node_ips — сюда пишется «IP ноды → её название», по нему хосты узнают свою ноду."""
     base = {'panel': panel.id, 'panel_title': panel.title}
     try:
         nodes = rw.nodes()
@@ -206,6 +207,8 @@ def collect_panel(panel, rw, lines, state, multi=False):
         ip = resolve_ip(str(n.get('address') or ''), state)
         if ip:
             lines.add('rwmon_node_address', dict(nl, ip=ip), 1)
+            if node_ips is not None:
+                node_ips.setdefault(ip, f'{name} · {panel.title}' if multi else name)
         lines.add('rwmon_node_connected', nl, 1 if n.get('isConnected') else 0)
         lines.add('rwmon_node_online_users', nl, n.get('usersOnline', 0) if n.get('isConnected') else 0)
         system = n.get('system') or {}
@@ -374,7 +377,19 @@ def site_lines(results, lines):
         lines.add('rwmon_site_cert_expiry_timestamp_seconds', base, r['cert'])
 
 
-def host_lines(hosts, lines, panels=()):
+def host_exit(h, panels, node_ips, state):
+    """Куда ведёт хост: из host_exit панели, иначе нода с тем же IP (в любой панели), иначе пусто."""
+    for p in panels:
+        if p.id == h['panel'] and h['host'] in p.host_exit:
+            return p.host_exit[h['host']]
+    if not node_ips:
+        return ''
+    server = (h.get('address') or '').rsplit(':', 1)[0].strip('[]')
+    return node_ips.get(resolve_ip(server, state), '') if server else ''
+
+
+def host_lines(hosts, lines, panels=(), node_ips=None, state=None):
+    state = {} if state is None else state
     for p in panels:              # сколько хостов панели проверяется — 0 тоже важен
         lines.add('rwmon_panel_hosts', {'panel': p.id, 'panel_title': p.title},
                   sum(1 for h in hosts if h['panel'] == p.id))
@@ -386,9 +401,12 @@ def host_lines(hosts, lines, panels=()):
     for address, hs in names.items():
         lines.add('rwmon_address_info', {'address': address, 'hosts': ', '.join(sorted(set(hs)))}, 1)
     for h in hosts:
-        lines.add('rwmon_host', {'panel': h['panel'], 'panel_title': h['panel_title'], 'host': h['host'],
-                                 'name': h['name'], 'lite': '1' if h['lite'] else '0',
-                                 'address': h.get('address', '')}, 1)
+        labels = {'panel': h['panel'], 'panel_title': h['panel_title'], 'host': h['host'],
+                  'name': h['name'], 'lite': '1' if h['lite'] else '0', 'address': h.get('address', '')}
+        target = host_exit(h, panels, node_ips, state)
+        if target:                    # в алерте: «LTE 3 · OVRO → CDN 1 · FixErrorVPN»
+            labels['exit'] = target
+        lines.add('rwmon_host', labels, 1)
 
 
 SITE_EVERY = 60     # как часто проверять сайты, секунд
@@ -417,13 +435,15 @@ class Exporter:
         self.text = '# нет данных — первый опрос ещё не завершён\n'
         self.state = {}
         self.sites = {}
+        self.node_ips = {}            # панель → {IP ноды: название}; при сбое панели остаётся прошлый
 
     def poll_once(self):
         lines = Lines()
         for p in self.cfg.panels:
-            part = Lines()
+            part, ips = Lines(), {}
             try:
-                collect_panel(p, self.clients[p.id], part, self.state, multi=self.cfg.multi)
+                if collect_panel(p, self.clients[p.id], part, self.state, multi=self.cfg.multi, node_ips=ips):
+                    self.node_ips[p.id] = ips
             except Exception as e:       # неожиданный ответ одной панели не должен замораживать остальные
                 _warn(self.state, p.id + ':crash', f'[{p.title}] ошибка разбора ответа панели: {e!r}')
                 part = Lines()
@@ -431,7 +451,11 @@ class Exporter:
             else:
                 self.state.pop(p.id + ':crash', None)
             lines.merge(part)
-        host_lines(links.HOSTS, lines, self.cfg.panels)
+        node_ips = {}
+        for ips in self.node_ips.values():
+            for ip, name in ips.items():
+                node_ips.setdefault(ip, name)
+        host_lines(links.HOSTS, lines, self.cfg.panels, node_ips, self.state)
         site_lines(list(self.sites.values()), lines)
         try:
             geocheck_lines(self._geocheck(), lines, self.cfg)

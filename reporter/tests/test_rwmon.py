@@ -436,6 +436,24 @@ class ExporterTest(unittest.TestCase):
                       'address="1.2.3.4:443"} 1',
                       lines.text())
 
+    def test_host_exit(self):
+        p = make_cfg().panels[0]
+        p.host_exit = {'LTE 3': 'CDN 1'}
+        hosts = [{'panel': 'main', 'panel_title': 'Основная', 'host': h, 'name': h, 'lite': False, 'address': a}
+                 for h, a in (('Poland', '1.2.3.4:443'), ('LTE 3', '9.9.9.9:20009'), ('Other', '8.8.8.8:443'))]
+        lines = exporter.Lines()
+        exporter.host_lines(hosts, lines, [p], {'1.2.3.4': 'Poland 1 · FixErrorVPN'}, {})
+        text = lines.text()
+        self.assertIn('host="Poland",name="Poland",lite="0",address="1.2.3.4:443",exit="Poland 1 · FixErrorVPN"} 1', text)
+        self.assertIn('host="LTE 3",name="LTE 3",lite="0",address="9.9.9.9:20009",exit="CDN 1"} 1', text)
+        self.assertIn('host="Other",name="Other",lite="0",address="8.8.8.8:443"} 1', text)
+
+    def test_collect_node_ips(self):
+        p = make_cfg().panels[0]
+        ips = {}
+        exporter.collect_panel(p, FakePanel(), exporter.Lines(), {}, multi=True, node_ips=ips)
+        self.assertTrue(ips and all(v.endswith(' · Основная') for v in ips.values()), ips)
+
     def test_exact_traffic(self):
         ok, text = self.collect(FakePanel(), metrics_url='http://x/metrics')
         self.assertIn('rwmon_node_outbound_upload_bytes{panel="main",panel_title="Основная",node_uuid="u1",tag="WARP"} 524301', text)

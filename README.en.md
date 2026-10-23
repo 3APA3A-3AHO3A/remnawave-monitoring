@@ -30,12 +30,12 @@ Monitoring for [Remnawave](https://docs.rw) nodes: Grafana dashboards, alerts an
 ## What it looks like
 
 <p align="center">
-  <img src="docs/demo.svg" alt="Telegram alert example (in Russian): a node does not accept clients, then a recovery message 6 minutes later" width="100%">
+  <img src="docs/demo.svg" alt="Telegram alert example (in Russian): a host does not accept clients, then a recovery message 6 minutes later" width="100%">
 </p>
 
 ## Features
 
-- **Telegram alerts** — a node does not accept clients, WARP / Psiphon is down, clients vanished from a node, a panel is unreachable or slow, a host cannot be reached from Russia, a website is down, a certificate is about to expire, a node is overloaded. When things recover, a recovery message follows. Details — [Alerts](#telegram-alerts).
+- **Telegram alerts** — a host does not accept clients, WARP / Psiphon is down, clients vanished from a node, a panel is unreachable or slow, a host cannot be reached from Russia, a website is down, a certificate is about to expire, a node is overloaded. When things recover, a recovery message follows. Details — [Alerts](#telegram-alerts).
 - **Grafana dashboard** — key numbers, a node table with "everything in one row", a card per node, outbounds, panel health, GeoCheck. "Panel" and "Node" selectors.
 - **Daily report** — what changed in GeoCheck, failures of the day without duplicates, users, traffic and upcoming server payments per panel. Plus an HTML GeoCheck table.
 - **Multiple panels** — each with its own chat and topic. Identical hosts in different panels are checked once.
@@ -84,7 +84,7 @@ A message lists the affected nodes, and once everything is fixed a recovery mess
 
 | Alert | How it is detected | Sent to |
 |---|---|---|
-| Node does not accept clients | the check connects to the host like an ordinary client and cannot open a page | the chat of the host's panel |
+| Host does not accept clients | the check connects to the host like an ordinary client and cannot open a page. After the arrow the message names the node the host leads to: "LTE 3 · OVRO → CDN 1". All hosts of one node down — the node is the problem, one host down — its path to the node | the chat of the host's panel |
 | WARP / Psiphon is down | an address that the node's routing sends to WARP or Psiphon does not open through the node | the chat of the host's panel |
 | Clients vanished from a node | the node is connected to the panel, an hour ago it had users, now almost nobody. Looks like IP blocking | all chats |
 | Outbound not responding | clients send requests to an outbound (e.g. `psiphon-out`) but almost no responses come back. **Disabled** (paused in Grafana): the outbounds sit behind balancers with a fallback, and uploading a file looks the same as a failure. A real chain failure is caught by the WARP / Psiphon checks | — |
@@ -240,6 +240,7 @@ One panel — one `[[panel]]` block:
 | `host_suffix` | a suffix for host names so hosts of different panels don't get mixed up. Empty for the first panel, " · title" for the others |
 | `exclude_nodes` | nodes (names or tags) not to watch. Nodes disabled in the panel are hidden automatically |
 | `geocheck_exclude` | nodes where GeoCheck is not run |
+| `host_exit` | where a host leads, for alerts: `{ "LTE 3" = "CDN 1" }`. Only needed for hosts behind Cloudflare or a relay — when the host address matches a node IP, the node is found automatically |
 | `metrics_url` and login | optional, exact traffic from the panel's `/metrics` (see below) |
 | `[panel.telegram]` | the panel's bot, chat and topic |
 

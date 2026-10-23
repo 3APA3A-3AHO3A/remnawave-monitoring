@@ -3,7 +3,7 @@
 <text x="34" y="44" font-size="17" fill="#9198a1">Telegram · бот мониторинга</text>
 <rect x="32" y="62" width="1056" height="112" rx="12" fill="#2a1416" stroke="#5a1e24"/>
 <circle cx="60" cy="90" r="9" fill="#f85149"/>
-<text x="80" y="97" font-size="22" font-weight="600" fill="#ffd7d5">Нода не принимает клиентов</text>
+<text x="80" y="97" font-size="22" font-weight="600" fill="#ffd7d5">Хост не принимает клиентов</text>
 <text x="80" y="128" font-size="19" fill="#e6edf3">• NL-1 Reality — с 14:32 UTC</text>
 <text x="80" y="158" font-size="17" font-style="italic" fill="#c9a8a6">Проверка подключается к хосту как обычный клиент и не может открыть страницу. Две проверки подряд.</text>
 <rect x="32" y="186" width="1056" height="82" rx="12" fill="#12261b" stroke="#1f4d2e"/>
