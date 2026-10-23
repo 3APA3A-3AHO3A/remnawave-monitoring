@@ -223,9 +223,9 @@ class MiscTest(unittest.TestCase):
             cfg.links_file = os.path.join(d, 'monitor.txt')
             links.write_probe_targets(cfg, [{'address': '1.2.3.4:443'}, {'address': '1.2.3.4:443'}, {'address': ''},
                                             {'address': '5.6.7.8:20009', 'udp': True}])
-            with open(os.path.join(d, 'probe-tcp.json')) as f:
+            with open(os.path.join(d, 'probe-tcp.json'), encoding='utf-8') as f:
                 self.assertEqual(json.load(f), [{'targets': ['1.2.3.4:443'], 'labels': {}}])
-            with open(os.path.join(d, 'probe-http.json')) as f:
+            with open(os.path.join(d, 'probe-http.json'), encoding='utf-8') as f:
                 self.assertEqual(json.load(f)[1], {'targets': ['https://p.x/'],
                                                    'labels': {'site': 'Панель', 'module': 'http_2xx'}})
 
