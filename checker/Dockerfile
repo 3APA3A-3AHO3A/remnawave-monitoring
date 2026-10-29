@@ -22,7 +22,7 @@ COPY *.patch /tmp/patches/
 RUN for p in /tmp/patches/*.patch; do patch -p1 < "$p" || exit 1; done && go mod download
 RUN go build -ldflags="-s -w -X main.version=${XC_VERSION}-rwmon" -o /usr/bin/xray-checker .
 
-FROM alpine:3.21
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates tzdata && \
     adduser -D -u 1000 appuser && \
     mkdir -p /app/geo && chown -R appuser:appuser /app
