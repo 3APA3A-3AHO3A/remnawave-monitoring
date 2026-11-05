@@ -1,4 +1,4 @@
-FROM python:3.13-alpine
+FROM python:3.15-alpine
 
 # Только стандартная библиотека Python — pip ничего не ставит.
 # Работает от root внутри контейнера: так он может читать config.toml
