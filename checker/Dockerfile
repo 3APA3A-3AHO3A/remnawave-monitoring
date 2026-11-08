@@ -12,7 +12,7 @@
 # Когда исправления появятся в самом xray-checker, этот файл можно удалить
 # и вернуть в docker-compose.yml готовый образ kutovoys/xray-checker.
 
-FROM golang:1.26-alpine AS builder
+FROM golang:1.27-alpine AS builder
 ARG XC_VERSION=v1.3.1
 ENV CGO_ENABLED=0 GO111MODULE=on
 RUN apk add --no-cache git patch
