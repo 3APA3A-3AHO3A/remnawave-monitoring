@@ -95,7 +95,7 @@ ping_url = ""
 #
 # API-токен (Настройки → API-токены), только чтение:
 #   Nodes: Get nodes · Users: Get user by username ·
-#   Subscriptions: Get Raw Subscription by Short UUID, Get connection keys by user id ·
+#   Subscriptions: Get Raw Subscription by Short UUID ·
 #   Connections: Request Geocheck for Node, Get Geocheck for Node by Job ID ·
 #   System: Get Stats, Get Nodes Metrics, Get Stats Digest, Get Remnawave Information ·
 #   (по желанию) Infra Billing: Get infra billing nodes
@@ -106,7 +106,7 @@ title = "Основная"               # подпись в сообщения�
 # Панель на этом же сервере — бэкенд напрямую; другая — её домен: "https://panel.example.com"
 api_url = "http://127.0.0.1:3000"
 api_token = ""
-monitor_user = "monitoring"      # служебный пользователь, по его подписке проверяются хосты
+monitor_user = "monitoring"      # служебный пользователь, по его подписке (Xray JSON) проверяются хосты
 host_tag = "MONITORING"          # хосты с этим тегом — все три проверки
 host_tag_lite = "MONITORING_LITE"  # только «Подключение» (LTE, лимитированные)
 # host_suffix = ""               # подпись к названиям хостов; у первой панели пусто

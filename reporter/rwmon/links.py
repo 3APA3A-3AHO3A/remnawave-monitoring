@@ -1,7 +1,9 @@
 """Список хостов для xray-checker.
 
-У каждой панели берём подписку служебного пользователя и оставляем только
+У каждой панели берём подписку служебного пользователя в формате Xray JSON
+(как её получают приложения, вместе с мапперами хостов) и оставляем только
 хосты с тегами host_tag (все три проверки) и host_tag_lite (только «Подключение»).
+Теги и названия хостов берём из /raw, сами настройки подключения — из JSON.
 
 Если в двух панелях один и тот же хост (тот же сервер, порт и способ
 подключения — так бывает, когда панели делят ноды через маппер UUID; UUID, fp,
@@ -10,117 +12,132 @@ sni и название при этом могут отличаться), он �
 reporter отдаёт в Prometheus метрикой rwmon_host — по ней алерты и дашборд
 понимают, к какой панели относится проверка.
 
-Результат — два файла со ссылками, их читают контейнеры xray-checker.
+Результат — два файла со списком конфигов Xray JSON (по одному outbound на
+проверку, название — в remarks), их читают контейнеры xray-checker.
 """
-import base64
+import copy
 import json
 import os
-import re
 import tempfile
-import urllib.parse
 
 from .util import log
 
-
-def link_remark(link):
-    """Название хоста из ссылки: для vmess — поле ps, для остальных — часть после #."""
-    if link.startswith('vmess://'):
-        try:
-            payload = link[8:]
-            payload += '=' * (-len(payload) % 4)
-            return json.loads(base64.b64decode(payload)).get('ps', '')
-        except ValueError:
-            return ''
-    if '#' in link:
-        return urllib.parse.unquote(link.rsplit('#', 1)[1])
-    return ''
+# Аутбаунды, которые не ведут на сервер: прямой выход, блок, DNS
+SERVICE_PROTOCOLS = ('freedom', 'blackhole', 'dns', 'loopback')
 
 
-def fix_link(link):
-    """Hysteria2 работает только поверх HTTP/3, но панель не пишет alpn в ссылку.
-    Xray без alpn предлагает серверу h2/http1.1, и сервер рвёт соединение (EOF).
+def proxy_outbound(config):
+    """Аутбаунд хоста из конфига подписки: панель ставит его с тегом proxy,
+    остальные (direct, block) — из шаблона. Если тега нет — первый «настоящий»."""
+    outbounds = [o for o in (config.get('outbounds') or []) if isinstance(o, dict)]
+    for o in outbounds:
+        if o.get('tag') == 'proxy':
+            return o
+    for o in outbounds:
+        if o.get('protocol') and o.get('protocol') not in SERVICE_PROTOCOLS:
+            return o
+    return None
+
+
+def server_of(outbound):
+    """(адрес, порт) сервера из аутбаунда: vnext у VLESS/VMess, servers у
+    Trojan/Shadowsocks, address/port прямо в settings у Hysteria."""
+    s = outbound.get('settings') or {}
+    for key in ('vnext', 'servers'):
+        items = s.get(key)
+        if isinstance(items, list) and items and isinstance(items[0], dict):
+            return str(items[0].get('address', '')), items[0].get('port') or ''
+    return str(s.get('address', '')), s.get('port') or ''
+
+
+def fix_outbound(outbound):
+    """Hysteria2 работает только поверх HTTP/3. Если панель не указала alpn,
+    Xray предлагает серверу h2/http1.1, и сервер рвёт соединение (EOF).
     Клиентские приложения подставляют h3 сами — мы делаем то же самое."""
-    if link.startswith(('hysteria2://', 'hy2://')):
-        base, sep, remark = link.partition('#')
-        if 'alpn=' not in base:
-            base += ('&' if '?' in base else '?') + 'alpn=h3'
-        return base + sep + remark
-    return link
+    ob = copy.deepcopy(outbound)
+    ss = ob.get('streamSettings') or {}
+    if ob.get('protocol') == 'hysteria' or ss.get('network') == 'hysteria':
+        if ss.get('security', 'tls') == 'tls':
+            tls = ss.setdefault('tlsSettings', {})
+            if not tls.get('alpn'):
+                tls['alpn'] = ['h3']
+            ob['streamSettings'] = ss
+    return ob
 
 
-def set_remark(link, name):
-    """Поставить хосту в ссылке новое название (для vmess — поле ps)."""
-    if link.startswith('vmess://'):
-        try:
-            payload = link[8:] + '=' * (-len(link[8:]) % 4)
-            data = json.loads(base64.b64decode(payload))
-            data['ps'] = name
-            return 'vmess://' + base64.b64encode(json.dumps(data, ensure_ascii=False).encode()).decode()
-        except ValueError:
-            return link
-    return link.partition('#')[0] + '#' + urllib.parse.quote(name, safe='')
+def _transport(ss):
+    """Путь, хост и режим транспорта — то, что определяет, куда идёт подключение."""
+    net = ss.get('network') or 'tcp'
+    t = ss.get(f'{net}Settings') or {}
+    if net in ('tcp', 'raw'):
+        header = (t.get('header') or {})
+        return {'header': header.get('type', '')}
+    if net == 'grpc':
+        return {'serviceName': t.get('serviceName', '')}
+    keep = {k: t.get(k) for k in ('path', 'host', 'mode') if t.get(k)}
+    headers = t.get('headers') or {}
+    if not keep.get('host') and headers.get('Host'):
+        keep['host'] = headers['Host']
+    return keep
 
 
-def rename(link, suffix):
-    """Дописать к названию хоста в ссылке подпись панели."""
-    return set_remark(link, link_remark(link) + suffix) if suffix else link
+def connection_key(outbound):
+    """Ключ хоста: протокол, адрес, порт и основные параметры подключения
+    (транспорт, путь, ключ Reality…). UUID/пароль не учитываются: у служебных
+    пользователей разных панелей они свои, а нода и её WARP/Psiphon от этого
+    работают одинаково. Название, отпечаток браузера (fp), SNI и shortId тоже
+    не учитываются."""
+    host, port = server_of(outbound)
+    ss = outbound.get('streamSettings') or {}
+    key = {
+        'protocol': outbound.get('protocol', ''),
+        'server': f'{host}:{port}',
+        'network': ss.get('network') or 'tcp',
+        'security': ss.get('security') or 'none',
+        'pbk': (ss.get('realitySettings') or {}).get('publicKey', ''),
+        'transport': _transport(ss),
+    }
+    vnext = (outbound.get('settings') or {}).get('vnext') or []
+    if vnext and isinstance(vnext[0], dict) and vnext[0].get('users'):
+        user = vnext[0]['users'][0] or {}
+        key['flow'] = user.get('flow', '')
+        key['encryption'] = user.get('encryption', '')
+    return json.dumps(key, sort_keys=True, ensure_ascii=False)
 
 
-# Параметры ссылки, которые определяют, куда и как идёт подключение. Остальные
-# (fp, sni, sid, alpn, extra…) у одного и того же хоста в разных панелях могут
-# отличаться, но на результат проверки «работает ли нода» не влияют.
-KEY_PARAMS = ('type', 'security', 'path', 'serviceName', 'mode', 'flow', 'encryption',
-              'headerType', 'host', 'obfs', 'pbk')
+# Протоколы и транспорты поверх UDP: TCP-пробой их не проверить (порт не
+# принимает TCP — проба покажет «не открывается», хотя всё работает), поэтому
+# в пробы из РФ не берём.
+UDP_PROTOCOLS = ('hysteria', 'hysteria2', 'tuic', 'wireguard')
+UDP_NETWORKS = ('hysteria', 'kcp', 'mkcp', 'quic')
 
 
-def connection_key(link):
-    """Ключ хоста: адрес, порт и основные параметры подключения (транспорт, путь,
-    ключ Reality…). UUID/пароль не учитываются: у служебных пользователей разных
-    панелей они свои, а нода и её WARP/Psiphon от этого работают одинаково.
-    Название, отпечаток браузера (fp) и SNI тоже не учитываются."""
-    if link.startswith('vmess://'):
-        try:
-            payload = link[8:] + '=' * (-len(link[8:]) % 4)
-            data = json.loads(base64.b64decode(payload))
-            keep = ('add', 'port', 'net', 'type', 'path', 'host', 'tls')
-            return 'vmess://' + json.dumps({k: str(data.get(k, '')) for k in keep}, sort_keys=True)
-        except ValueError:
-            return link
-    u = urllib.parse.urlsplit(link.partition('#')[0])
-    query = urllib.parse.parse_qs(u.query)
-    params = '&'.join(f'{k}={query[k][0]}' for k in KEY_PARAMS if k in query)
-    server = u.netloc.rpartition('@')[2]        # без UUID/пароля: у панелей они разные
-    return f'{u.scheme}://{server}{u.path.rstrip("/")}?{params}'
+def is_udp(outbound):
+    ss = outbound.get('streamSettings') or {}
+    return outbound.get('protocol') in UDP_PROTOCOLS or ss.get('network') in UDP_NETWORKS
 
 
-# Протоколы поверх UDP: TCP-пробой их не проверить (порт не принимает TCP —
-# проба покажет «не открывается», хотя всё работает), поэтому в пробы из РФ не берём.
-UDP_SCHEMES = ('hysteria2', 'hy2', 'hysteria', 'tuic', 'wireguard', 'wg')
+def outbound_address(outbound):
+    """Адрес хоста «сервер:порт» — так же его показывает xray-checker."""
+    host, port = server_of(outbound)
+    if not host:
+        return ''
+    if ':' in host and not host.startswith('['):
+        host = f'[{host}]'                     # IPv6
+    return f'{host}:{port or 443}'
 
 
-def is_udp(link):
-    return link.split('://', 1)[0].lower() in UDP_SCHEMES
+def check_config(name, outbound):
+    """Конфиг для xray-checker: одна проверка — один аутбаунд, название в remarks."""
+    ob = dict(outbound)
+    ob['tag'] = 'proxy'
+    return {'remarks': name, 'outbounds': [ob]}
 
 
-def link_address(link):
-    """Адрес хоста из ссылки: «сервер:порт» — так же его показывает xray-checker."""
-    if link.startswith('vmess://'):
-        try:
-            payload = link[8:] + '=' * (-len(link[8:]) % 4)
-            data = json.loads(base64.b64decode(payload))
-            return f'{data.get("add", "")}:{data.get("port", "")}'
-        except ValueError:
-            return ''
-    u = urllib.parse.urlsplit(link.partition('#')[0])
-    server = u.netloc.rpartition('@')[2]
-    if server and not re.search(r':\d+$', server):
-        server += ':443'
-    return server
-
-
-def select_links(raw_configs, keys, tag):
-    """raw_configs — resolvedProxyConfigs из /raw, keys — ответ connection-keys.
-    Возвращает ([(ссылка, название)], названия без найденной ссылки)."""
+def select_hosts(raw_configs, json_configs, tag):
+    """raw_configs — resolvedProxyConfigs из /raw (теги и названия хостов),
+    json_configs — подписка в формате Xray JSON.
+    Возвращает ([(аутбаунд, название)], названия, которых нет в JSON)."""
     wanted = {}
     for c in raw_configs:
         meta = c.get('metadata') or {}
@@ -130,11 +147,20 @@ def select_links(raw_configs, keys, tag):
                     wanted[name] = meta.get('remark') or name
 
     pairs, seen = [], set()
-    for link in (keys.get('enabledKeys') or []) + (keys.get('hiddenKeys') or []):
-        remark = link_remark(link)
-        if remark in wanted and fix_link(link) not in seen:
-            seen.add(fix_link(link))
-            pairs.append((fix_link(link), wanted[remark]))
+    for config in json_configs:
+        if not isinstance(config, dict):
+            continue
+        remark = config.get('remarks') or ''
+        if remark not in wanted:
+            continue
+        ob = proxy_outbound(config)
+        if ob is None:
+            continue
+        ob = fix_outbound(ob)
+        key = json.dumps(ob, sort_keys=True)
+        if key not in seen:
+            seen.add(key)
+            pairs.append((ob, wanted[remark]))
     missing = sorted(set(wanted.values()) - {n for _, n in pairs})
     return pairs, missing
 
@@ -157,22 +183,29 @@ def write_if_changed(path, text):
 
 
 def panel_links(rw, panel):
-    """Хосты одной панели: [{'link', 'host', 'lite'}] — полные, потом лёгкие."""
+    """Хосты одной панели: [{'outbound', 'host', 'lite'}] — полные, потом лёгкие."""
     user = rw.user_by_username(panel.monitor_user)
     raw = rw.raw_subscription(user['shortUuid'])
-    keys = rw.connection_keys(user['id'])
     configs = raw.get('resolvedProxyConfigs') or []
-    full, missing = select_links(configs, keys, panel.host_tag)
-    lite, lite_missing = select_links(configs, keys, panel.host_tag_lite)
-    full_links = {link for link, _ in full}
-    lite = [(link, name) for link, name in lite if link not in full_links]
+    sub = rw.json_subscription(user['shortUuid'])
+    full, missing = select_hosts(configs, sub, panel.host_tag)
+    lite, lite_missing = select_hosts(configs, sub, panel.host_tag_lite)
+    full_keys = {connection_key(ob) for ob, _ in full}
+    lite = [(ob, name) for ob, name in lite if connection_key(ob) not in full_keys]
     if missing or lite_missing:
-        log('links', f'[{panel.title}] не нашёл ссылку для хостов: ' + ', '.join(missing + lite_missing))
+        log('links', f'[{panel.title}] этих хостов нет в JSON-подписке (скрыты или исключены '
+                     'из типа «Xray JSON»): ' + ', '.join(missing + lite_missing))
     if not full and not lite:
+        hint = ''
+        if missing or lite_missing:
+            # хосты с тегами есть, но в JSON-подписке ни одного: вместо серверов
+            # панель отдала заглушки («лимит устройств», «подписка отключена»…)
+            hint = (' в JSON-подписке — проверьте, что пользователь активен и у него '
+                    'не исчерпан лимит устройств (HWID)')
         log('links', f'[{panel.title}] у пользователя «{panel.monitor_user}» нет хостов с тегами '
-                     f'{panel.host_tag} / {panel.host_tag_lite}')
-    return ([{'link': link, 'host': name, 'lite': False} for link, name in full] +
-            [{'link': link, 'host': name, 'lite': True} for link, name in lite])
+                     f'{panel.host_tag} / {panel.host_tag_lite}' + hint)
+    return ([{'outbound': ob, 'host': name, 'lite': False} for ob, name in full] +
+            [{'outbound': ob, 'host': name, 'lite': True} for ob, name in lite])
 
 
 # Какие хосты каких панелей чем проверяются: [{panel, panel_title, host, name, lite}].
@@ -181,13 +214,13 @@ HOSTS = []
 
 
 def combine(per_panel):
-    """Склеить хосты всех панелей. Одинаковый хост (та же ссылка без названия)
+    """Склеить хосты всех панелей. Одинаковый хост (см. connection_key)
     проверяется один раз, а результат относится ко всем панелям, где он есть.
     per_panel — [(panel, entries)]. Возвращает (проверки, хосты)."""
     checks, hosts, used = {}, [], set()
     for p, entries in per_panel:
         for e in entries:
-            key = connection_key(e['link'])
+            key = connection_key(e['outbound'])
             c = checks.get(key)
             if c is None:
                 name = e['host'] + p.host_suffix
@@ -195,8 +228,9 @@ def combine(per_panel):
                 while name in used:                  # разные хосты с одним названием
                     name, n = f'{base} #{n}', n + 1
                 used.add(name)
-                c = checks[key] = {'name': name, 'link': set_remark(e['link'], name), 'lite': e['lite'],
-                                   'address': link_address(e['link']), 'udp': is_udp(e['link'])}
+                c = checks[key] = {'name': name, 'config': check_config(name, e['outbound']),
+                                   'lite': e['lite'], 'address': outbound_address(e['outbound']),
+                                   'udp': is_udp(e['outbound'])}
             elif not e['lite']:
                 c['lite'] = False                    # полная проверка покрывает лёгкую
             hosts.append({'panel': p.id, 'panel_title': p.title, 'host': e['host'],
@@ -216,7 +250,7 @@ def write_probe_targets(cfg, checks):
 
 
 def refresh(cfg, clients):
-    """Обновить файлы ссылок по всем панелям. Если панель не ответила —
+    """Обновить списки проверок по всем панелям. Если панель не ответила —
     её хосты берём из прошлого удачного списка, чтобы проверки не пропали."""
     global HOSTS
     folder = os.path.dirname(cfg.links_file) or '.'
@@ -231,16 +265,18 @@ def refresh(cfg, clients):
             try:
                 with open(cache, encoding='utf-8') as f:
                     entries = json.load(f)
-                if not isinstance(entries, list) or (entries and not isinstance(entries[0], dict)):
-                    entries = []                     # кэш старого формата
+                if not isinstance(entries, list) or any(
+                        not isinstance(e, dict) or not isinstance(e.get('outbound'), dict) for e in entries):
+                    entries = []                     # кэш старого формата (со ссылками)
             except (OSError, ValueError):
                 entries = []
         per_panel.append((p, entries))
     checks, HOSTS = combine(per_panel)
-    full = [c['link'] for c in checks if not c['lite']]
-    lite = [c['link'] for c in checks if c['lite']]
-    changed = write_if_changed(cfg.links_file, '\n'.join(full) + '\n')
-    changed |= write_if_changed(cfg.links_file_xray, '\n'.join(full + lite) + '\n')
+    full = [c['config'] for c in checks if not c['lite']]
+    lite = [c['config'] for c in checks if c['lite']]
+    dump = lambda configs: json.dumps(configs, ensure_ascii=False, indent=1) + '\n'
+    changed = write_if_changed(cfg.links_file, dump(full))
+    changed |= write_if_changed(cfg.links_file_xray, dump(full + lite))
     write_probe_targets(cfg, checks)
     if changed:
         shared = len(HOSTS) - len(checks)
