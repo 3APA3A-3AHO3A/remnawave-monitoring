@@ -156,13 +156,16 @@ An HTML file with the full GeoCheck table for all nodes is attached to the repor
 1. **API token.** Panel → Settings → API tokens. Read permissions only:
    - Nodes: Get nodes;
    - Users: Get user by username;
-   - Subscriptions: Get Raw Subscription by Short UUID, Get connection keys by user id;
+   - Subscriptions: Get Raw Subscription by Short UUID;
    - Connections: Request Geocheck for Node, Get Geocheck for Node by Job ID;
    - System: Get Stats, Get Nodes Metrics, Get Stats Digest, Get Remnawave Information;
    - optionally Infra Billing: Get infra billing nodes — then the report shows upcoming payments.
 2. **A service user**, e.g. `monitoring`:
    - no traffic limit and no expiry date;
-   - in the squads that contain the hosts to check.
+   - in the squads that contain the hosts to check;
+   - if HWID is enabled in the panel — with room for one device: monitoring fetches the subscription as device `rwmon-<panel id>`.
+
+   Monitoring takes the hosts from this user's subscription in **Xray JSON** format — the same way apps get it, with host mappers applied. So the hosts to check must be visible and not excluded from the "Xray JSON" type. Base64 is not needed for monitoring.
 3. **Tags on the hosts** to check:
    - `MONITORING` — all three checks: one direct host per node;
    - `MONITORING_LITE` — only "Connection", a single light check. Good for hosts with a traffic limit (LTE, CDN chains): 5–15 KB per check, 50–130 MB per month. The tag name is set in `host_tag_lite`.
@@ -267,7 +270,7 @@ metrics_password = "…"                           # METRICS_PASS
 
 For panels without `metrics_url` this alert simply never fires.
 
-**Identical hosts in different panels** (the link matches except for the name — e.g. panels share nodes through a UUID mapper) are checked once. The result counts for every panel that has the host, and a failure goes to the chats of all those panels. `rwmon links` shows which hosts are checked together.
+**Identical hosts in different panels** (same protocol, server, port, transport and Reality key; UUID, SNI, fingerprint and name may differ — e.g. panels share nodes through a UUID mapper) are checked once. The result counts for every panel that has the host, and a failure goes to the chats of all those panels. `rwmon links` shows which hosts are checked together.
 
 **Exact traffic for a panel on another server.** Expose its `/metrics` through nginx on the panel's own domain, on a secret path and with a password:
 

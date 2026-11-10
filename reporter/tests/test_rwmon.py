@@ -108,18 +108,50 @@ class GeocheckTest(unittest.TestCase):
         self.assertEqual([n['uuid'] for n in picked], ['1'])
 
 
+def vless(host, port=443, uid='u', pbk='K', sni='a.com', fp='chrome', net='raw', **extra):
+    """Аутбаунд VLESS Reality так, как его отдаёт панель в подписке Xray JSON."""
+    ss = {'network': net, 'security': 'reality',
+          'realitySettings': {'publicKey': pbk, 'serverName': sni, 'fingerprint': fp, 'shortId': ''}}
+    ss.update(extra)
+    return {'tag': 'proxy', 'protocol': 'vless',
+            'settings': {'vnext': [{'address': host, 'port': port,
+                                    'users': [{'id': uid, 'encryption': 'none', 'flow': 'xtls-rprx-vision'}]}]},
+            'streamSettings': ss}
+
+
+def hysteria(host, port=443, auth='p', alpn=None):
+    tls = {'serverName': 'x.com'}
+    if alpn:
+        tls['alpn'] = alpn
+    return {'tag': 'proxy', 'protocol': 'hysteria', 'settings': {'version': 2, 'address': host, 'port': port},
+            'streamSettings': {'network': 'hysteria', 'security': 'tls', 'tlsSettings': tls,
+                               'hysteriaSettings': {'version': 2, 'auth': auth}}}
+
+
+def sub_config(remark, outbound):
+    """Конфиг подписки: аутбаунд хоста + direct/block из шаблона."""
+    return {'remarks': remark, 'outbounds': [outbound, {'tag': 'direct', 'protocol': 'freedom'},
+                                             {'tag': 'block', 'protocol': 'blackhole'}]}
+
+
 class LinksTest(unittest.TestCase):
-    def test_remark(self):
-        self.assertEqual(links.link_remark('vless://id@h:443?x=1#%F0%9F%87%B5%F0%9F%87%B1%20Poland%201'), '🇵🇱 Poland 1')
-        vm = 'vmess://' + base64.b64encode(json.dumps({'ps': 'VM 1'}).encode()).decode().rstrip('=')
-        self.assertEqual(links.link_remark(vm), 'VM 1')
+    def test_proxy_outbound(self):
+        ob = vless('1.1.1.1')
+        self.assertIs(links.proxy_outbound(sub_config('A', ob)), ob)
+        # без тега proxy — первый «настоящий» аутбаунд, служебные пропускаются
+        other = dict(ob, tag='x')
+        cfg = {'remarks': 'A', 'outbounds': [{'tag': 'direct', 'protocol': 'freedom'}, other]}
+        self.assertIs(links.proxy_outbound(cfg), other)
+        self.assertIsNone(links.proxy_outbound({'outbounds': [{'protocol': 'freedom'}]}))
 
     def test_hysteria_alpn(self):
-        self.assertEqual(links.fix_link('hysteria2://a@1.2.3.4:443/?sni=x.com&fm=%7B%7D#%F0%9F%8E%AE'),
-                         'hysteria2://a@1.2.3.4:443/?sni=x.com&fm=%7B%7D&alpn=h3#%F0%9F%8E%AE')
-        self.assertEqual(links.fix_link('hy2://a@h:443#n'), 'hy2://a@h:443?alpn=h3#n')
-        self.assertEqual(links.fix_link('hysteria2://a@h:443/?alpn=h3#n'), 'hysteria2://a@h:443/?alpn=h3#n')
-        self.assertEqual(links.fix_link('vless://a@h:443?x=1#n'), 'vless://a@h:443?x=1#n')
+        ob = hysteria('1.2.3.4')
+        fixed = links.fix_outbound(ob)
+        self.assertEqual(fixed['streamSettings']['tlsSettings']['alpn'], ['h3'])
+        self.assertNotIn('alpn', ob['streamSettings']['tlsSettings'])          # исходник не меняется
+        self.assertEqual(links.fix_outbound(hysteria('h', alpn=['h3']))['streamSettings']['tlsSettings']['alpn'],
+                         ['h3'])
+        self.assertEqual(links.fix_outbound(vless('h')), vless('h'))
 
     def test_select(self):
         raw = [
@@ -127,42 +159,107 @@ class LinksTest(unittest.TestCase):
             {'finalRemark': 'LTE 1', 'metadata': {'remark': 'LTE 1', 'tags': ['LTE']}},
             {'finalRemark': 'Sweden 1', 'metadata': {'remark': 'Sweden 1', 'tags': ['MONITORING']}},
             {'finalRemark': 'Old', 'metadata': {'remark': 'Old', 'tags': ['MONITORING'], 'isDisabled': True}},
+            {'finalRemark': 'LTE 2 ост: 5 ГБ', 'metadata': {'remark': 'LTE 2 ост: {{TRAFFIC_LEFT}}',
+                                                             'tags': ['MONITORING']}},
         ]
-        keys = {'enabledKeys': ['vless://a@1:443#Poland%201', 'vless://b@2:443#LTE%201'], 'hiddenKeys': []}
-        pairs, missing = links.select_links(raw, keys, 'MONITORING')
-        self.assertEqual(pairs, [('vless://a@1:443#Poland%201', 'Poland 1')])
-        self.assertEqual(missing, ['Sweden 1'])
+        sub = [sub_config('Poland 1', vless('1.1.1.1')), sub_config('LTE 1', vless('2.2.2.2')),
+               sub_config('LTE 2 ост: 5 ГБ', vless('3.3.3.3')), 'мусор']
+        pairs, missing = links.select_hosts(raw, sub, 'MONITORING')
+        self.assertEqual([(links.server_of(ob), name) for ob, name in pairs],
+                         [(('1.1.1.1', 443), 'Poland 1'), (('3.3.3.3', 443), 'LTE 2 ост: {{TRAFFIC_LEFT}}')])
+        self.assertEqual(missing, ['Sweden 1'])                # скрыт или исключён из JSON
 
     def test_combine(self):
         cfg = make_cfg()
         main, res = cfg.panels
         per_panel = [
-            (main, [{'link': 'vless://u@1.1.1.1:443?fp=chrome#A', 'host': 'Швеция 1', 'lite': False},
-                    {'link': 'vless://u@2.2.2.2:443#B', 'host': 'LTE 1', 'lite': True}]),
-            (res, [{'link': 'vless://u@1.1.1.1:443?fp=chrome#X', 'host': 'Швеция 1', 'lite': False},
-                   {'link': 'vless://u@2.2.2.2:443#Y', 'host': 'LTE 1', 'lite': False},
-                   {'link': 'vless://u@3.3.3.3:443#Z', 'host': 'Швеция 1', 'lite': False}]),
+            (main, [{'outbound': vless('1.1.1.1', fp='chrome'), 'host': 'Швеция 1', 'lite': False},
+                    {'outbound': vless('2.2.2.2'), 'host': 'LTE 1', 'lite': True}]),
+            (res, [{'outbound': vless('1.1.1.1', uid='v', fp='edge'), 'host': 'Швеция 1', 'lite': False},
+                   {'outbound': vless('2.2.2.2'), 'host': 'LTE 1', 'lite': False},
+                   {'outbound': vless('3.3.3.3'), 'host': 'Швеция 1', 'lite': False}]),
         ]
         checks, hosts = links.combine(per_panel)
         self.assertEqual([c['name'] for c in checks], ['Швеция 1', 'LTE 1', 'Швеция 1 · Резерв'])
         self.assertFalse(checks[1]['lite'])              # в резерве полный — проверяем полностью
-        self.assertEqual(links.link_remark(checks[0]['link']), 'Швеция 1')
-        # один и тот же хост, у панелей разные fp и sni — проверяется один раз
-        a = 'vless://u@1.1.1.1:443?type=tcp&security=reality&pbk=K&sni=a.com&fp=edge#A'
-        b = 'vless://u@1.1.1.1:443?type=tcp&security=reality&pbk=K&sni=b.com&fp=firefox&sid=1#B'
-        self.assertEqual(links.connection_key(a), links.connection_key(b))
-        self.assertEqual(links.connection_key(a), links.connection_key(a.replace('u@', 'v@')))
-        self.assertNotEqual(links.connection_key(a), links.connection_key(a.replace(':443', ':8443')))
-        self.assertNotEqual(links.connection_key(a), links.connection_key(a.replace('pbk=K', 'pbk=Q')))
+        self.assertEqual(checks[0]['config']['remarks'], 'Швеция 1')
+        self.assertEqual([o['tag'] for o in checks[0]['config']['outbounds']], ['proxy'])
+        self.assertEqual(checks[0]['address'], '1.1.1.1:443')
         self.assertEqual([(h['panel'], h['host'], h['name']) for h in hosts], [
             ('main', 'Швеция 1', 'Швеция 1'), ('main', 'LTE 1', 'LTE 1'),
             ('reserve', 'Швеция 1', 'Швеция 1'), ('reserve', 'LTE 1', 'LTE 1'),
             ('reserve', 'Швеция 1', 'Швеция 1 · Резерв')])
         self.assertTrue(hosts[1]['lite'])
         # одинаковое название у разных хостов одной панели
-        checks, _ = links.combine([(main, [{'link': 'vless://a@1:1#n', 'host': 'N', 'lite': False},
-                                           {'link': 'vless://a@2:1#n', 'host': 'N', 'lite': False}])])
+        checks, _ = links.combine([(main, [{'outbound': vless('1.1.1.1'), 'host': 'N', 'lite': False},
+                                           {'outbound': vless('2.2.2.2'), 'host': 'N', 'lite': False}])])
         self.assertEqual([c['name'] for c in checks], ['N', 'N #2'])
+
+    def test_connection_key(self):
+        a = vless('1.1.1.1', sni='a.com', fp='edge')
+        # один и тот же хост: у панелей разные UUID, fp и sni — проверяется один раз
+        self.assertEqual(links.connection_key(a), links.connection_key(vless('1.1.1.1', uid='v', sni='b.com',
+                                                                              fp='firefox')))
+        self.assertNotEqual(links.connection_key(a), links.connection_key(vless('1.1.1.1', port=8443)))
+        self.assertNotEqual(links.connection_key(a), links.connection_key(vless('1.1.1.1', pbk='Q')))
+        x1 = vless('cdn.x.org', net='xhttp', xhttpSettings={'path': '/a', 'host': 'cdn.x.org', 'mode': 'auto',
+                                                            'extra': {'xPaddingBytes': '1-10'}})
+        x2 = vless('cdn.x.org', net='xhttp', xhttpSettings={'path': '/b', 'host': 'cdn.x.org', 'mode': 'auto'})
+        self.assertNotEqual(links.connection_key(x1), links.connection_key(x2))
+        self.assertNotEqual(links.connection_key(hysteria('1.1.1.1')), links.connection_key(vless('1.1.1.1')))
+        self.assertEqual(links.connection_key(hysteria('1.1.1.1', auth='a')),
+                         links.connection_key(hysteria('1.1.1.1', auth='b')))
+
+    def test_address_udp(self):
+        self.assertEqual(links.outbound_address(vless('1.2.3.4', port=8443)), '1.2.3.4:8443')
+        self.assertEqual(links.outbound_address(hysteria('5.6.7.8', port=20009)), '5.6.7.8:20009')
+        self.assertEqual(links.outbound_address(vless('2001:db8::1')), '[2001:db8::1]:443')
+        trojan = {'protocol': 'trojan', 'settings': {'servers': [{'address': 't.x', 'port': 9443}]}}
+        self.assertEqual(links.outbound_address(trojan), 't.x:9443')
+        self.assertTrue(links.is_udp(hysteria('1.2.3.4')))
+        self.assertFalse(links.is_udp(vless('1.2.3.4')))
+
+    def test_refresh_files(self):
+        """Файлы для xray-checker — JSON-массивы конфигов; кэш старого формата не ломает обновление."""
+        cfg = make_cfg()
+        main, res = cfg.panels
+
+        class Fake:
+            def __init__(self, ok):
+                self.ok = ok
+
+            def user_by_username(self, name):
+                if not self.ok:
+                    raise ApiError('нет ответа')
+                return {'id': 1, 'shortUuid': 's'}
+
+            def raw_subscription(self, short):
+                return {'resolvedProxyConfigs': [
+                    {'finalRemark': 'A', 'metadata': {'remark': 'A', 'tags': ['MONITORING']}},
+                    {'finalRemark': 'H', 'metadata': {'remark': 'H', 'tags': ['MONITORING_LITE']}}]}
+
+            def json_subscription(self, short):
+                return [sub_config('A', vless('1.1.1.1')), sub_config('H', hysteria('2.2.2.2'))]
+
+        with tempfile.TemporaryDirectory() as d:
+            cfg.links_file = os.path.join(d, 'monitor.txt')
+            cfg.links_file_xray = os.path.join(d, 'monitor-xray.txt')
+            with open(os.path.join(d, '.panel-reserve.json'), 'w', encoding='utf-8') as f:
+                json.dump([{'link': 'vless://a@1:1#n', 'host': 'n', 'lite': False}], f)   # кэш со ссылками
+            per_panel, checks = links.refresh(cfg, {'main': Fake(True), 'reserve': Fake(False)})
+            self.assertEqual([len(e) for _, e in per_panel], [2, 0])
+            with open(cfg.links_file, encoding='utf-8') as f:
+                full = json.load(f)
+            with open(cfg.links_file_xray, encoding='utf-8') as f:
+                xray = json.load(f)
+            self.assertEqual([c['remarks'] for c in full], ['A'])
+            self.assertEqual([c['remarks'] for c in xray], ['A', 'H'])
+            self.assertEqual(xray[1]['outbounds'][0]['streamSettings']['tlsSettings']['alpn'], ['h3'])
+            with open(os.path.join(d, 'probe-tcp.json'), encoding='utf-8') as f:
+                self.assertEqual(json.load(f), [{'targets': ['1.1.1.1:443'], 'labels': {}}])   # UDP не берём
+            # панель ответила — кэш обновлён, при следующем сбое хосты возьмутся из него
+            per_panel, _ = links.refresh(cfg, {'main': Fake(False), 'reserve': Fake(False)})
+            self.assertEqual([len(e) for _, e in per_panel], [2, 0])
 
 
 class MiscTest(unittest.TestCase):
@@ -204,13 +301,6 @@ class MiscTest(unittest.TestCase):
         self.assertEqual(cfg.panels[0].telegram.bot_token, '1:x')
         self.assertEqual(cfg.panels[0].metrics_password, 'p"w')
 
-    def test_link_address(self):
-        self.assertEqual(links.link_address('vless://u@1.2.3.4:8443?x=1#n'), '1.2.3.4:8443')
-        self.assertEqual(links.link_address('hysteria2://p@5.6.7.8:20009/?a=1#n'), '5.6.7.8:20009')
-        self.assertEqual(links.link_address('vless://u@cdn.x.org?type=ws#n'), 'cdn.x.org:443')
-        self.assertTrue(links.is_udp('hysteria2://p@1.2.3.4:20009#n'))
-        self.assertFalse(links.is_udp('vless://u@1.2.3.4:443#n'))
-
     def test_sites_probes(self):
         cfg = make_cfg(site=[{'url': 'https://fixerrorvpn.com'}, {'name': 'Панель', 'url': 'https://p.x/', 'keyword': 'Remnawave'}],
                        probe=[{'name': 'ru-msk', 'url': 'https://10.0.0.1:9115/', 'user': 'u', 'password': 'p'}])
@@ -228,14 +318,6 @@ class MiscTest(unittest.TestCase):
             with open(os.path.join(d, 'probe-http.json'), encoding='utf-8') as f:
                 self.assertEqual(json.load(f)[1], {'targets': ['https://p.x/'],
                                                    'labels': {'site': 'Панель', 'module': 'http_2xx'}})
-
-    def test_rename(self):
-        self.assertEqual(links.rename('vless://a@h:443?x=1#Poland%201', ' · R'),
-                         'vless://a@h:443?x=1#Poland%201%20%C2%B7%20R')
-        vm = 'vmess://' + base64.b64encode(json.dumps({'ps': 'VM'}).encode()).decode()
-        self.assertEqual(links.link_remark(links.rename(vm, ' · R')), 'VM · R')
-        self.assertEqual(links.rename('vless://a@h#n', ''), 'vless://a@h#n')
-
 
 class ConfigTest(unittest.TestCase):
     def test_parse(self):
@@ -508,6 +590,37 @@ class DnsRetryTest(unittest.TestCase):
             self.assertEqual(len(calls), 1)                     # другие ошибки не повторяем
         finally:
             urllib.request.urlopen, clients.DNS_RETRY_DELAY = orig, delay
+
+    def test_json_subscription(self):
+        import urllib.request
+        from rwmon import clients
+        seen = []
+
+        class Resp:
+            def __init__(self, body): self.body = body
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self): return self.body
+
+        bodies = [b'[{"remarks": "A", "outbounds": []}]', b'{"remarks": "B"}', b'<html>', b'42']
+
+        def fake(req, timeout):
+            seen.append(req)
+            return Resp(bodies.pop(0))
+
+        orig = urllib.request.urlopen
+        urllib.request.urlopen = fake
+        try:
+            rw = clients.Remnawave(make_cfg().panels[1])
+            self.assertEqual(rw.json_subscription('a/b'), [{'remarks': 'A', 'outbounds': []}])
+            self.assertEqual(seen[0].full_url, 'https://r.example/api/sub/a%2Fb/json')
+            self.assertEqual(seen[0].get_header('X-hwid'), 'rwmon-reserve')   # постоянное «устройство»
+            self.assertEqual(rw.json_subscription('s'), [{'remarks': 'B'}])   # один конфиг — тоже список
+            for _ in range(2):
+                with self.assertRaises(ApiError):
+                    rw.json_subscription('s')
+        finally:
+            urllib.request.urlopen = orig
 
 
 class DailyTest(unittest.TestCase):

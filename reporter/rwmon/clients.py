@@ -98,8 +98,33 @@ class Remnawave:
     def raw_subscription(self, short_uuid):
         return self._call('GET', f'/api/subscriptions/by-short-uuid/{urllib.parse.quote(short_uuid)}/raw')
 
-    def connection_keys(self, user_id):
-        return self._call('GET', f'/api/subscriptions/connection-keys/{user_id}')
+    def json_subscription(self, short_uuid, timeout=30):
+        """Подписка пользователя в формате Xray JSON — как её получают приложения
+        (с мапперами хостов). Ответ — список конфигов Xray, не обёрнутый в response.
+        Панель с включённым HWID отдаёт подписку только «устройству», поэтому
+        представляемся одним постоянным устройством на панель."""
+        headers = dict(self.headers)
+        headers.update({
+            'Accept': 'application/json',
+            'x-hwid': f'rwmon-{self.panel.id}',
+            'x-device-os': 'Linux',
+            'x-device-model': 'rwmon-reporter',
+        })
+        path = f'/api/sub/{urllib.parse.quote(short_uuid, safe="")}/json'
+        req = urllib.request.Request(self.base + path, headers=headers)
+        try:
+            raw = _open(req, timeout)
+        except ApiError as e:
+            raise ApiError(f'[{self.panel.title}] подписка JSON: {e}') from None
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            raise ApiError(f'[{self.panel.title}] подписка JSON: панель ответила не JSON') from None
+        if isinstance(data, dict):
+            data = [data]                    # один конфиг — тоже список
+        if not isinstance(data, list):
+            raise ApiError(f'[{self.panel.title}] подписка JSON: неожиданный ответ панели')
+        return data
 
     def nodes_metrics(self):
         """Клиенты и трафик по инбаундам/аутбаундам каждой ноды (то же, что /metrics панели)."""
