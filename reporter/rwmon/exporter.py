@@ -403,6 +403,11 @@ def host_lines(hosts, lines, panels=(), node_ips=None, state=None):
     for h in hosts:
         labels = {'panel': h['panel'], 'panel_title': h['panel_title'], 'host': h['host'],
                   'name': h['name'], 'lite': '1' if h['lite'] else '0', 'address': h.get('address', '')}
+        # какие проверки нужны хосту (тег-исключение снимает WARP или Psiphon);
+        # у записи из старого кэша без 'checks' — как раньше: полный хост = обе
+        checks = h['checks'] if 'checks' in h else ([] if h['lite'] else ['warp', 'psiphon'])
+        for c in ('warp', 'psiphon'):
+            labels[c] = '1' if c in checks else '0'
         target = host_exit(h, panels, node_ips, state)
         if target:                    # в алерте: «LTE 3 · OVRO → CDN 1 · FixErrorVPN»
             labels['exit'] = target

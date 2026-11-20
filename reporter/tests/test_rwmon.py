@@ -195,6 +195,74 @@ class LinksTest(unittest.TestCase):
                                            {'outbound': vless('2.2.2.2'), 'host': 'N', 'lite': False}])])
         self.assertEqual([c['name'] for c in checks], ['N', 'N #2'])
 
+    def test_host_skips(self):
+        p = make_cfg().panels[0]
+        raw = [
+            {'finalRemark': 'Москва 1', 'metadata': {'remark': 'Москва 1',
+                                                      'tags': ['MONITORING', 'MONITORING_NO_PSIPHON']}},
+            {'finalRemark': 'Бэкап', 'metadata': {'remark': 'Бэкап',
+                                                   'tags': ['MONITORING', 'MONITORING_NO_WARP', 'MONITORING_NO_PSIPHON']}},
+            {'finalRemark': 'Poland 1', 'metadata': {'remark': 'Poland 1', 'tags': ['MONITORING']}},
+        ]
+        self.assertEqual(links.host_skips(raw, p.skip_tags()),
+                         {'Москва 1': ['psiphon'], 'Бэкап': ['psiphon', 'warp']})
+        # свои имена тегов в config.toml
+        p.host_tag_no_psiphon = 'NOPSI'
+        self.assertEqual(links.host_skips([{'finalRemark': 'X', 'metadata': {'remark': 'X', 'tags': ['NOPSI']}}],
+                                          p.skip_tags()), {'X': ['psiphon']})
+
+    def test_combine_skip(self):
+        cfg = make_cfg()
+        main, res = cfg.panels
+        checks, hosts = links.combine([
+            (main, [{'outbound': vless('1.1.1.1'), 'host': 'Москва 1', 'lite': False, 'skip': ['psiphon']},
+                    {'outbound': vless('2.2.2.2'), 'host': 'Poland', 'lite': False, 'skip': []},
+                    {'outbound': vless('3.3.3.3'), 'host': 'LTE 1', 'lite': True, 'skip': []},
+                    {'outbound': vless('4.4.4.4'), 'host': 'Old', 'lite': False}]),        # старый кэш без skip
+            (res, [{'outbound': vless('1.1.1.1', uid='r'), 'host': 'Москва 1', 'lite': False,
+                    'skip': ['psiphon']}]),
+        ])
+        by = {c['name']: c['checks'] for c in checks}
+        self.assertEqual(by, {'Москва 1': {'warp'}, 'Poland': {'warp', 'psiphon'}, 'LTE 1': set(),
+                              'Old': {'warp', 'psiphon'}})
+        self.assertEqual([h['checks'] for h in hosts], [['warp'], ['psiphon', 'warp'], [], ['psiphon', 'warp'],
+                                                         ['warp']])
+        # одной панели Psiphon на общем хосте нужен — он проверяется
+        checks, _ = links.combine([
+            (main, [{'outbound': vless('1.1.1.1'), 'host': 'Москва 1', 'lite': False, 'skip': ['psiphon']}]),
+            (res, [{'outbound': vless('1.1.1.1', uid='r'), 'host': 'Москва 1', 'lite': False, 'skip': []}]),
+        ])
+        self.assertEqual(checks[0]['checks'], {'warp', 'psiphon'})
+
+    def test_refresh_check_files(self):
+        cfg = make_cfg()
+        main, res = cfg.panels
+        with tempfile.TemporaryDirectory() as d:
+            cfg.links_file = os.path.join(d, 'monitor.txt')
+            cfg.links_file_xray = os.path.join(d, 'monitor-xray.txt')
+            entries = {main.id: [{'outbound': vless('1.1.1.1'), 'host': 'Москва 1', 'lite': False, 'skip': ['psiphon']},
+                                 {'outbound': vless('2.2.2.2'), 'host': 'Poland', 'lite': False, 'skip': []},
+                                 {'outbound': vless('3.3.3.3'), 'host': 'LTE 1', 'lite': True, 'skip': []}],
+                       res.id: []}
+            orig = links.panel_links
+            links.panel_links = lambda rw, p: entries[p.id]
+            try:
+                links.refresh(cfg, {main.id: None, res.id: None})
+            finally:
+                links.panel_links = orig
+            def names(f):
+                with open(os.path.join(d, f), encoding='utf-8') as fh:
+                    return [c['remarks'] for c in json.load(fh)]
+            self.assertEqual(names('monitor-xray.txt'), ['Москва 1', 'Poland', 'LTE 1'])
+            self.assertEqual(names('monitor-warp.txt'), ['Москва 1', 'Poland'])
+            self.assertEqual(names('monitor-psiphon.txt'), ['Poland'])
+
+    def test_alert_exprs_skip(self):
+        self.assertIn('rwmon_host{psiphon="1"}', render.host_checks('psiphon'))
+        self.assertIn('rwmon_host{warp="1"}', render.host_checks('warp'))
+        self.assertTrue(render.host_checks('xray').startswith('rwmon_host *'))
+        self.assertIn('rwmon_host{psiphon="1"} unless on (name) xray_proxy_status{check="psiphon"}', render.UNCHECKED)
+
     def test_connection_key(self):
         a = vless('1.1.1.1', sni='a.com', fp='edge')
         # один и тот же хост: у панелей разные UUID, fp и sni — проверяется один раз
@@ -515,8 +583,17 @@ class ExporterTest(unittest.TestCase):
         exporter.host_lines([{'panel': 'main', 'panel_title': 'Основная', 'host': 'LTE 1', 'name': 'LTE 1',
                               'lite': True, 'address': '1.2.3.4:443'}], lines)
         self.assertIn('rwmon_host{panel="main",panel_title="Основная",host="LTE 1",name="LTE 1",lite="1",'
-                      'address="1.2.3.4:443"} 1',
+                      'address="1.2.3.4:443",warp="0",psiphon="0"} 1',
                       lines.text())
+        # полный хост с тегом-исключением Psiphon; запись старого кэша без 'checks' — обе проверки
+        lines = exporter.Lines()
+        exporter.host_lines([{'panel': 'main', 'panel_title': 'Основная', 'host': 'Москва 1', 'name': 'Москва 1',
+                              'lite': False, 'address': '5.5.5.5:443', 'checks': ['warp']},
+                             {'panel': 'main', 'panel_title': 'Основная', 'host': 'Old', 'name': 'Old',
+                              'lite': False, 'address': '6.6.6.6:443'}], lines)
+        self.assertIn('host="Москва 1",name="Москва 1",lite="0",address="5.5.5.5:443",warp="1",psiphon="0"} 1',
+                      lines.text())
+        self.assertIn('host="Old",name="Old",lite="0",address="6.6.6.6:443",warp="1",psiphon="1"} 1', lines.text())
 
     def test_host_exit(self):
         p = make_cfg().panels[0]
@@ -526,9 +603,11 @@ class ExporterTest(unittest.TestCase):
         lines = exporter.Lines()
         exporter.host_lines(hosts, lines, [p], {'1.2.3.4': 'Poland 1 · FixErrorVPN'}, {})
         text = lines.text()
-        self.assertIn('host="Poland",name="Poland",lite="0",address="1.2.3.4:443",exit="Poland 1 · FixErrorVPN"} 1', text)
-        self.assertIn('host="LTE 3",name="LTE 3",lite="0",address="9.9.9.9:20009",exit="CDN 1"} 1', text)
-        self.assertIn('host="Other",name="Other",lite="0",address="8.8.8.8:443"} 1', text)
+        self.assertIn('host="Poland",name="Poland",lite="0",address="1.2.3.4:443",warp="1",psiphon="1",'
+                      'exit="Poland 1 · FixErrorVPN"} 1', text)
+        self.assertIn('host="LTE 3",name="LTE 3",lite="0",address="9.9.9.9:20009",warp="1",psiphon="1",'
+                      'exit="CDN 1"} 1', text)
+        self.assertIn('host="Other",name="Other",lite="0",address="8.8.8.8:443",warp="1",psiphon="1"} 1', text)
 
     def test_collect_node_ips(self):
         p = make_cfg().panels[0]
@@ -690,7 +769,8 @@ class RenderTest(unittest.TestCase):
             self.assertNotIn('__MULTI__', tpl)
             env = load('checkers/warp.env')
             self.assertIn("PROXY_IP_CHECK_URL='https://icanhazip.com'", env)
-            self.assertIn("SUBSCRIPTION_URL='file:///links/monitor.txt'", env)
+            self.assertIn("SUBSCRIPTION_URL='file:///links/monitor-warp.txt'", env)
+            self.assertIn("monitor-psiphon.txt", load('checkers/psiphon.env'))
             self.assertIn("PROXY_CHECK_ATTEMPTS='3'", env)
             self.assertIn("PROXY_CHECK_CONCURRENCY='20'", env)
             self.assertIn("monitor-xray.txt", load('checkers/xray.env'))

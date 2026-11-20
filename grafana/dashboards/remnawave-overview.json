@@ -313,7 +313,7 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "count(count by (panel, host) ((rwmon_host{panel_title=~\"$panel\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"xray\"}) == 0) or (rwmon_host{panel_title=~\"$panel\", lite=\"0\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"warp\"}) == 0) or (rwmon_host{panel_title=~\"$panel\", lite=\"0\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"psiphon\"}) == 0))) or vector(0)",
+          "expr": "count(count by (panel, host) ((rwmon_host{panel_title=~\"$panel\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"xray\"}) == 0) or (rwmon_host{panel_title=~\"$panel\", warp=\"1\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"warp\"}) == 0) or (rwmon_host{panel_title=~\"$panel\", psiphon=\"1\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"psiphon\"}) == 0))) or vector(0)",
           "legendFormat": "со сбоем",
           "range": false,
           "instant": true
@@ -1628,7 +1628,7 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "(rwmon_host{panel_title=~\"$panel\"} * on (name) group_left (check) ((time() - max by (name, check) (max_over_time(timestamp(xray_proxy_status{check=\"xray\"} == 1)[1d:1m]))) and on (name) (max by (name) (xray_proxy_status{check=\"xray\"}) == 0))) or ((rwmon_host{panel_title=~\"$panel\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"xray\"}) == 0) * 0 + 86400) or (rwmon_host{panel_title=~\"$panel\", lite=\"0\"} * on (name) group_left (check) ((time() - max by (name, check) (max_over_time(timestamp(xray_proxy_status{check=\"warp\"} == 1)[1d:1m]))) and on (name) (max by (name) (xray_proxy_status{check=\"warp\"}) == 0))) or ((rwmon_host{panel_title=~\"$panel\", lite=\"0\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"warp\"}) == 0) * 0 + 86400) or (rwmon_host{panel_title=~\"$panel\", lite=\"0\"} * on (name) group_left (check) ((time() - max by (name, check) (max_over_time(timestamp(xray_proxy_status{check=\"psiphon\"} == 1)[1d:1m]))) and on (name) (max by (name) (xray_proxy_status{check=\"psiphon\"}) == 0))) or ((rwmon_host{panel_title=~\"$panel\", lite=\"0\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"psiphon\"}) == 0) * 0 + 86400) or (label_replace(rwmon_host{panel_title=~\"$panel\"} * on (address) group_left () (max by (address) (probe_success{kind=\"tcp\"}) == 0), \"check\", \"ru\", \"\", \"\") * 0 + 0)",
+          "expr": "(rwmon_host{panel_title=~\"$panel\"} * on (name) group_left (check) ((time() - max by (name, check) (max_over_time(timestamp(xray_proxy_status{check=\"xray\"} == 1)[1d:1m]))) and on (name) (max by (name) (xray_proxy_status{check=\"xray\"}) == 0))) or ((rwmon_host{panel_title=~\"$panel\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"xray\"}) == 0) * 0 + 86400) or (rwmon_host{panel_title=~\"$panel\", warp=\"1\"} * on (name) group_left (check) ((time() - max by (name, check) (max_over_time(timestamp(xray_proxy_status{check=\"warp\"} == 1)[1d:1m]))) and on (name) (max by (name) (xray_proxy_status{check=\"warp\"}) == 0))) or ((rwmon_host{panel_title=~\"$panel\", warp=\"1\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"warp\"}) == 0) * 0 + 86400) or (rwmon_host{panel_title=~\"$panel\", psiphon=\"1\"} * on (name) group_left (check) ((time() - max by (name, check) (max_over_time(timestamp(xray_proxy_status{check=\"psiphon\"} == 1)[1d:1m]))) and on (name) (max by (name) (xray_proxy_status{check=\"psiphon\"}) == 0))) or ((rwmon_host{panel_title=~\"$panel\", psiphon=\"1\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"psiphon\"}) == 0) * 0 + 86400) or (label_replace(rwmon_host{panel_title=~\"$panel\"} * on (address) group_left () (max by (address) (probe_success{kind=\"tcp\"}) == 0), \"check\", \"ru\", \"\", \"\") * 0 + 0)",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -3859,7 +3859,7 @@
                 "type": "prometheus",
                 "uid": "rwmon-prometheus"
               },
-              "expr": "max by (panel_title, host) (rwmon_host{panel_title=~\"$panel\", lite=\"0\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"warp\"}))",
+              "expr": "max by (panel_title, host) (rwmon_host{panel_title=~\"$panel\", warp=\"1\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"warp\"}))",
               "legendFormat": "",
               "range": false,
               "instant": true,
@@ -3989,7 +3989,7 @@
                 "type": "prometheus",
                 "uid": "rwmon-prometheus"
               },
-              "expr": "max by (panel_title, host) (rwmon_host{panel_title=~\"$panel\", lite=\"0\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"psiphon\"}))",
+              "expr": "max by (panel_title, host) (rwmon_host{panel_title=~\"$panel\", psiphon=\"1\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"psiphon\"}))",
               "legendFormat": "",
               "range": false,
               "instant": true,
@@ -4119,7 +4119,7 @@
                 "type": "prometheus",
                 "uid": "rwmon-prometheus"
               },
-              "expr": "(rwmon_host{panel_title=~\"$panel\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"xray\"})) and on (name) (min by (name) (min_over_time(xray_proxy_status{check=\"xray\"}[$__range] @ end())) == 0) or (rwmon_host{panel_title=~\"$panel\", lite=\"0\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"warp\"})) and on (name) (min by (name) (min_over_time(xray_proxy_status{check=\"warp\"}[$__range] @ end())) == 0) or (rwmon_host{panel_title=~\"$panel\", lite=\"0\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"psiphon\"})) and on (name) (min by (name) (min_over_time(xray_proxy_status{check=\"psiphon\"}[$__range] @ end())) == 0)",
+              "expr": "(rwmon_host{panel_title=~\"$panel\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"xray\"})) and on (name) (min by (name) (min_over_time(xray_proxy_status{check=\"xray\"}[$__range] @ end())) == 0) or (rwmon_host{panel_title=~\"$panel\", warp=\"1\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"warp\"})) and on (name) (min by (name) (min_over_time(xray_proxy_status{check=\"warp\"}[$__range] @ end())) == 0) or (rwmon_host{panel_title=~\"$panel\", psiphon=\"1\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"psiphon\"})) and on (name) (min by (name) (min_over_time(xray_proxy_status{check=\"psiphon\"}[$__range] @ end())) == 0)",
               "legendFormat": "{{host}} · {{panel_title}} · {{check}}",
               "range": true,
               "instant": false

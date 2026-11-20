@@ -169,6 +169,7 @@ An HTML file with the full GeoCheck table for all nodes is attached to the repor
 3. **Tags on the hosts** to check:
    - `MONITORING` — all three checks: one direct host per node;
    - `MONITORING_LITE` — only "Connection", a single light check. Good for hosts with a traffic limit (LTE, CDN chains): 5–15 KB per check, 50–130 MB per month. The tag name is set in `host_tag_lite`.
+   - `MONITORING_NO_WARP` / `MONITORING_NO_PSIPHON` — added **next to** `MONITORING` when the node has no WARP or Psiphon. That check is turned off for the host, the others run as usual. Without the tag the check would miss: on such a node the Psiphon address goes somewhere else (for example, to WARP), and the "Psiphon is down" alert would report someone else's failure. The tag names are set in `host_tag_no_warp` and `host_tag_no_psiphon`.
 
    Do not tag balancers and "auto-select" hosts.
 4. **Node routing.** The checks go through the node's real Xray config:
@@ -240,6 +241,7 @@ One panel — one `[[panel]]` block:
 | `id`, `title` | a short Latin id (label on charts) and a human-readable title |
 | `api_url`, `api_token` | a panel on the same server — `http://127.0.0.1:3000`, another one — its domain |
 | `monitor_user`, `host_tag`, `host_tag_lite` | whose subscription and which hosts to check |
+| `host_tag_no_warp`, `host_tag_no_psiphon` | exclusion tags: do not check WARP or Psiphon on hosts that have them |
 | `host_suffix` | a suffix for host names so hosts of different panels don't get mixed up. Empty for the first panel, " · title" for the others |
 | `exclude_nodes` | nodes (names or tags) not to watch. Nodes disabled in the panel are hidden automatically |
 | `geocheck_exclude` | nodes where GeoCheck is not run |

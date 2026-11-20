@@ -3,6 +3,8 @@
 У каждой панели берём подписку служебного пользователя в формате Xray JSON
 (как её получают приложения, вместе с мапперами хостов) и оставляем только
 хосты с тегами host_tag (все три проверки) и host_tag_lite (только «Подключение»).
+Тег-исключение (host_tag_no_warp / host_tag_no_psiphon) рядом с host_tag убирает
+проверку, которой на этой ноде нечего проверять: например, на ноде нет Psiphon.
 Теги и названия хостов берём из /raw, сами настройки подключения — из JSON.
 
 Если в двух панелях один и тот же хост (тот же сервер, порт и способ
@@ -12,8 +14,9 @@ sni и название при этом могут отличаться), он �
 reporter отдаёт в Prometheus метрикой rwmon_host — по ней алерты и дашборд
 понимают, к какой панели относится проверка.
 
-Результат — два файла со списком конфигов Xray JSON (по одному outbound на
-проверку, название — в remarks), их читают контейнеры xray-checker.
+Результат — файлы со списком конфигов Xray JSON (по одному outbound на
+проверку, название — в remarks), по файлу на каждую проверку; их читают
+контейнеры xray-checker.
 """
 import copy
 import json
@@ -165,6 +168,21 @@ def select_hosts(raw_configs, json_configs, tag):
     return pairs, missing
 
 
+def host_skips(raw_configs, skip_tags):
+    """Какие проверки пропустить у хоста: {название: [проверки]}.
+    skip_tags — {тег-исключение: проверка}, см. Panel.skip_tags()."""
+    skips = {}
+    for c in raw_configs:
+        meta = c.get('metadata') or {}
+        tags = meta.get('tags') or []
+        skip = sorted({check for tag, check in skip_tags.items() if tag and tag in tags})
+        if skip:
+            for name in (c.get('finalRemark'), meta.get('remark')):
+                if name:
+                    skips[meta.get('remark') or name] = skip
+    return skips
+
+
 def write_if_changed(path, text):
     try:
         with open(path, encoding='utf-8') as f:
@@ -183,7 +201,8 @@ def write_if_changed(path, text):
 
 
 def panel_links(rw, panel):
-    """Хосты одной панели: [{'outbound', 'host', 'lite'}] — полные, потом лёгкие."""
+    """Хосты одной панели: [{'outbound', 'host', 'lite', 'skip'}] — полные, потом лёгкие.
+    skip — проверки, которые у полного хоста отключены тегом-исключением."""
     user = rw.user_by_username(panel.monitor_user)
     raw = rw.raw_subscription(user['shortUuid'])
     configs = raw.get('resolvedProxyConfigs') or []
@@ -204,18 +223,32 @@ def panel_links(rw, panel):
                     'не исчерпан лимит устройств (HWID)')
         log('links', f'[{panel.title}] у пользователя «{panel.monitor_user}» нет хостов с тегами '
                      f'{panel.host_tag} / {panel.host_tag_lite}' + hint)
-    return ([{'outbound': ob, 'host': name, 'lite': False} for ob, name in full] +
-            [{'outbound': ob, 'host': name, 'lite': True} for ob, name in lite])
+    skips = host_skips(configs, panel.skip_tags())
+    return ([{'outbound': ob, 'host': name, 'lite': False, 'skip': skips.get(name, [])} for ob, name in full] +
+            [{'outbound': ob, 'host': name, 'lite': True, 'skip': []} for ob, name in lite])
 
 
-# Какие хосты каких панелей чем проверяются: [{panel, panel_title, host, name, lite}].
+# Какие хосты каких панелей чем проверяются: [{panel, panel_title, host, name, lite, checks}].
+# checks — какие из проверок WARP/Psiphon нужны этому хосту в этой панели.
 # name — название в проверке (метка name у xray_proxy_status). Читает exporter.
 HOSTS = []
+
+
+FULL_CHECKS = ('warp', 'psiphon')          # проверки только для полных хостов
+
+
+def entry_checks(e):
+    """Какие из проверок WARP/Psiphon нужны записи хоста."""
+    if e.get('lite'):
+        return set()
+    return set(FULL_CHECKS) - set(e.get('skip') or [])
 
 
 def combine(per_panel):
     """Склеить хосты всех панелей. Одинаковый хост (см. connection_key)
     проверяется один раз, а результат относится ко всем панелям, где он есть.
+    Проверки WARP/Psiphon у общего хоста — объединение того, что нужно панелям:
+    если одной панели Psiphon на этом хосте нужен, он проверяется.
     per_panel — [(panel, entries)]. Возвращает (проверки, хосты)."""
     checks, hosts, used = {}, [], set()
     for p, entries in per_panel:
@@ -230,12 +263,20 @@ def combine(per_panel):
                 used.add(name)
                 c = checks[key] = {'name': name, 'config': check_config(name, e['outbound']),
                                    'lite': e['lite'], 'address': outbound_address(e['outbound']),
-                                   'udp': is_udp(e['outbound'])}
+                                   'udp': is_udp(e['outbound']), 'checks': set()}
             elif not e['lite']:
                 c['lite'] = False                    # полная проверка покрывает лёгкую
+            c['checks'] |= entry_checks(e)
             hosts.append({'panel': p.id, 'panel_title': p.title, 'host': e['host'],
-                          'name': c['name'], 'lite': e['lite'], 'address': c['address']})
+                          'name': c['name'], 'lite': e['lite'], 'address': c['address'],
+                          'checks': sorted(entry_checks(e))})
     return list(checks.values()), hosts
+
+
+def check_links_file(cfg, check):
+    """Список хостов для проверки WARP или Psiphon: /links/monitor-<проверка>.txt."""
+    folder = os.path.dirname(cfg.links_file) or '.'
+    return os.path.join(folder, f'monitor-{check}.txt')
 
 
 def write_probe_targets(cfg, checks):
@@ -275,8 +316,13 @@ def refresh(cfg, clients):
     full = [c['config'] for c in checks if not c['lite']]
     lite = [c['config'] for c in checks if c['lite']]
     dump = lambda configs: json.dumps(configs, ensure_ascii=False, indent=1) + '\n'
+    # monitor.txt — прежний общий список полных хостов: его читают проверки, пока после
+    # обновления не выполнен ./apply.sh (тот переключает их на свои списки ниже)
     changed = write_if_changed(cfg.links_file, dump(full))
     changed |= write_if_changed(cfg.links_file_xray, dump(full + lite))
+    for check in FULL_CHECKS:                    # WARP и Psiphon — без хостов с тегом-исключением
+        changed |= write_if_changed(check_links_file(cfg, check),
+                                    dump([c['config'] for c in checks if check in c['checks']]))
     write_probe_targets(cfg, checks)
     if changed:
         shared = len(HOSTS) - len(checks)

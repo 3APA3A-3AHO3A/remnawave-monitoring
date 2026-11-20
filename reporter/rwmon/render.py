@@ -108,10 +108,16 @@ def _rule(uid, title, expr, for_, summary, recovered, description, scope, severi
     }
 
 
+def checked_hosts(check):
+    """rwmon_host тех хостов, которые эта проверка должна проверять:
+    «Подключение» — все, WARP/Psiphon — полные без тега-исключения (метка warp/psiphon="1")."""
+    return 'rwmon_host' if check == 'xray' else f'rwmon_host{{{check}="1"}}'
+
+
 def host_checks(check, cond='== 0'):
     """Результат проверки по каждому хосту каждой панели: rwmon_host × xray_proxy_status.
     Один хост, общий для двух панелей, даёт две строки — по одной на панель."""
-    hosts = 'rwmon_host' if check == 'xray' else 'rwmon_host{lite="0"}'
+    hosts = checked_hosts(check)
     # max by: при обновлении списка у одного имени ненадолго бывает две серии
     return f'{hosts} * on (name) group_left (check) (max by (name, check) (xray_proxy_status{{check="{check}"}}) {cond})'
 
@@ -124,9 +130,8 @@ def _checker(check):
             f'(xray_proxy_status{{check="xray"}} == 0)) * 0 + 1')
 
 
-UNCHECKED = ('(rwmon_host unless on (name) xray_proxy_status{check="xray"})'
-             ' or (rwmon_host{lite="0"} unless on (name) xray_proxy_status{check="warp"})'
-             ' or (rwmon_host{lite="0"} unless on (name) xray_proxy_status{check="psiphon"})')
+UNCHECKED = ' or '.join(f'({checked_hosts(c)} unless on (name) xray_proxy_status{{check="{c}"}})'
+                        for c, _ in CHECKERS)
 
 
 def rules(cfg):
@@ -319,8 +324,9 @@ def checker_env(cfg, check, port):
     urls = {'xray': cfg.url_xray, 'warp': cfg.url_warp, 'psiphon': cfg.url_psiphon}
     env = {
         'TZ': 'UTC',
-        # «Подключение» проверяет и лёгкие хосты, WARP и Psiphon — только полные
-        'SUBSCRIPTION_URL': 'file:///links/' + ('monitor-xray.txt' if check == 'xray' else 'monitor.txt'),
+        # «Подключение» проверяет и лёгкие хосты, WARP и Psiphon — только полные,
+        # у каждой свой список: хосты с тегом-исключением в него не попадают
+        'SUBSCRIPTION_URL': f'file:///links/monitor-{check}.txt',
         'SUBSCRIPTION_UPDATE': 'true',
         'SUBSCRIPTION_UPDATE_INTERVAL': '300',
         'PROXY_CHECK_INTERVAL': cfg.check_interval,

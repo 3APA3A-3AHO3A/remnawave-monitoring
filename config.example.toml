@@ -109,6 +109,9 @@ api_token = ""
 monitor_user = "monitoring"      # служебный пользователь, по его подписке (Xray JSON) проверяются хосты
 host_tag = "MONITORING"          # хосты с этим тегом — все три проверки
 host_tag_lite = "MONITORING_LITE"  # только «Подключение» (LTE, лимитированные)
+# Теги-исключения рядом с host_tag: на ноде нет WARP или Psiphon — эту проверку не делать
+# host_tag_no_warp = "MONITORING_NO_WARP"
+# host_tag_no_psiphon = "MONITORING_NO_PSIPHON"
 # host_suffix = ""               # подпись к названиям хостов; у первой панели пусто
 exclude_nodes = []               # не следить за нодами (имена или теги нод); выключенные в панели скрываются сами
 geocheck_exclude = []            # не запускать на них GeoCheck

@@ -41,6 +41,13 @@ class Panel:
     geocheck_exclude: set
     telegram: Telegram
     host_exit: dict = field(default_factory=dict)   # название хоста → куда ведёт (нода), для алертов
+    # Теги-исключения: хост с host_tag, но без WARP или Psiphon на ноде — эту проверку пропускаем
+    host_tag_no_warp: str = 'MONITORING_NO_WARP'
+    host_tag_no_psiphon: str = 'MONITORING_NO_PSIPHON'
+
+    def skip_tags(self):
+        """Тег-исключение → какую проверку он отключает."""
+        return {self.host_tag_no_warp: 'warp', self.host_tag_no_psiphon: 'psiphon'}
 
 
 @dataclass
@@ -186,6 +193,8 @@ def parse(data, env=os.environ):
             geocheck_exclude=_lower_set(p.get('geocheck_exclude')),
             telegram=_telegram(p.get('telegram'), f'{where} ({pid})', tg_default),
             host_exit=_host_exit(p.get('host_exit'), f'{where} ({pid})'),
+            host_tag_no_warp=str(p.get('host_tag_no_warp', 'MONITORING_NO_WARP')).strip(),
+            host_tag_no_psiphon=str(p.get('host_tag_no_psiphon', 'MONITORING_NO_PSIPHON')).strip(),
         ))
     empty = [p.id for p in panels if not p.host_suffix]
     if len(empty) > 1:
