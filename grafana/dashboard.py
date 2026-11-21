@@ -28,8 +28,9 @@ OK_MAP = [{'type': 'value', 'options': {'1': {'text': 'OK', 'color': GREEN, 'ind
 
 
 def hosts(check):
-    """rwmon_host нужной панели: у лёгких (LTE) хостов проверяется только подключение."""
-    return f'rwmon_host{{{F}}}' if check == 'xray' else f'rwmon_host{{{F}, lite="0"}}'
+    """rwmon_host нужной панели: у лёгких (LTE) хостов проверяется только подключение,
+    у хостов с тегом-исключением — без WARP или Psiphon."""
+    return f'rwmon_host{{{F}}}' if check == 'xray' else f'rwmon_host{{{F}, {check}="1"}}'
 
 
 def host_status(check):

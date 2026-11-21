@@ -67,7 +67,7 @@ def collect(prom, cfg):
             f' + increase(rwmon_node_outbound_download_bytes{{tag=~{tags}}}[24h]))'):
         d['outbound'].setdefault((m.get('panel'), m.get('node_uuid')), {})[m.get('tag')] = v
     for check in CHECK_NAMES:                     # сколько минут за сутки проверка не проходила
-        hosts = 'rwmon_host' if check == 'xray' else 'rwmon_host{lite="0"}'
+        hosts = 'rwmon_host' if check == 'xray' else f'rwmon_host{{{check}="1"}}'
         for m, v in prom.query(
                 f'{hosts} * on (name) group_left () '
                 f'sum by (name) (sum_over_time((xray_proxy_status{{check="{check}"}} == bool 0)[24h:1m]))'):

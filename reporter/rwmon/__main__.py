@@ -178,6 +178,10 @@ def _hosts(rw, p):
     parts = [f'{len(entries) - len(lite)} полных']
     if lite:
         parts.append(f'{len(lite)} лёгких ({", ".join(lite)})')
+    for check, title in (('warp', 'WARP'), ('psiphon', 'Psiphon')):
+        skipped = [e['host'] for e in entries if not e['lite'] and check in (e.get('skip') or [])]
+        if skipped:
+            parts.append(f'без {title}: {", ".join(skipped)}')
     return ', '.join(parts)
 
 
@@ -284,6 +288,10 @@ def main(argv):
                 notes = []
                 if h['lite']:
                     notes.append('только «Подключение»')
+                else:
+                    off = [t for c, t in (('warp', 'WARP'), ('psiphon', 'Psiphon')) if c not in h['checks']]
+                    if off:
+                        notes.append('без ' + ' и '.join(off))
                 if h['name'] != h['host'] + p.host_suffix:
                     notes.append(f'общая проверка с «{h["name"]}»')
                 print(f'  {h["host"]}' + (f' ({"; ".join(notes)})' if notes else ''))
