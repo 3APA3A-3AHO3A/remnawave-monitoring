@@ -35,9 +35,10 @@ Monitoring for [Remnawave](https://docs.rw) nodes: Grafana dashboards, alerts an
 
 ## Features
 
-- **Telegram alerts** — a host does not accept clients, WARP / Psiphon is down or bypassed, clients vanished from a node, a panel is unreachable or slow, a host cannot be reached from Russia, a website is down, a certificate is about to expire, a node is overloaded. When things recover, a recovery message follows. Details — [Alerts](#telegram-alerts).
+- **Telegram alerts** — a host does not accept clients, a route check (WARP, Psiphon, a cascade — whatever you describe in `[[check]]`) is down or exits in the wrong place, clients vanished from a node, a panel is unreachable or slow, a host cannot be reached from Russia, a website is down, a certificate is about to expire, a node is overloaded. When things recover, a recovery message follows. Details — [Alerts](#telegram-alerts).
 - **Grafana dashboard** — key numbers, a node table with "everything in one row", a card per node, outbounds, panel health, GeoCheck. "Panel" and "Node" selectors.
 - **Daily report** — what changed in GeoCheck, failures of the day without duplicates, users, traffic and upcoming server payments per panel. Plus an HTML GeoCheck table.
+- **Route checks from the config** — `[[check]]` blocks: what to open through a host and where the exit must be (not the node IP, the node IP, a country, a network). Hosts are picked by the node's config profile. Details — [Route checks](#route-checks).
 - **Multiple panels** — each with its own chat and topic. Identical hosts in different panels are checked once.
 - **Probe from Russia** — a blackbox exporter on a Russian node reveals IP blocking that is invisible from Europe.
 - **Websites and an external watchdog** — checks for your sales site and subscription page, certificate expiry, and a Healthchecks.io ping in case the monitoring server itself goes down.
@@ -47,7 +48,7 @@ Monitoring for [Remnawave](https://docs.rw) nodes: Grafana dashboards, alerts an
 ```mermaid
 flowchart LR
     P["Remnawave panels<br/>API with a token"] --> R["<b>reporter</b><br/>metrics · host list<br/>GeoCheck · report"]
-    X["xray-checker ×3, every 5 min<br/>Connection · WARP · Psiphon"] -- "as an ordinary client" --> N["Nodes<br/>Xray"]
+    X["xray-checker, every 5 min<br/>Connection + [[check]] checks"] -- "as an ordinary client" --> N["Nodes<br/>Xray"]
     B["Probe from Russia, every minute<br/>blackbox exporter"] -- TCP --> N
     R --> M["Prometheus<br/>90 days"]
     X --> M
@@ -71,7 +72,7 @@ Everything starts with a single `docker compose` and listens on `127.0.0.1` only
 
 **Traffic.**
 
-- A check is just a connection setup and a tiny response. Three checks every 5 minutes add up to about 100 MB per host per month.
+- A check is just a connection setup and a tiny response. Three checks (Connection and two route checks) every 5 minutes add up to about 100 MB per host per month.
 - GeoCheck once a day takes a few MB per node; that traffic is spent by the node itself.
 
 ## Documentation
@@ -88,15 +89,17 @@ A message is short: what happened, where and why — one line per host or node w
 • 🇷🇺 LTE 3 · FixErrorVPN — с 16:34 UTC · хост не ответил вовремя (таймаут)
 ```
 
-The reason in the line: for hosts — timeout, closed connection, refused, TLS or DNS error; for "bypasses WARP / Psiphon" — which node's IP the request went out from; for a website — the response code or "no response"; for a certificate — days left; for "clients vanished" — how many there are now; for "node overloaded" — the CPU or memory percentage. The reason is not part of the alert labels, so a change of reason does not cause extra "recovered" and "down" messages. While something is still down, a reminder comes every `repeat_minutes` (60 min); for certificates — once a day.
+The reason in the line: for hosts — timeout, closed connection, refused, TLS or DNS error; for "bypasses ‹check›" — which node's IP the request went out from; for "exits in the wrong place" — the exit country and network; for a website — the response code or "no response"; for a certificate — days left; for "clients vanished" — how many there are now; for "node overloaded" — the CPU or memory percentage. The reason is not part of the alert labels, so a change of reason does not cause extra "recovered" and "down" messages. While something is still down, a reminder comes every `repeat_minutes` (60 min); for certificates — once a day.
 
 | Alert | How it is detected | Sent to |
 |---|---|---|
 | Host does not accept clients | the check connects to the host like an ordinary client and cannot open a page. After the arrow the message names the node the host leads to: "LTE 3 · OVRO → CDN 1". All hosts of one node down — the node is the problem, one host down — its path to the node | all chats |
-| WARP / Psiphon is down | an address that the node's routing sends to WARP or Psiphon does not open through the node | all chats |
-| Traffic bypasses WARP / Psiphon | the address opened, but the reply came from the IP of one of the panels' nodes: the request went out directly. Usually the exit is down and the balancer switched to direct. A node that goes online from a different IP than the one in the panel (NAT) is not covered | all chats |
+| "‹check› is down" (WARP, Psiphon…) | the address of a route check from `[[check]]` does not open through the host | all chats |
+| Traffic bypasses ‹check› | `egress = "other"`: the address opened, but the reply came from the IP of one of the panels' nodes — the request went out directly. Usually the exit is down and the balancer switched to direct. A node that goes online from a different IP than the one in the panel (NAT) is not covered | all chats |
+| ‹Check›: exit not from the node IP | `egress = "node"`: the reply came from a different IP than the node's — the traffic went to another exit | all chats |
+| ‹Check›: exit in the wrong place | `egress_country` / `egress_asn`: the exit country or network is not the expected one (DB-IP Lite database) | all chats |
 | Clients vanished from a node | the node is connected to the panel, an hour ago it had users, now almost nobody. Looks like IP blocking | all chats |
-| Outbound not responding | clients send requests to an outbound (e.g. `psiphon-out`) but almost no responses come back. **Disabled** (paused in Grafana): the outbounds sit behind balancers with a fallback, and uploading a file looks the same as a failure. A real chain failure is caught by the WARP / Psiphon checks | — |
+| Outbound not responding | clients send requests to an outbound (e.g. `psiphon-out`) but almost no responses come back. **Disabled** (paused in Grafana): the outbounds sit behind balancers with a fallback, and uploading a file looks the same as a failure. A real chain failure is caught by the route checks | — |
 | Panel API unreachable | the panel does not respond, wrong address or token | all chats |
 | Panel is slow | a panel process (api, scheduler or processor) responds slower than `panel_lag_ms` (200 ms) for 5 minutes | all chats |
 | Panel process restarted | the process uptime was reset — a panel update or a crash | all chats |
@@ -120,7 +123,7 @@ A node disconnecting from the panel is not tracked here: Remnawave sends a webho
 "Panel" and "Node" selectors at the top:
 
 - key numbers: clients, nodes, failing hosts, server network speed, traffic, subscriptions;
-- node table — everything about a node in one row: link to the panel, online users and a sparkline, Connection/WARP/Psiphon and "from Russia" checks, server and Xray uptime, Xray version, CPU, RAM, RX/TX, traffic and limit;
+- node table — everything about a node in one row: link to the panel, online users and a sparkline, the checks ("Connection" and the route checks from `[[check]]`) and "from Russia", server and Xray uptime, Xray version, CPU, RAM, RX/TX, traffic and limit;
 - what is broken right now, panel state (API, version, uptime since the last restart, latency) and websites;
 - three shared charts: clients, network of all nodes (receive up, send down), outbounds;
 - "Each node separately" — a card per node: server receive and send;
@@ -132,7 +135,7 @@ A node disconnecting from the panel is not tracked here: Remnawave sends a webho
   - "Probe from Russia";
   - "GeoCheck" — which country each service sees, access to Netflix/ChatGPT and so on, GeoIP databases, IP type and risk.
 
-The dashboard is generated by [`grafana/dashboard.py`](grafana/dashboard.py) — edit it there, then run `python3 grafana/dashboard.py`.
+The dashboard is generated by [`grafana/dashboard.py`](grafana/dashboard.py): `./apply.sh` builds it for the checks in `config.toml`.
 
 </details>
 
@@ -167,6 +170,7 @@ An HTML file with the full GeoCheck table for all nodes is attached to the repor
    - Users: Get user by username;
    - Subscriptions: Get Raw Subscription by Short UUID;
    - Connections: Request Geocheck for Node, Get Geocheck for Node by Job ID;
+   - Config Profiles: Get config profiles — if route checks pick hosts by profile name (`profiles`). Without it, profile UUIDs still work;
    - System: Get Stats, Get Nodes Metrics, Get Stats Digest, Get Remnawave Information;
    - optionally Infra Billing: Get infra billing nodes — then the report shows upcoming payments.
 2. **A service user**, e.g. `monitoring`:
@@ -176,20 +180,17 @@ An HTML file with the full GeoCheck table for all nodes is attached to the repor
 
    Monitoring takes the hosts from this user's subscription in **Xray JSON** format — the same way apps get it, with host mappers applied. So the hosts to check must be visible and not excluded from the "Xray JSON" type. Base64 is not needed for monitoring.
 3. **Tags on the hosts** to check:
-   - `MONITORING` — all three checks: one direct host per node;
+   - `MONITORING` — "Connection" and the route checks that apply to the host: one direct host per node;
    - `MONITORING_LITE` — only "Connection", a single light check. Good for hosts with a traffic limit (LTE, CDN chains): 5–15 KB per check, 50–130 MB per month. The tag name is set in `host_tag_lite`.
-   - `MONITORING_NO_WARP` / `MONITORING_NO_PSIPHON` — added **next to** `MONITORING` when the node has no WARP or Psiphon. That check is turned off for the host, the others run as usual. Without the tag the check would miss: on such a node the Psiphon address goes somewhere else (for example, to WARP), and the "Psiphon is down" alert would report someone else's failure. The tag names are set in `host_tag_no_warp` and `host_tag_no_psiphon`.
+   - `MONITORING_NO_<ID>` (e.g. `MONITORING_NO_PSIPHON`) — added **next to** `MONITORING`, removes one route check from a host that does not need it although its node's profile assigns it. The tag name is the check's `skip_tag`. Picking hosts by profile is usually easier (see [Route checks](#route-checks)).
 
    Do not tag balancers and "auto-select" hosts.
 4. **Node routing.** The checks go through the node's real Xray config:
-   - "Connection" opens `https://www.google.com/generate_204`, this address must go to `DIRECT`;
-   - "WARP" opens `https://icanhazip.com` — a domain from `geosite:category-ip-geo-detect`;
-   - "Psiphon" opens `http://ip-api.com/…`. The node template needs a rule **above** the WARP rule:
+   - "Connection" opens `https://www.google.com/generate_204` (`url_xray` in `[checks]`), this address must go to `DIRECT`;
+   - a route check opens its own `url` — any address your routing already sends to the right exit and that replies with an IP (e.g. `https://icanhazip.com` from `geosite:category-ip-geo-detect` for WARP). If there is no such address, add a rule on the node — e.g. for Psiphon **above** the WARP rule:
      ```json
      { "domain": ["domain:ip-api.com"], "outboundTag": "psiphon-out" }
      ```
-
-   The addresses can be changed in `config.toml`, section `[checks]`.
 
 </details>
 
@@ -200,14 +201,14 @@ An HTML file with the full GeoCheck table for all nodes is attached to the repor
 
 #### Preparing the monitoring server
 
-The checks hold one port per host on `127.0.0.1`: 21000+, 22000+ and 23000+. If the system hands out the same ports to outgoing connections, one day a check will fail to start ("address already in use") and stop seeing new hosts. Reserve the ports for the checks — it affects nothing else:
+The checks hold one port per host on `127.0.0.1`: "Connection" — 21000+, each route check — the next thousand (22000+, 23000+…). If the system hands out the same ports to outgoing connections, one day a check will fail to start ("address already in use") and stop seeing new hosts. Reserve the ports for the checks — it affects nothing else (example for two route checks; `check` prints the line for yours):
 
 ```bash
 echo 'net.ipv4.ip_local_reserved_ports = 21000-21999,22000-22999,23000-23999' | sudo tee /etc/sysctl.d/90-rwmon.conf
 sudo sysctl -p /etc/sysctl.d/90-rwmon.conf
 ```
 
-`check` tells you whether your server needs this.
+`check` tells you whether your server needs this and prints the line for your number of checks.
 
 #### Launch
 
@@ -250,7 +251,7 @@ One panel — one `[[panel]]` block:
 | `id`, `title` | a short Latin id (label on charts) and a human-readable title |
 | `api_url`, `api_token` | a panel on the same server — `http://127.0.0.1:3000`, another one — its domain |
 | `monitor_user`, `host_tag`, `host_tag_lite` | whose subscription and which hosts to check |
-| `host_tag_no_warp`, `host_tag_no_psiphon` | exclusion tags: do not check WARP or Psiphon on hosts that have them |
+| `host_tag_no_warp`, `host_tag_no_psiphon` | only for old settings without `[[check]]`: WARP and Psiphon exclusion tags |
 | `host_suffix` | a suffix for host names so hosts of different panels don't get mixed up. Empty for the first panel, " · title" for the others |
 | `exclude_nodes` | nodes (names or tags) not to watch. Nodes disabled in the panel are hidden automatically |
 | `geocheck_exclude` | nodes where GeoCheck is not run |
@@ -261,7 +262,8 @@ One panel — one `[[panel]]` block:
 Shared sections:
 
 - `[schedule]` — time of GeoCheck and the report (UTC);
-- `[checks]` — interval, number of attempts and check addresses;
+- `[checks]` — interval, number of attempts, the "Connection" address (`url_xray`);
+- `[[check]]` — route checks, one block per check (see below);
 - `[alerts]` — thresholds for "clients vanished", "panel is slow / uses too much memory", the outbound list and how often to remind (`repeat_minutes`);
 - `[geocheck]` — which countries to highlight and which services do not use the node's IP (`routed_services`);
 - `[report]` — what counts as a short failure in the report and how many minutes the panel API may stay silent;
@@ -303,6 +305,60 @@ metrics_password = "…"    # METRICS_PASS
 - a host shared by several panels gives one message per chat, not one from each panel. The message names the panel that owns the node.
 
 If two panels share a chat, a message arrives there once.
+
+</details>
+
+<details>
+<summary><b>🧭 Route checks</b></summary>
+
+### Route checks
+
+There is one built-in check — "Connection": the host accepts a client and lets it out to the internet. Everything else — where the traffic must go — is described by `[[check]]` blocks in `config.toml`. Some have WARP and Psiphon, some a cascade through a Moscow node to the USA, some nothing at all: then there are no blocks.
+
+```toml
+[[check]]
+id = "warp"                       # Latin: label, process name, exclusion tag MONITORING_NO_WARP
+title = "WARP"                    # how to name it in alerts and on the dashboard
+url = "https://icanhazip.com"     # an address the node routing sends to WARP and that replies with an IP
+egress_asn = [13335]              # the exit must be in the Cloudflare network
+profiles = ["Default Vless EU", "CDN 1"]   # node profiles whose hosts to check
+
+[[check]]
+id = "psiphon"
+title = "Psiphon"
+url = "http://ip-api.com/line/?fields=query"
+egress = "other"                  # exit not from the node IP
+profiles = ["Default Vless EU"]
+alert = "Psiphon does not work through the node: Gemini and NotebookLM do not open."
+
+[[check]]
+id = "usa"
+title = "Cascade to the USA"
+url = "https://icanhazip.com"
+egress_country = ["US"]
+hosts = ["🇺🇸 Америка"]            # one host by name instead of a profile
+```
+
+| Field | What it is |
+|---|---|
+| `id`, `title` | a Latin id (up to 20 characters) and a caption. The block order is the column order on the dashboard |
+| `url` | what to open through the host. For `egress*` the address must reply with an IP — like `icanhazip.com` or `ip-api.com/line/?fields=query` |
+| `egress` | `"other"` — exit not from the node IP (catches "the exit is down, the traffic went out directly"); `"node"` — exit from the node IP; not set — it is enough that the page opened |
+| `egress_country`, `egress_asn` | exit countries (ISO) and networks (AS numbers). Found with the free [DB-IP Lite](https://db-ip.com) database (CC BY 4.0), which reporter downloads into `data/geoip` once a month |
+| `profiles` | node config profiles (name or UUID): hosts that lead to nodes of these profiles are checked. The node is found by the host IP or by `host_exit`. A new node of the profile is picked up automatically |
+| `hosts` | host names — in addition to profiles or instead of them |
+| `skip_tag` | a tag that removes the check from a host; `MONITORING_NO_<ID>` by default |
+| `alert` | the alert explanation (visible in Grafana, in the rule card) |
+
+Without `profiles` and `hosts` a check runs on every host with `MONITORING`. Light hosts (`MONITORING_LITE`) do not get route checks. Up to 8 checks; each gets its own xray-checker process, dashboard column, report line and alerts. After a change — `./apply.sh`.
+
+**Moving from 1.x.** Without `[[check]]` blocks, the old WARP and Psiphon checks from `url_warp` / `url_psiphon` keep working with `egress = "other"` and the `MONITORING_NO_WARP` / `MONITORING_NO_PSIPHON` tags — as in 1.x, the config does not have to change. Ready-made blocks for your current checks:
+
+```bash
+docker compose exec reporter python -m rwmon migrate-checks
+```
+
+Paste them into `config.toml`, optionally replace the exclusion tags with `profiles`, and run `./apply.sh`.
 
 </details>
 
@@ -403,12 +459,14 @@ ssh -L 3300:127.0.0.1:3300 user@server
 
 ```bash
 docker compose exec reporter python -m rwmon check              # check the configuration
-docker compose exec reporter python -m rwmon links              # which hosts are checked
+docker compose exec reporter python -m rwmon links              # which hosts get which checks
+docker compose exec reporter python -m rwmon migrate-checks     # [[check]] blocks for the current checks
 docker compose exec reporter python -m rwmon report --dry-run   # show the report without sending
 docker compose exec reporter python -m rwmon report             # send the report now
 docker compose exec reporter python -m rwmon geocheck --send    # GeoCheck + report now
 
 docker compose logs -f reporter                                 # log
+docker compose logs -f checker                                  # check log, lines tagged [check id]
 git pull && ./apply.sh                                          # update
 ```
 
@@ -446,7 +504,7 @@ After that `.env` only needs the lines from [`.env.example`](.env.example). The 
 ### Development
 
 - reporter tests: `cd reporter && python -m unittest discover -v tests` (Python 3.13, no external dependencies).
-- The dashboard is not edited by hand: change [`grafana/dashboard.py`](grafana/dashboard.py) and rebuild the JSON — `python3 grafana/dashboard.py`. CI checks that `grafana/dashboards/` matches the script's output.
+- The dashboard is not edited by hand: change [`grafana/dashboard.py`](grafana/dashboard.py). On `./apply.sh` the `config` container builds it for the checks in `config.toml`; the JSON in `grafana/dashboards/` is the default (Connection, WARP, Psiphon) and the fallback, rebuilt with `python3 grafana/dashboard.py`. CI checks that it matches the script's output.
 - CI ([`tests.yml`](.github/workflows/tests.yml)) on every push and PR: reporter tests, dashboard build, `docker-compose.yml` validation and the xray-checker image build with patches.
 - [Dependabot](.github/dependabot.yml) opens weekly PRs for new image versions (Prometheus, Grafana, blackbox exporter, base images) and GitHub Actions.
 - [`xray-checker-release.yml`](.github/workflows/xray-checker-release.yml) checks xray-checker releases weekly: if the patches apply to a new version it opens a PR, otherwise an issue.

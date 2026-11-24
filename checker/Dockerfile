@@ -36,5 +36,7 @@ RUN apk add --no-cache ca-certificates tzdata && \
     mkdir -p /app/geo && chown -R appuser:appuser /app
 WORKDIR /app
 COPY --from=builder /usr/bin/xray-checker /usr/bin/xray-checker
+# все проверки из config.toml — процессами в одном контейнере (см. run-all.sh)
+COPY run-all.sh /usr/bin/rwmon-checkers
 USER appuser
-ENTRYPOINT ["/usr/bin/xray-checker"]
+ENTRYPOINT ["/usr/bin/rwmon-checkers"]

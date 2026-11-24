@@ -9,24 +9,6 @@ x-logging: &logging
   driver: json-file
   options: { max-size: "10m", max-file: "3" }
 
-x-checker: &checker
-  # xray-checker v1.3.1 + патчи: Hysteria2 packetSize и повторные попытки (см. checker/Dockerfile)
-  build:
-    context: ./checker
-    labels: { rwmon: "1" }      # по этой метке apply.sh убирает старые версии образа
-  image: rwmon-xray-checker:local
-  network_mode: host
-  restart: unless-stopped
-  depends_on:
-    config: { condition: service_completed_successfully }
-    reporter: { condition: service_started }
-  volumes:
-    - links:/links:ro
-    - generated:/etc/rwmon:ro
-  # Интервал и адрес проверки берутся из config.toml (файл собирает контейнер config)
-  entrypoint: ["/bin/sh", "-c", "set -a; . /etc/rwmon/checkers/$$RWMON_CHECK.env; exec /usr/bin/xray-checker"]
-  logging: *logging
-
 services:
   # Собирает конфиги Prometheus, Grafana и проверок из config.toml и завершается
   config:
@@ -98,7 +80,6 @@ services:
       GF_PATHS_PROVISIONING: /etc/rwmon/grafana
     volumes:
       - generated:/etc/rwmon:ro
-      - ./grafana/dashboards:/etc/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     logging: *logging
 
@@ -127,24 +108,26 @@ services:
       - reporter-data:/data
     logging: *logging
 
-  # «Подключение»: нода принимает клиента и выпускает его в интернет напрямую
-  # (хосты с тегом host_tag и host_tag_lite всех панелей)
-  checker-xray:
-    <<: *checker
-    container_name: rwmon-checker-xray
-    environment: { RWMON_CHECK: xray }
-
-  # «WARP»: адрес, который роутинг ноды отправляет в WARP
-  checker-warp:
-    <<: *checker
-    container_name: rwmon-checker-warp
-    environment: { RWMON_CHECK: warp }
-
-  # «Psiphon»: адрес, который роутинг ноды отправляет в Psiphon
-  checker-psiphon:
-    <<: *checker
-    container_name: rwmon-checker-psiphon
-    environment: { RWMON_CHECK: psiphon }
+  # Проверки хостов: «Подключение» и проверки маршрутов из [[check]] в config.toml —
+  # по процессу xray-checker на каждую (см. checker/run-all.sh). Набор проверок
+  # меняется в config.toml, этот файл править не нужно.
+  checker:
+    # xray-checker v1.3.1 + патчи: Hysteria2 packetSize, повторные попытки, IP выхода
+    # и причина сбоя в метриках (см. checker/Dockerfile)
+    build:
+      context: ./checker
+      labels: { rwmon: "1" }      # по этой метке apply.sh убирает старые версии образа
+    image: rwmon-xray-checker:local
+    container_name: rwmon-checker
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      config: { condition: service_completed_successfully }
+      reporter: { condition: service_started }
+    volumes:
+      - links:/links:ro
+      - generated:/etc/rwmon:ro
+    logging: *logging
 
 volumes:
   prometheus-data:

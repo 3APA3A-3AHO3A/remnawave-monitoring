@@ -92,6 +92,11 @@ class Remnawave:
     def nodes(self):
         return self._call('GET', '/api/nodes')
 
+    def config_profiles(self):
+        """Конфиг-профили: [{uuid, name}]. Нужно право токена на чтение профилей."""
+        res = self._call('GET', '/api/config-profiles') or {}
+        return res.get('configProfiles') or [] if isinstance(res, dict) else []
+
     def user_by_username(self, username):
         return self._call('GET', '/api/users/by-username/' + urllib.parse.quote(username))
 

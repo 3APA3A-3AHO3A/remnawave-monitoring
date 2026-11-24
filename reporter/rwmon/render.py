@@ -16,7 +16,15 @@ from .util import promql_regex
 OUT = os.environ.get('RWMON_GENERATED', '/generated')
 SRC = os.environ.get('RWMON_SRC', '/src')
 DS = 'rwmon-prometheus'
-CHECKERS = (('xray', 2112), ('warp', 2113), ('psiphon', 2114))
+
+
+def checkers(cfg):
+    """Процессы xray-checker: [(id, подпись, порт метрик, первый порт Xray)].
+    «Подключение» встроено, остальные — проверки маршрутов из [[check]] по порядку."""
+    out = [('xray', 'Подключение', 2112, 21000)]
+    for i, c in enumerate(cfg.route_checks):
+        out.append((c.id, c.title, 2113 + i, 22000 + 1000 * i))
+    return out
 
 
 def _write(path, data, mode=0o644, owner=None):
@@ -74,7 +82,7 @@ def prometheus(cfg):
             {'job_name': 'reporter', 'static_configs': [{'targets': [f'127.0.0.1:{cfg.reporter_port}']}]},
             {'job_name': 'xray-checker', 'scrape_interval': '60s',
              'static_configs': [{'targets': [f'127.0.0.1:{port}'], 'labels': {'check': check}}
-                                for check, port in CHECKERS],
+                                for check, _, port, _ in checkers(cfg)],
              # к какой панели относится проверка, знает rwmon_host (см. links.py)
              'metric_relabel_configs': [{'action': 'labeldrop', 'regex': 'sub_name|group_name'}]},
         ] + probe_jobs(cfg),
@@ -142,7 +150,7 @@ def _rule(uid, title, expr, for_, summary, recovered, description, scope, severi
 
 def checked_hosts(check):
     """rwmon_host тех хостов, которые эта проверка должна проверять:
-    «Подключение» — все, WARP/Psiphon — полные без тега-исключения (метка warp/psiphon="1").
+    «Подключение» — все, проверки маршрутов — те, кому они нужны (метка <id проверки>="1").
     Хост, общий для нескольких панелей, берётся один раз — строкой primary="1" (см. exporter)."""
     return 'rwmon_host{primary="1"}' if check == 'xray' else f'rwmon_host{{primary="1", {check}="1"}}'
 
@@ -178,8 +186,67 @@ def _bypass(check):
     return f'({checked_hosts(check)} * on (name) group_left (check, via) {via_node}) * 0 + 1'
 
 
-UNCHECKED = ' or '.join(f'({checked_hosts(c)} unless on (name) xray_proxy_status{{check="{c}"}})'
-                        for c, _ in CHECKERS)
+def unchecked(cfg):
+    """Хост должен проверяться, а результата нет."""
+    return ' or '.join(f'({checked_hosts(c)} unless on (name) xray_proxy_status{{check="{c}"}})'
+                       for c, _, _, _ in checkers(cfg))
+
+
+def _exit_join(check, info_filter):
+    """Хосты проверки, у которых IP выхода есть в rwmon_exit_info с отбором info_filter."""
+    exit_info = (f'topk by (name) (1, max by (name, check, country, asn, as_org) (xray_proxy_exit_ip{{check="{check}"}} '
+                 f'* on (ip) group_left (country, asn, as_org) ({info_filter})))')
+    return f'({checked_hosts(check)} * on (name) group_left (check, country, asn, as_org) {exit_info}) * 0 + 1'
+
+
+def _direct(check):
+    """egress = "node": ответ пришёл не с IP ни одной из наших нод."""
+    not_node = (f'topk by (name) (1, max by (name, check, ip) (xray_proxy_exit_ip{{check="{check}"}} '
+                f'unless on (ip) max by (ip) (rwmon_node_address)))')
+    return f'({checked_hosts(check)} * on (name) group_left (check, ip) {not_node}) * 0 + 1'
+
+
+def _egress_filter(c):
+    """rwmon_exit_info, где страна или сеть выхода не те, что ждёт проверка."""
+    parts = []
+    if c.egress_country:
+        parts.append(f'rwmon_exit_info{{country!~{promql_regex(sorted(c.egress_country))}}}')
+    if c.egress_asn:
+        parts.append(f'rwmon_exit_info{{asn!~{promql_regex([str(a) for a in sorted(c.egress_asn)])}}}')
+    return ' or '.join(parts)
+
+
+def route_rules(cfg, for_check):
+    """Правила проверок маршрутов: «не работает» и, если задано ожидание выхода, «вышло не туда».
+    uid прежних WARP и Psiphon (rwmon-warp-down…) не меняются: история алертов сохраняется."""
+    out = []
+    for c in cfg.route_checks:
+        t = c.title
+        out.append(_rule(f'rwmon-{c.id}-down', f'{t} не работает', _checker(c.id), for_check,
+                         f'{t} не работает', f'{t} снова работает',
+                         (c.alert or f'Через ноду не открывается {c.url}.') + ' Две проверки подряд.', 'host',
+                         reason=HOST_REASON))
+        if c.egress == 'other':
+            out.append(_rule(f'rwmon-{c.id}-bypass', f'Трафик идёт мимо {t}', _bypass(c.id), for_check,
+                             f'Трафик идёт мимо {t}', f'Трафик снова идёт через {t}',
+                             f'Адрес проверки «{t}» открылся, но с IP самой ноды: запрос ушёл напрямую. Обычно '
+                             'выход упал, а балансировщик переключился на прямой, или правило маршрутизации на '
+                             'ноде не срабатывает. Две проверки подряд.', 'host',
+                             reason='запрос вышел с IP ноды {{ $labels.via }}'))
+        elif c.egress == 'node':
+            out.append(_rule(f'rwmon-{c.id}-direct', f'{t}: выход не с IP ноды', _direct(c.id), for_check,
+                             f'{t}: выход не с IP ноды', f'{t}: выход снова с IP ноды',
+                             f'Проверка «{t}» должна выходить в интернет с IP самой ноды, а вышла с другого: '
+                             'трафик ушёл в чужой выход (WARP, Psiphon, каскад). Две проверки подряд.', 'host',
+                             reason='запрос вышел с {{ $labels.ip }}'))
+        if c.egress_country or c.egress_asn:
+            want = ', '.join([*sorted(c.egress_country), *(f'AS{a}' for a in sorted(c.egress_asn))])
+            out.append(_rule(f'rwmon-{c.id}-egress', f'{t}: выход не там', _exit_join(c.id, _egress_filter(c)),
+                             for_check, f'{t}: выход не там', f'{t}: выход снова там, где нужно',
+                             f'Проверка «{t}» вышла в интернет не там, где ждали ({want}). Страну и сеть '
+                             'выхода reporter определяет по базе DB-IP Lite. Две проверки подряд.', 'host',
+                             reason='вышел через {{ $labels.country }}, AS{{ $labels.asn }} {{ $labels.as_org }}'))
+    return out
 
 
 def rules(cfg):
@@ -206,26 +273,7 @@ def rules(cfg):
               'Проверка подключается к хосту как обычный клиент и не может открыть страницу. '
               'Две проверки подряд. После стрелки — нода, куда ведёт хост: упали все хосты одной ноды — '
               'проблема на ноде, упал один — на пути этого хоста до неё.', 'host', reason=HOST_REASON),
-        _rule('rwmon-warp-down', 'WARP не работает', _checker('warp'), for_check,
-              'WARP не работает', 'WARP снова работает',
-              'Через ноду не открывается адрес, который она отправляет в WARP. Две проверки подряд.', 'host',
-              reason=HOST_REASON),
-        _rule('rwmon-psiphon-down', 'Psiphon не работает', _checker('psiphon'), for_check,
-              'Psiphon не работает', 'Psiphon снова работает',
-              'Через ноду не открывается адрес, который она отправляет в Psiphon: Gemini на этой ноде '
-              'не работает. Две проверки подряд.', 'host', reason=HOST_REASON),
-        _rule('rwmon-warp-bypass', 'Трафик идёт мимо WARP', _bypass('warp'), for_check,
-              'Трафик идёт мимо WARP', 'Трафик снова идёт через WARP',
-              'Адрес, который нода отправляет в WARP, открылся, но с IP самой ноды: '
-              'запрос ушёл напрямую. Обычно WARP упал, а балансировщик переключился на прямой выход, '
-              'или правило маршрутизации на ноде не срабатывает. Две проверки подряд.', 'host',
-              reason='запрос вышел с IP ноды {{ $labels.via }}'),
-        _rule('rwmon-psiphon-bypass', 'Трафик идёт мимо Psiphon', _bypass('psiphon'), for_check,
-              'Трафик идёт мимо Psiphon', 'Трафик снова идёт через Psiphon',
-              'Адрес, который нода отправляет в Psiphon, открылся, но с IP самой ноды: '
-              'запрос ушёл напрямую, и Gemini на этой ноде, скорее всего, не работает. Обычно Psiphon '
-              'упал, а балансировщик переключился на прямой выход. Две проверки подряд.', 'host',
-              reason='запрос вышел с IP ноды {{ $labels.via }}'),
+        *route_rules(cfg, for_check),
         _rule('rwmon-outbound-no-response', 'Аутбаунд не отвечает', f'''
 (
   (
@@ -271,10 +319,10 @@ def rules(cfg):
         _rule('rwmon-reporter-down', 'reporter не отвечает', '(up{job="reporter"} == 0) * 0 + 1', '3m',
               'reporter не отвечает — данные панелей не собираются', 'reporter снова работает',
               'Посмотрите журнал: docker compose logs --tail 50 reporter', 'all'),
-        _rule('rwmon-hosts-unchecked', 'Хосты не проверяются', UNCHECKED, '20m',
+        _rule('rwmon-hosts-unchecked', 'Хосты не проверяются', unchecked(cfg), '20m',
               'Хосты не проверяются', 'Хосты снова проверяются',
               'Хост есть в панели, но результатов проверки нет. Обычно это значит, что xray-checker '
-              'не смог загрузить новый список хостов: docker compose logs --tail 30 checker-xray',
+              'не смог загрузить новый список хостов: docker compose logs --tail 30 checker',
               'all', severity='warning'),
         _rule('rwmon-panel-no-hosts', 'У панели нет хостов для проверки', '(rwmon_panel_hosts == 0) * 0 + 1',
               '30m', 'Нет хостов для проверки', 'Хосты для проверки снова есть',
@@ -323,7 +371,7 @@ def rules(cfg):
                      '{{ printf "%.0f" $values.B.Value }} дн.{{ end }}'),
         _rule('rwmon-checker-down', 'Не работает проверка хостов', '(up{job="xray-checker"} == 0) * 0 + 1', '5m',
               'Контейнер проверки хостов не отвечает', 'Проверка хостов снова работает',
-              'docker compose logs --tail 50 checker-xray checker-warp checker-psiphon', 'all',
+              'docker compose logs --tail 50 checker', 'all',
               severity='warning'),
     ]
     return {'apiVersion': 1, 'groups': [{'orgId': 1, 'name': 'remnawave', 'folder': 'Remnawave',
@@ -390,13 +438,12 @@ def _sh(v):
     return "'" + str(v).replace("'", "'\\''") + "'"
 
 
-def checker_env(cfg, check, port):
-    """Переменные для контейнера проверки (читаются через `. файл` в sh)."""
-    urls = {'xray': cfg.url_xray, 'warp': cfg.url_warp, 'psiphon': cfg.url_psiphon}
+def checker_env(cfg, check, port, xray_port, url):
+    """Переменные одного процесса xray-checker (читаются через `. файл` в sh)."""
     env = {
         'TZ': 'UTC',
-        # «Подключение» проверяет и лёгкие хосты, WARP и Psiphon — только полные,
-        # у каждой свой список: хосты с тегом-исключением в него не попадают
+        # «Подключение» проверяет и лёгкие хосты, проверки маршрутов — только полные,
+        # у каждой свой список: только хосты, которым она нужна
         'SUBSCRIPTION_URL': f'file:///links/monitor-{check}.txt',
         'SUBSCRIPTION_UPDATE': 'true',
         'SUBSCRIPTION_UPDATE_INTERVAL': '300',
@@ -407,14 +454,30 @@ def checker_env(cfg, check, port):
         'PROXY_CHECK_CONCURRENCY': cfg.check_concurrency,
         'METRICS_HOST': '127.0.0.1',
         'METRICS_PORT': port,
-        'XRAY_START_PORT': {'xray': 21000, 'warp': 22000, 'psiphon': 23000}[check],
+        'XRAY_START_PORT': xray_port,
         'LOG_LEVEL': 'warn',
     }
     if check == 'xray':
-        env.update(PROXY_CHECK_METHOD='status', PROXY_STATUS_CHECK_URL=urls[check])
+        env.update(PROXY_CHECK_METHOD='status', PROXY_STATUS_CHECK_URL=url)
     else:
-        env.update(PROXY_CHECK_METHOD='ip', PROXY_IP_CHECK_URL=urls[check])
+        env.update(PROXY_CHECK_METHOD='ip', PROXY_IP_CHECK_URL=url)
     return ''.join(f'{k}={_sh(v)}\n' for k, v in env.items())
+
+
+def dashboard(cfg):
+    """Дашборд под набор проверок из config.toml: grafana/dashboard.py с этим набором.
+    Не вышло (старый dashboard.py) — готовый JSON из репозитория."""
+    import importlib.util
+    path = os.path.join(SRC, 'grafana', 'dashboard.py')
+    try:
+        spec = importlib.util.spec_from_file_location('rwmon_dashboard', path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.build([(c.id, c.title) for c in cfg.route_checks])
+    except Exception as e:
+        print(f'дашборд не собран из {path} ({e!r}) — беру готовый из репозитория')
+        with open(os.path.join(SRC, 'grafana', 'dashboards', 'remnawave-overview.json'), encoding='utf-8') as f:
+            return json.load(f)
 
 
 def render(cfg):
@@ -431,14 +494,16 @@ def render(cfg):
     _write('grafana/dashboards/dashboards.yml', {'apiVersion': 1, 'providers': [{
         'name': 'remnawave-monitoring', 'folder': 'Remnawave', 'type': 'file',
         'disableDeletion': True, 'allowUiUpdates': False,
-        'options': {'path': '/etc/grafana/dashboards'}}]})
+        'options': {'path': '/etc/rwmon/grafana/dashboards/files'}}]})
+    _write('grafana/dashboards/files/remnawave-overview.json', dashboard(cfg))
     _write('grafana/alerting/rules.yml', rules(cfg))
     # токены ботов: читать может только Grafana (группа root), а не контейнеры проверок
     _write('grafana/alerting/contact-points.yml', contact_points(cfg), mode=0o640)
     _write('grafana/alerting/policies.yml', policies(cfg))
     _write('grafana/alerting/templates.yml', templates(cfg))
-    for check, port in CHECKERS:
-        _write(f'checkers/{check}.env', checker_env(cfg, check, port))
+    urls = {'xray': cfg.url_xray, **{c.id: c.url for c in cfg.route_checks}}
+    for check, _, port, xray_port in checkers(cfg):
+        _write(f'checkers/{check}.env', checker_env(cfg, check, port, xray_port, urls[check]))
     os.makedirs(os.path.join(OUT, 'grafana', 'plugins'), exist_ok=True)
     for d, _, _ in os.walk(OUT):
         os.chmod(d, 0o755)
