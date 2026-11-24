@@ -81,7 +81,7 @@ Everything starts with a single `docker compose` and listens on `127.0.0.1` only
 
 ### Telegram alerts
 
-A message lists the affected nodes, and once everything is fixed a recovery message arrives. While something is still down, a reminder comes every `repeat_minutes` (60 min); for certificates — once a day.
+A message is short: what happened and where (the hosts or nodes with the start time), and once everything is fixed a recovery message arrives. The explanation of an alert is in Grafana, in the rule card. While something is still down, a reminder comes every `repeat_minutes` (60 min); for certificates — once a day.
 
 | Alert | How it is detected | Sent to |
 |---|---|---|
