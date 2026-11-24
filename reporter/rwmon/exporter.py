@@ -443,6 +443,8 @@ def host_lines(hosts, lines, panels=(), node_ips=None, state=None, by_panel=None
         checks = h['checks'] if 'checks' in h else ([] if h['lite'] else list(check_ids))
         for c in check_ids:
             labels[c] = '1' if c in checks else '0'
+        if h.get('ru_via'):           # проверка «Клиент из РФ» через посредника: ruclient="1", ru_via — его адрес
+            labels['ruclient'], labels['ru_via'] = '1', h['ru_via']
         target = host_exit(h, panels, node_ips, state)
         if target:                    # в алерте: «LTE 3 · OVRO → CDN 1 · FixErrorVPN»
             labels['exit'] = target

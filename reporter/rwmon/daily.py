@@ -11,7 +11,10 @@ from .util import esc, gb, log, minutes, now, promql_regex
 
 def check_names(cfg):
     """Подписи проверок: «Подключение» и проверки маршрутов из config.toml."""
-    return {'xray': 'Подключение', **{c.id: c.title for c in cfg.route_checks}}
+    names = {'xray': 'Подключение', **{c.id: c.title for c in cfg.route_checks}}
+    if cfg.ru_via:
+        names['ruclient'] = 'Клиент из РФ'
+    return names
 BILLING_DAYS = 7
 # хост «не открывается из РФ» (ни одна проба не достучалась) и доля таких хостов
 PROBE_DOWN = '(max by (address) (probe_success{kind="tcp"}) == bool 0)'

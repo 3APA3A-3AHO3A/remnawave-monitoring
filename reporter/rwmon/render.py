@@ -24,7 +24,14 @@ def checkers(cfg):
     out = [('xray', 'Подключение', 2112, 21000)]
     for i, c in enumerate(cfg.route_checks):
         out.append((c.id, c.title, 2113 + i, 22000 + 1000 * i))
+    if cfg.ru_via:                               # «Из РФ» — после проверок маршрутов
+        i = len(cfg.route_checks)
+        out.append((RU_CHECK, RU_TITLE, 2113 + i, 22000 + 1000 * i))
     return out
+
+
+RU_CHECK = 'ruclient'                    # id проверки: метка ruclient="1", файл monitor-ruclient.txt
+RU_TITLE = 'Клиент из РФ'
 
 
 def _write(path, data, mode=0o644, owner=None):
@@ -173,6 +180,24 @@ def _checker(check):
     return f'(({failed}) * 0 + on (name) group_left () {code}) or (({failed}) * 0 + 1)'
 
 
+def _ru_down():
+    """Хост не работает из РФ, а сервер напрямую жив: сбой на входе (прокладка, CDN)
+    или блокировка в РФ. Посредник сам должен быть жив — иначе из РФ проверять нечем."""
+    via_ok = ('label_replace(max by (address) (xray_proxy_status{check="xray"}) == 1, '
+              '"ru_via", "$1", "address", "(.*)")')
+    server_ok = 'max by (name) (xray_proxy_status{check="xray"}) == 1'
+    return f'(({_checker(RU_CHECK)}) and on (name) ({server_ok})) and on (ru_via) ({via_ok})'
+
+
+def xray_down(cfg):
+    """Хост не работает. С проверкой из РФ — только если и из РФ не работает: когда из РФ
+    работает, клиенты им пользуются, а сервер мониторинга просто не достучался."""
+    expr = _checker('xray')
+    if cfg.ru_via:
+        expr = f'({expr}) unless on (name) (max by (name) (xray_proxy_status{{check="{RU_CHECK}"}}) == 1)'
+    return expr
+
+
 def _bypass(check):
     """Проверка прошла, но ответ пришёл с IP одной из наших нод: запрос ушёл напрямую,
     мимо WARP/Psiphon (например, выход упал, а балансировщик переключился на direct).
@@ -268,11 +293,19 @@ def rules(cfg):
               'Возможна блокировка IP ноды.', 'all', any_value=True,
               reason=f'сейчас клиентов: {{{{ printf "%.0f" $values.B.Value }}}}, час назад в среднем было '
                      f'не меньше {cfg.clients_drop_min_avg:g}'),
-        _rule('rwmon-xray-down', 'Xray не принимает клиентов', _checker('xray'), for_check,
+        _rule('rwmon-xray-down', 'Xray не принимает клиентов', xray_down(cfg), for_check,
               'Хост не принимает клиентов', 'Хост снова принимает клиентов',
               'Проверка подключается к хосту как обычный клиент и не может открыть страницу. '
               'Две проверки подряд. После стрелки — нода, куда ведёт хост: упали все хосты одной ноды — '
-              'проблема на ноде, упал один — на пути этого хоста до неё.', 'host', reason=HOST_REASON),
+              'проблема на ноде, упал один — на пути этого хоста до неё.'
+              + (' С проверкой из РФ: не работает и из РФ, и с сервера мониторинга напрямую на ноду.'
+                 if cfg.ru_via else ''), 'host', reason=HOST_REASON),
+        *([_rule('rwmon-ru-down', 'Хост не работает из РФ', _ru_down(), for_check,
+                 'Хост не работает из РФ', 'Хост снова работает из РФ',
+                 'Проверка из РФ (через хост-посредник из [ru] via) не может открыть страницу, а с сервера '
+                 'мониторинга напрямую на ноду хост работает. Сервер жив — сбой на входе (прокладка, CDN) '
+                 'или блокировка в РФ.', 'host', reason=HOST_REASON + ' — сервер жив')]
+          if cfg.ru_via else []),
         *route_rules(cfg, for_check),
         _rule('rwmon-outbound-no-response', 'Аутбаунд не отвечает', f'''
 (
@@ -457,7 +490,7 @@ def checker_env(cfg, check, port, xray_port, url):
         'XRAY_START_PORT': xray_port,
         'LOG_LEVEL': 'warn',
     }
-    if check == 'xray':
+    if check in ('xray', RU_CHECK):
         env.update(PROXY_CHECK_METHOD='status', PROXY_STATUS_CHECK_URL=url)
     else:
         env.update(PROXY_CHECK_METHOD='ip', PROXY_IP_CHECK_URL=url)
@@ -473,7 +506,8 @@ def dashboard(cfg):
         spec = importlib.util.spec_from_file_location('rwmon_dashboard', path)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        return mod.build([(c.id, c.title) for c in cfg.route_checks])
+        return mod.build([(c.id, c.title) for c in cfg.route_checks]
+                         + ([(RU_CHECK, RU_TITLE)] if cfg.ru_via else []))
     except Exception as e:
         print(f'дашборд не собран из {path} ({e!r}) — беру готовый из репозитория')
         with open(os.path.join(SRC, 'grafana', 'dashboards', 'remnawave-overview.json'), encoding='utf-8') as f:
@@ -501,7 +535,7 @@ def render(cfg):
     _write('grafana/alerting/contact-points.yml', contact_points(cfg), mode=0o640)
     _write('grafana/alerting/policies.yml', policies(cfg))
     _write('grafana/alerting/templates.yml', templates(cfg))
-    urls = {'xray': cfg.url_xray, **{c.id: c.url for c in cfg.route_checks}}
+    urls = {'xray': cfg.url_xray, RU_CHECK: cfg.url_xray, **{c.id: c.url for c in cfg.route_checks}}
     for check, _, port, xray_port in checkers(cfg):
         _write(f'checkers/{check}.env', checker_env(cfg, check, port, xray_port, urls[check]))
     os.makedirs(os.path.join(OUT, 'grafana', 'plugins'), exist_ok=True)

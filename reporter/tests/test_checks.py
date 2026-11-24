@@ -185,7 +185,7 @@ class SelectTest(unittest.TestCase):
             cfg.links_file = os.path.join(d, 'monitor.txt')
             cfg.links_file_xray = os.path.join(d, 'monitor-xray.txt')
             orig, orig_map = links.panel_links, links.node_map
-            links.panel_links = lambda rw, p, rc=(): [
+            links.panel_links = lambda rw, p, rc=(), **k: [
                 {'outbound': vless('1.1.1.1'), 'host': 'Польша', 'lite': False, 'skip': []},
                 {'outbound': vless('2.2.2.2'), 'host': 'Америка', 'lite': False, 'skip': []}] if p.id == 'main' else []
             links.node_map = lambda *a, **k: self.NODES

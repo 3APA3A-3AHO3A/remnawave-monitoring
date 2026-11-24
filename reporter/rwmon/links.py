@@ -17,6 +17,12 @@ reporter отдаёт в Prometheus метрикой rwmon_host — по ней 
 Результат — файлы со списком конфигов Xray JSON (по одному outbound на
 проверку, название — в remarks), по файлу на каждую проверку; их читают
 контейнеры xray-checker.
+
+Проверка из РФ ([ru] via): тот же хост, но подключение идёт через хост в РФ —
+второй аутбаунд конфига с тегом rwmon-via (см. checker/rwmon-via.patch). А если вход
+хоста — не сама нода (прокладка, CDN), «Подключение» с сервера мониторинга идёт
+на ноду напрямую, в обход входа: из РФ видно, работает ли хост у клиентов, а напрямую —
+жив ли сервер.
 """
 import copy
 import json
@@ -130,6 +136,53 @@ def outbound_address(outbound):
     return f'{host}:{port or 443}'
 
 
+def set_server(outbound, host, port):
+    """Копия аутбаунда с другим адресом и портом сервера."""
+    ob = copy.deepcopy(outbound)
+    s = ob.setdefault('settings', {})
+    for key in ('vnext', 'servers'):
+        items = s.get(key)
+        if isinstance(items, list) and items and isinstance(items[0], dict):
+            items[0]['address'], items[0]['port'] = host, port
+            return ob
+    s['address'], s['port'] = host, port
+    return ob
+
+
+def _uuid(x):
+    return str(x.get('uuid') or x.get('nodeUuid') or '') if isinstance(x, dict) else str(x or '')
+
+
+def node_targets(rw, names, state):
+    """Куда хосты ведут на самом деле: {название: (IP ноды, порт inbound)}. Только хосты
+    с одной нодой и inbound с TLS/Reality: inbound без шифрования стоит за обратным
+    прокси (nginx/CDN), напрямую к нему не подключиться."""
+    try:
+        hosts, nodes, profiles = rw.hosts(), rw.nodes() or [], rw.config_profiles()
+    except Exception as e:
+        key = f'hosts-api:{rw.panel.id}'
+        if state.get(key) != str(e):
+            state[key] = str(e)
+            log('links', f'[{rw.panel.title}] хосты/ноды/профили не получены ({e}) — хосты за прокладкой '
+                         'и CDN проверяются только через вход. Дайте токену право читать хосты и конфиг-профили.')
+        return {}
+    ips = {_uuid(n): resolve_ip(str(n.get('address') or ''), state) for n in nodes if isinstance(n, dict)}
+    inbounds = {_uuid(ib): ib for pr in profiles if isinstance(pr, dict)
+                for ib in (pr.get('inbounds') or []) if isinstance(ib, dict)}
+    out = {}
+    for h in hosts:
+        if not isinstance(h, dict) or h.get('remark') not in names:
+            continue
+        ids = [_uuid(n) for n in (h.get('nodes') or [])]
+        ib = inbounds.get(str((h.get('inbound') or {}).get('configProfileInboundUuid') or ''))
+        if len(ids) != 1 or not ib or (ib.get('security') or 'none') == 'none':
+            continue
+        ip, port = ips.get(ids[0]), ib.get('port')
+        if ip and port:
+            out[h['remark']] = (ip, int(port))
+    return out
+
+
 def check_config(name, outbound):
     """Конфиг для xray-checker: одна проверка — один аутбаунд, название в remarks."""
     ob = dict(outbound)
@@ -200,7 +253,7 @@ def write_if_changed(path, text):
     return True
 
 
-def panel_links(rw, panel, route_checks=()):
+def panel_links(rw, panel, route_checks=(), bypass=False, state=None):
     """Хосты одной панели: [{'outbound', 'host', 'lite', 'skip'}] — полные, потом лёгкие.
     skip — проверки маршрутов, которые у полного хоста отключены тегом-исключением."""
     user = rw.user_by_username(panel.monitor_user)
@@ -224,8 +277,17 @@ def panel_links(rw, panel, route_checks=()):
         log('links', f'[{panel.title}] у пользователя «{panel.monitor_user}» нет хостов с тегами '
                      f'{panel.host_tag} / {panel.host_tag_lite}' + hint)
     skips = host_skips(configs, panel.skip_tags(route_checks))
-    return ([{'outbound': ob, 'host': name, 'lite': False, 'skip': skips.get(name, [])} for ob, name in full] +
-            [{'outbound': ob, 'host': name, 'lite': True, 'skip': []} for ob, name in lite])
+    entries = ([{'outbound': ob, 'host': name, 'lite': False, 'skip': skips.get(name, [])} for ob, name in full] +
+               [{'outbound': ob, 'host': name, 'lite': True, 'skip': []} for ob, name in lite])
+    if bypass:
+        state = {} if state is None else state
+        targets = node_targets(rw, {e['host'] for e in entries}, state)
+        for e in entries:
+            t = targets.get(e['host'])
+            server = outbound_address(e['outbound']).rsplit(':', 1)[0].strip('[]')
+            if t and resolve_ip(server, state) != t[0]:
+                e['direct'] = set_server(e['outbound'], *t)
+    return entries
 
 
 # Какие хосты каких панелей чем проверяются: [{panel, panel_title, host, name, lite, checks}].
@@ -320,8 +382,10 @@ def combine(per_panel, route_checks=(), nodes=(), state=None):
                 while name in used:                  # разные хосты с одним названием
                     name, n = f'{base} #{n}', n + 1
                 used.add(name)
-                c = checks[key] = {'name': name, 'config': check_config(name, e['outbound']),
-                                   'lite': e['lite'], 'address': outbound_address(e['outbound']),
+                # «Подключение» с сервера мониторинга — на ноду напрямую, если вход не она
+                c = checks[key] = {'name': name, 'config': check_config(name, e.get('direct') or e['outbound']),
+                                   'outbound': e['outbound'], 'lite': e['lite'],
+                                   'address': outbound_address(e['outbound']),
                                    'udp': is_udp(e['outbound']), 'checks': set()}
             elif not e['lite']:
                 c['lite'] = False                    # полная проверка покрывает лёгкую
@@ -331,6 +395,31 @@ def combine(per_panel, route_checks=(), nodes=(), state=None):
                           'name': c['name'], 'lite': e['lite'], 'address': c['address'],
                           'checks': sorted(mine)})
     return list(checks.values()), hosts
+
+
+def ru_configs(checks, per_panel, via_names):
+    """Конфиги проверки «Из РФ»: хост + аутбаунд rwmon-via — первый хост из via_names
+    на другом адресе (сам себя хост через себя не проверяет). Возвращает
+    (конфиги, {название проверки: адрес посредника})."""
+    vias = []
+    for name in via_names:
+        for _, entries in per_panel:
+            e = next((e for e in entries if e['host'] == name), None)
+            if e:
+                vias.append(e['outbound'])
+                break
+    configs, chosen = [], {}
+    for c in checks:
+        via = next((v for v in vias if outbound_address(v) != c['address']), None)
+        if via is None:
+            continue
+        cfg = check_config(c['name'], c['outbound'])
+        v = copy.deepcopy(via)
+        v['tag'] = 'rwmon-via'
+        cfg['outbounds'].append(v)
+        configs.append(cfg)
+        chosen[c['name']] = outbound_address(via)
+    return configs, chosen
 
 
 def check_links_file(cfg, check):
@@ -360,7 +449,7 @@ def refresh(cfg, clients, state=None):
     for p in cfg.panels:
         cache = os.path.join(folder, f'.panel-{p.id}.json')
         try:
-            entries = panel_links(clients[p.id], p, cfg.route_checks)
+            entries = panel_links(clients[p.id], p, cfg.route_checks, bypass=bool(cfg.ru_via), state=state)
             write_if_changed(cache, json.dumps(entries, ensure_ascii=False))
         except Exception as e:
             log('links', f'[{p.title}] список хостов не обновлён: {e}')
@@ -386,6 +475,14 @@ def refresh(cfg, clients, state=None):
     for rc in cfg.route_checks:                  # проверки маршрутов — только хосты, которым они нужны
         changed |= write_if_changed(check_links_file(cfg, rc.id),
                                     dump([c['config'] for c in checks if rc.id in c['checks']]))
+    if cfg.ru_via:
+        ru, via = ru_configs(checks, per_panel, cfg.ru_via)
+        for h in HOSTS:
+            h['ru_via'] = via.get(h['name'], '')
+        if not via:
+            log('links', '[ru] ни один хост из via не найден среди хостов для проверок: '
+                         + ', '.join(cfg.ru_via))
+        changed |= write_if_changed(check_links_file(cfg, 'ruclient'), dump(ru))
     write_probe_targets(cfg, checks)
     if changed:
         shared = len(HOSTS) - len(checks)
