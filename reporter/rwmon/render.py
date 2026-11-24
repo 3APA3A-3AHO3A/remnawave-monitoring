@@ -86,8 +86,40 @@ def prometheus(cfg):
 NAMES = '* on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info)'
 
 
+# Причина сбоя проверки хоста: xray_proxy_error_code (патч rwmon-metrics.patch) → текст.
+# Числа совпадают с константами в патче (checker/errcode.go).
+ERROR_REASONS = {
+    2: 'хост не ответил вовремя (таймаут)',
+    3: 'соединение закрыто без ответа',
+    4: 'соединение сброшено',
+    5: 'в соединении отказано',
+    6: 'ошибка TLS',
+    7: 'имя хоста не разрешилось (DNS)',
+    8: 'ответ пришёл, но не тот',
+    9: 'Xray проверки не смог подключиться к хосту',
+}
+
+
+def _reason_by_code(codes, value='$values.B.Value'):
+    """Шаблон аннотации: число из значения правила → текст; неизвестное число — пусто."""
+    out = f'{{{{ $c := printf "%.0f" {value} }}}}'
+    for i, (code, text) in enumerate(codes.items()):
+        out += f'{{{{ {"if" if i == 0 else "else if"} eq $c "{code}" }}}}{text}'
+    return out + '{{ end }}'
+
+
+HOST_REASON = _reason_by_code(ERROR_REASONS)
+
+
 def _rule(uid, title, expr, for_, summary, recovered, description, scope, severity='critical', window=900,
-          paused=False, labels=None):
+          paused=False, labels=None, reason='', any_value=False):
+    """reason — шаблон аннотации «с чем столкнулись»: строка в сообщении рядом с хостом/нодой.
+    Значение правила (B) несёт подробность — код причины, число клиентов, дни; метки
+    от неё не зависят, поэтому смена подробности не порождает «восстановилось/упало».
+    any_value — правило срабатывает на любую строку A (значение может быть 0 и меньше)."""
+    annotations = {'summary': summary, 'recovered': recovered, 'description': description}
+    if reason:
+        annotations['reason'] = reason
     return {
         'uid': uid, 'title': title, 'condition': 'C',
         'data': [
@@ -99,11 +131,11 @@ def _rule(uid, title, expr, for_, summary, recovered, description, scope, severi
                        'settings': {'mode': 'dropNN'}}},
             {'refId': 'C', 'datasourceUid': '__expr__',
              'model': {'refId': 'C', 'type': 'threshold', 'expression': 'B',
-                       'conditions': [{'evaluator': {'type': 'gt', 'params': [0]}}]}},
+                       'conditions': [{'evaluator': {'type': 'gt', 'params': [-1e9 if any_value else 0]}}]}},
         ],
         'noDataState': 'OK', 'execErrState': 'Error', 'for': for_,
         'labels': {'severity': severity, 'scope': scope, **(labels or {})},
-        'annotations': {'summary': summary, 'recovered': recovered, 'description': description},
+        'annotations': annotations,
         'isPaused': paused,
     }
 
@@ -124,21 +156,26 @@ def host_checks(check, cond='== 0'):
 
 
 def _checker(check):
-    if check == 'xray':
-        return f'({host_checks("xray")}) * 0 + 1'
-    # если хост не отвечает целиком — об этом уже скажет проверка «Подключение»
-    return (f'(({host_checks(check)}) unless on (name) '
-            f'(xray_proxy_status{{check="xray"}} == 0)) * 0 + 1')
+    """Значение — код причины сбоя (xray_proxy_error_code), без него 1."""
+    failed = host_checks(check)
+    if check != 'xray':
+        # если хост не отвечает целиком — об этом уже скажет проверка «Подключение»
+        failed = f'({failed}) unless on (name) (xray_proxy_status{{check="xray"}} == 0)'
+    code = f'max by (name) (xray_proxy_error_code{{check="{check}"}})'
+    return f'(({failed}) * 0 + on (name) group_left () {code}) or (({failed}) * 0 + 1)'
 
 
 def _bypass(check):
     """Проверка прошла, но ответ пришёл с IP одной из наших нод: запрос ушёл напрямую,
     мимо WARP/Psiphon (например, выход упал, а балансировщик переключился на direct).
-    IP выхода отдаёт xray-checker (патч exit-ip.patch), IP нод — reporter (rwmon_node_address)."""
-    # max by (name, check): у одного имени при обновлении списка ненадолго бывает две серии
-    via_node = (f'max by (name, check) (xray_proxy_exit_ip{{check="{check}"}} '
-                f'* on (ip) group_left () max by (ip) (rwmon_node_address))')
-    return f'({checked_hosts(check)} * on (name) group_left (check) {via_node}) * 0 + 1'
+    IP выхода отдаёт xray-checker (патч rwmon-metrics.patch), IP нод — reporter (rwmon_node_address).
+    Метка via — нода, с чьего IP вышел запрос."""
+    node_by_ip = ('max by (ip, via) (label_replace(rwmon_node_address * on (panel, node_uuid) group_left (node) '
+                  'topk by (panel, node_uuid) (1, rwmon_node_info), "via", "$1", "node", "(.*)"))')
+    # topk by (name): у одного имени при обновлении списка ненадолго бывает две серии
+    via_node = (f'topk by (name) (1, max by (name, check, via) (xray_proxy_exit_ip{{check="{check}"}} '
+                f'* on (ip) group_left (via) topk by (ip) (1, {node_by_ip})))')
+    return f'({checked_hosts(check)} * on (name) group_left (check, via) {via_node}) * 0 + 1'
 
 
 UNCHECKED = ' or '.join(f'({checked_hosts(c)} unless on (name) xray_proxy_status{{check="{c}"}})'
@@ -158,32 +195,37 @@ def rules(cfg):
     max_over_time(rwmon_node_online_users[5m]) <= {cfg.clients_drop_max_now:g}
     and on (panel, node_uuid) avg_over_time(rwmon_node_online_users[1h] offset 10m) >= {cfg.clients_drop_min_avg:g}
     and on (panel, node_uuid) rwmon_node_connected == 1
-  ) * 0 + 1
+  )
 ) {NAMES}''', '2m', 'Клиенты пропали с ноды', 'Клиенты вернулись на ноду',
               'Нода подключена к панели, но клиентов на ней почти не осталось, хотя час назад были. '
-              'Возможна блокировка IP ноды.', 'all'),
+              'Возможна блокировка IP ноды.', 'all', any_value=True,
+              reason=f'сейчас клиентов: {{{{ printf "%.0f" $values.B.Value }}}}, час назад в среднем было '
+                     f'не меньше {cfg.clients_drop_min_avg:g}'),
         _rule('rwmon-xray-down', 'Xray не принимает клиентов', _checker('xray'), for_check,
               'Хост не принимает клиентов', 'Хост снова принимает клиентов',
               'Проверка подключается к хосту как обычный клиент и не может открыть страницу. '
               'Две проверки подряд. После стрелки — нода, куда ведёт хост: упали все хосты одной ноды — '
-              'проблема на ноде, упал один — на пути этого хоста до неё.', 'host'),
+              'проблема на ноде, упал один — на пути этого хоста до неё.', 'host', reason=HOST_REASON),
         _rule('rwmon-warp-down', 'WARP не работает', _checker('warp'), for_check,
               'WARP не работает', 'WARP снова работает',
-              'Через ноду не открывается адрес, который она отправляет в WARP. Две проверки подряд.', 'host'),
+              'Через ноду не открывается адрес, который она отправляет в WARP. Две проверки подряд.', 'host',
+              reason=HOST_REASON),
         _rule('rwmon-psiphon-down', 'Psiphon не работает', _checker('psiphon'), for_check,
               'Psiphon не работает', 'Psiphon снова работает',
               'Через ноду не открывается адрес, который она отправляет в Psiphon: Gemini на этой ноде '
-              'не работает. Две проверки подряд.', 'host'),
+              'не работает. Две проверки подряд.', 'host', reason=HOST_REASON),
         _rule('rwmon-warp-bypass', 'Трафик идёт мимо WARP', _bypass('warp'), for_check,
               'Трафик идёт мимо WARP', 'Трафик снова идёт через WARP',
               'Адрес, который нода отправляет в WARP, открылся, но с IP самой ноды: '
               'запрос ушёл напрямую. Обычно WARP упал, а балансировщик переключился на прямой выход, '
-              'или правило маршрутизации на ноде не срабатывает. Две проверки подряд.', 'host'),
+              'или правило маршрутизации на ноде не срабатывает. Две проверки подряд.', 'host',
+              reason='запрос вышел с IP ноды {{ $labels.via }}'),
         _rule('rwmon-psiphon-bypass', 'Трафик идёт мимо Psiphon', _bypass('psiphon'), for_check,
               'Трафик идёт мимо Psiphon', 'Трафик снова идёт через Psiphon',
               'Адрес, который нода отправляет в Psiphon, открылся, но с IP самой ноды: '
               'запрос ушёл напрямую, и Gemini на этой ноде, скорее всего, не работает. Обычно Psiphon '
-              'упал, а балансировщик переключился на прямой выход. Две проверки подряд.', 'host'),
+              'упал, а балансировщик переключился на прямой выход. Две проверки подряд.', 'host',
+              reason='запрос вышел с IP ноды {{ $labels.via }}'),
         _rule('rwmon-outbound-no-response', 'Аутбаунд не отвечает', f'''
 (
   (
@@ -241,12 +283,15 @@ def rules(cfg):
         _rule('rwmon-node-overload', 'Нода перегружена', f'''
 (
   (
-    (avg_over_time(rwmon_node_cpu_load5[15m]) > 0.9)
-    or on (panel, node_uuid) (avg_over_time(rwmon_node_memory_used_ratio[15m]) > 0.9)
-  ) * 0 + 1
+    (avg_over_time(rwmon_node_cpu_load5[15m]) > 0.9) * 100
+    or on (panel, node_uuid) (avg_over_time(rwmon_node_memory_used_ratio[15m]) > 0.9) * -100
+  )
 ) {NAMES}''', '15m', 'Нода перегружена', 'Нагрузка на ноде снизилась',
               'Уже 15 минут load average выше 0.9 на ядро или занято больше 90% памяти.', 'all',
-              severity='warning', window=1800),
+              severity='warning', window=1800, any_value=True,
+              # CPU — процент на ядро, память — тот же процент со знаком минус
+              reason='{{ $s := printf "%.0f" $values.B.Value }}{{ if lt $values.B.Value 0.0 }}'
+                     'занято {{ slice $s 1 }}% памяти{{ else }}нагрузка CPU {{ $s }}% на ядро{{ end }}'),
         _rule('rwmon-probe-blocked', 'Хост не открывается из РФ',
               '(rwmon_host{primary="1"} * on (address) group_left () (max by (address) (probe_success{kind="tcp"}) == 0)) * 0 + 1',
               '5m', 'Хост не открывается из РФ', 'Хост снова открывается из РФ',
@@ -257,20 +302,25 @@ def rules(cfg):
               'Проба из РФ не отвечает', 'Проба из РФ снова работает',
               'Мониторинг не может опросить blackbox exporter на RU-ноде: нода, контейнер или файрвол.',
               'all', severity='warning'),
-        _rule('rwmon-site-down', 'Сайт не открывается', '(rwmon_site_up == 0) * 0 + 1', '3m',
+        _rule('rwmon-site-down', 'Сайт не открывается', 'rwmon_site_status_code and (rwmon_site_up == 0)', '3m',
               'Сайт не открывается', 'Сайт снова открывается',
               'Страница не отвечает или отдаёт код ошибки (4xx/5xx); если задан keyword — его нет на странице. '
               'Код ответа — в Grafana, таблица «Сайты». Проверка с сервера мониторинга.',
-              'all'),
+              'all', any_value=True,
+              reason='{{ $c := printf "%.0f" $values.B.Value }}{{ if eq $c "0" }}нет ответа'
+                     '{{ else if eq $c "200" }}ответ 200, но на странице нет ключевого слова'
+                     '{{ else }}ответ HTTP {{ $c }}{{ end }}'),
         _rule('rwmon-site-down-ru', 'Сайт не открывается из РФ',
               '(max by (site) (probe_success{kind="http"}) == 0) * 0 + 1', '5m',
               'Сайт не открывается из РФ', 'Сайт снова открывается из РФ',
               'Ни одна проба из РФ не может открыть страницу.', 'all'),
         _rule('rwmon-site-cert', 'Сертификат скоро истекает',
-              '((rwmon_site_cert_expiry_timestamp_seconds - time()) < 14 * 86400) * 0 + 1', '1h',
+              '((rwmon_site_cert_expiry_timestamp_seconds - time()) / 86400) < 14', '1h',
               'Сертификат истекает меньше чем через 14 дней', 'Сертификат обновлён',
               'Проверьте автопродление сертификата (certbot / acme.sh).', 'all', severity='warning',
-              labels={'repeat': 'daily'}),
+              labels={'repeat': 'daily'}, any_value=True,
+              reason='{{ if lt $values.B.Value 0.0 }}сертификат уже истёк{{ else }}осталось '
+                     '{{ printf "%.0f" $values.B.Value }} дн.{{ end }}'),
         _rule('rwmon-checker-down', 'Не работает проверка хостов', '(up{job="xray-checker"} == 0) * 0 + 1', '5m',
               'Контейнер проверки хостов не отвечает', 'Проверка хостов снова работает',
               'docker compose logs --tail 50 checker-xray checker-warp checker-psiphon', 'all',

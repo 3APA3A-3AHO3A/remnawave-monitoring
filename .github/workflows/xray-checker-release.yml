@@ -65,7 +65,7 @@ jobs:
           git push -u origin "xray-checker-$V"
           BODY="Вышел xray-checker **$V** ([релиз](https://github.com/kutovoys/xray-checker/releases/tag/$V)). Все патчи легли, образ собирается.
 
-          Перед слиянием проверьте в описании релиза, не исправлены ли уже сами проблемы (Salamander \`packetSize\`, повторные попытки, IP выхода в метриках) — тогда патч можно убрать."
+          Перед слиянием проверьте в описании релиза, не исправлены ли уже сами проблемы (Salamander \`packetSize\`, повторные попытки, IP выхода и причина сбоя в метриках) — тогда патч можно убрать."
           gh pr create --title "xray-checker $V" --body "$BODY" --label dependencies || gh pr create --title "xray-checker $V" --body "$BODY"
           # PR, открытый роботом, не запускает CI сам — запускаем tests.yml для ветки явно
           gh workflow run tests.yml --ref "xray-checker-$V"

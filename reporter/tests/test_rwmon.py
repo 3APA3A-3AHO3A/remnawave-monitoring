@@ -267,8 +267,26 @@ class LinksTest(unittest.TestCase):
     def test_bypass_expr(self):
         e = render._bypass('warp')
         # только хосты с проверкой WARP, по разу (primary), и только когда IP выхода — IP нашей ноды
-        self.assertIn('rwmon_host{primary="1", warp="1"} * on (name) group_left (check) max by (name, check)', e)
-        self.assertIn('xray_proxy_exit_ip{check="warp"} * on (ip) group_left () max by (ip) (rwmon_node_address)', e)
+        self.assertIn('rwmon_host{primary="1", warp="1"} * on (name) group_left (check, via) topk by (name)', e)
+        self.assertIn('xray_proxy_exit_ip{check="warp"} * on (ip) group_left (via)', e)
+        self.assertIn('rwmon_node_address * on (panel, node_uuid) group_left (node)', e)
+
+    def test_reasons(self):
+        # значение правила — код причины из xray-checker, без кода — 1
+        e = render._checker('xray')
+        self.assertIn('group_left () max by (name) (xray_proxy_error_code{check="xray"})', e)
+        self.assertTrue(e.endswith('* 0 + 1)'))
+        self.assertIn('unless on (name) (xray_proxy_status{check="xray"} == 0)', render._checker('warp'))
+        self.assertIn('{{ if eq $c "2" }}хост не ответил вовремя (таймаут)', render.HOST_REASON)
+        rules = {r['uid']: r for r in render.rules(make_cfg())['groups'][0]['rules']}
+        for uid in ('rwmon-xray-down', 'rwmon-warp-down', 'rwmon-psiphon-down', 'rwmon-site-down',
+                    'rwmon-site-cert', 'rwmon-clients-dropped', 'rwmon-node-overload',
+                    'rwmon-warp-bypass', 'rwmon-psiphon-bypass'):
+            self.assertIn('reason', rules[uid]['annotations'], uid)
+        # значение может быть 0 (нет ответа, нет клиентов) или меньше (память, истёкший сертификат)
+        for uid in ('rwmon-site-down', 'rwmon-site-cert', 'rwmon-clients-dropped', 'rwmon-node-overload'):
+            self.assertEqual(rules[uid]['data'][2]['model']['conditions'][0]['evaluator']['params'], [-1e9], uid)
+        self.assertEqual(rules['rwmon-xray-down']['data'][2]['model']['conditions'][0]['evaluator']['params'], [0])
         self.assertIn('xray_proxy_exit_ip{check="psiphon"}', render._bypass('psiphon'))
         self.assertIn('rwmon_host{primary="1", psiphon="1"}', render._bypass('psiphon'))
 
