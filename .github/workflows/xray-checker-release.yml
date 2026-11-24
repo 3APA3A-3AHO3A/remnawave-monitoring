@@ -1,5 +1,5 @@
 # Раз в неделю смотрит последний релиз xray-checker (kutovoys/xray-checker).
-# Мы собираем его сами из XC_VERSION в checker/Dockerfile с двумя патчами, поэтому новая версия
+# Мы собираем его сами из XC_VERSION в checker/Dockerfile с патчами, поэтому новая версия
 # сама не подтянется. Если вышла новая:
 #   - патчи легли и образ собрался → PR с новой XC_VERSION (CI запускается на ветке PR);
 #   - не собралось → issue: патчи нужно обновить вручную (или они уже не нужны).
@@ -63,9 +63,9 @@ jobs:
           git checkout -b "xray-checker-$V"
           git commit -am "xray-checker $V (патчи легли, образ собирается)"
           git push -u origin "xray-checker-$V"
-          BODY="Вышел xray-checker **$V** ([релиз](https://github.com/kutovoys/xray-checker/releases/tag/$V)). Оба патча легли, образ собирается.
+          BODY="Вышел xray-checker **$V** ([релиз](https://github.com/kutovoys/xray-checker/releases/tag/$V)). Все патчи легли, образ собирается.
 
-          Перед слиянием проверьте в описании релиза, не исправлены ли уже сами проблемы (Salamander \`packetSize\`, повторные попытки) — тогда патч можно убрать."
+          Перед слиянием проверьте в описании релиза, не исправлены ли уже сами проблемы (Salamander \`packetSize\`, повторные попытки, IP выхода в метриках) — тогда патч можно убрать."
           gh pr create --title "xray-checker $V" --body "$BODY" --label dependencies || gh pr create --title "xray-checker $V" --body "$BODY"
           # PR, открытый роботом, не запускает CI сам — запускаем tests.yml для ветки явно
           gh workflow run tests.yml --ref "xray-checker-$V"

@@ -35,7 +35,7 @@ Monitoring for [Remnawave](https://docs.rw) nodes: Grafana dashboards, alerts an
 
 ## Features
 
-- **Telegram alerts** — a host does not accept clients, WARP / Psiphon is down, clients vanished from a node, a panel is unreachable or slow, a host cannot be reached from Russia, a website is down, a certificate is about to expire, a node is overloaded. When things recover, a recovery message follows. Details — [Alerts](#telegram-alerts).
+- **Telegram alerts** — a host does not accept clients, WARP / Psiphon is down or bypassed, clients vanished from a node, a panel is unreachable or slow, a host cannot be reached from Russia, a website is down, a certificate is about to expire, a node is overloaded. When things recover, a recovery message follows. Details — [Alerts](#telegram-alerts).
 - **Grafana dashboard** — key numbers, a node table with "everything in one row", a card per node, outbounds, panel health, GeoCheck. "Panel" and "Node" selectors.
 - **Daily report** — what changed in GeoCheck, failures of the day without duplicates, users, traffic and upcoming server payments per panel. Plus an HTML GeoCheck table.
 - **Multiple panels** — each with its own chat and topic. Identical hosts in different panels are checked once.
@@ -60,9 +60,10 @@ flowchart LR
 Everything starts with a single `docker compose` and listens on `127.0.0.1` only: the `config` container builds the Prometheus, Grafana and checker configs from `config.toml`, Grafana is exposed through nginx. The probe from Russia is optional, in the `probe/` folder.
 
 - `reporter` gets all panel data through the API with a token, so a second panel needs neither its own domain nor access to its `/metrics`.
-- Host checks are done by [xray-checker](https://github.com/kutovoys/xray-checker). The image is built locally from v1.3.1 with two small patches (see [`checker/Dockerfile`](checker/Dockerfile)):
+- Host checks are done by [xray-checker](https://github.com/kutovoys/xray-checker). The image is built locally from v1.3.1 with three small patches (see [`checker/Dockerfile`](checker/Dockerfile)):
   - Hysteria2 with Salamander `packetSize` support;
-  - retries: a single random failure (e.g. a dropped WARP connection) is not counted as an outage.
+  - retries: a single random failure (e.g. a dropped WARP connection) is not counted as an outage;
+  - the exit IP in metrics (`xray_proxy_exit_ip`): it shows that a request went out directly, bypassing WARP or Psiphon.
 
   The first build takes a few minutes.
 - GeoCheck is run by the panel itself on every node, just like the GeoCheck button in a node card.
@@ -86,6 +87,7 @@ A message lists the affected nodes, and once everything is fixed a recovery mess
 |---|---|---|
 | Host does not accept clients | the check connects to the host like an ordinary client and cannot open a page. After the arrow the message names the node the host leads to: "LTE 3 · OVRO → CDN 1". All hosts of one node down — the node is the problem, one host down — its path to the node | all chats |
 | WARP / Psiphon is down | an address that the node's routing sends to WARP or Psiphon does not open through the node | all chats |
+| Traffic bypasses WARP / Psiphon | the address opened, but the reply came from the IP of one of the panels' nodes: the request went out directly. Usually the exit is down and the balancer switched to direct. A node that goes online from a different IP than the one in the panel (NAT) is not covered | all chats |
 | Clients vanished from a node | the node is connected to the panel, an hour ago it had users, now almost nobody. Looks like IP blocking | all chats |
 | Outbound not responding | clients send requests to an outbound (e.g. `psiphon-out`) but almost no responses come back. **Disabled** (paused in Grafana): the outbounds sit behind balancers with a fallback, and uploading a file looks the same as a failure. A real chain failure is caught by the WARP / Psiphon checks | — |
 | Panel API unreachable | the panel does not respond, wrong address or token | all chats |
