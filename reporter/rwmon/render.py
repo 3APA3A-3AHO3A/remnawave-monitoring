@@ -110,8 +110,9 @@ def _rule(uid, title, expr, for_, summary, recovered, description, scope, severi
 
 def checked_hosts(check):
     """rwmon_host тех хостов, которые эта проверка должна проверять:
-    «Подключение» — все, WARP/Psiphon — полные без тега-исключения (метка warp/psiphon="1")."""
-    return 'rwmon_host' if check == 'xray' else f'rwmon_host{{{check}="1"}}'
+    «Подключение» — все, WARP/Psiphon — полные без тега-исключения (метка warp/psiphon="1").
+    Хост, общий для нескольких панелей, берётся один раз — строкой primary="1" (см. exporter)."""
+    return 'rwmon_host{primary="1"}' if check == 'xray' else f'rwmon_host{{primary="1", {check}="1"}}'
 
 
 def host_checks(check, cond='== 0'):
@@ -227,7 +228,7 @@ def rules(cfg):
               'Уже 15 минут load average выше 0.9 на ядро или занято больше 90% памяти.', 'all',
               severity='warning', window=1800),
         _rule('rwmon-probe-blocked', 'Хост не открывается из РФ',
-              '(rwmon_host * on (address) group_left () (max by (address) (probe_success{kind="tcp"}) == 0)) * 0 + 1',
+              '(rwmon_host{primary="1"} * on (address) group_left () (max by (address) (probe_success{kind="tcp"}) == 0)) * 0 + 1',
               '5m', 'Хост не открывается из РФ', 'Хост снова открывается из РФ',
               'Ни одна проба из РФ не может установить соединение с адресом хоста. '
               'Похоже на блокировку IP или порта.', 'host'),
@@ -289,15 +290,15 @@ def contact_points(cfg):
 
 
 def policies(cfg):
-    """Хосты — в чат своей панели; всё остальное — по разу в каждый чат.
+    """Каждый алерт — во все чаты: у каждой панели свой админ, но видеть состояние всех
+    серверов полезно всем. Хост, общий для двух панелей, даёт один алерт (строка primary="1"),
+    поэтому в каждый чат приходит одно сообщение, а не два.
     Пока алерт горит, он повторяется раз в repeat_minutes; правила с меткой
     repeat=daily (сертификат) — раз в сутки."""
     rcv = receivers(cfg)
     daily = [{'object_matchers': [['repeat', '=', 'daily']], 'repeat_interval': '24h'}]
-    routes = [{'receiver': rcv[p.telegram.key][0],
-               'object_matchers': [['scope', '=', 'host'], ['panel', '=', p.id]]} for p in cfg.panels]
-    routes += [{'receiver': name, 'object_matchers': [['scope', '!=', 'host']], 'continue': True,
-                'routes': daily} for name, _, _ in rcv.values()]
+    routes = [{'receiver': name, 'object_matchers': [['alertname', '=~', '.+']], 'continue': True,
+               'routes': daily} for name, _, _ in rcv.values()]
     return {'apiVersion': 1, 'policies': [{
         'orgId': 1, 'receiver': routes[0]['receiver'],
         'group_by': ['grafana_folder', 'alertname'],

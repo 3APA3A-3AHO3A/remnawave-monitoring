@@ -388,7 +388,37 @@ def host_exit(h, panels, node_ips, state):
     return node_ips.get(resolve_ip(server, state), '') if server else ''
 
 
-def host_lines(hosts, lines, panels=(), node_ips=None, state=None):
+def _node_panel(match, own, by_panel):
+    """Первая панель (своя — первой), где есть нода, подходящая под match(ip, название)."""
+    order = [own] + [p for p in by_panel if p != own]
+    for pid in order:
+        if any(match(ip, name) for ip, name in (by_panel.get(pid) or {}).items()):
+            return pid
+    return ''
+
+
+def host_owner(h, panels, by_panel, state):
+    """Панель-владелец хоста — та, где зарегистрирована его нода: по host_exit,
+    иначе по IP адреса хоста. Не нашлась — панель самого хоста.
+    by_panel — {панель: {IP ноды: название}}."""
+    own = h['panel']
+    if not by_panel:
+        return own
+    for p in panels:
+        if p.id == own and h['host'] in p.host_exit:
+            target = p.host_exit[h['host']]
+            pid = _node_panel(lambda ip, name: name == target or name.startswith(target + ' · '), own, by_panel)
+            return pid or own
+    server = (h.get('address') or '').rsplit(':', 1)[0].strip('[]')
+    ip = resolve_ip(server, state) if server else ''
+    return (_node_panel(lambda node_ip, name: node_ip == ip, own, by_panel) if ip else '') or own
+
+
+def host_lines(hosts, lines, panels=(), node_ips=None, state=None, by_panel=None):
+    """rwmon_host — по строке на хост каждой панели. Хост, общий для нескольких панелей,
+    даёт несколько строк; ровно у одной primary="1" — у строки панели-владельца ноды
+    (owner), а если у владельца такого хоста нет — у первой. Алерты о хостах берут только
+    её и уходят в чат владельца: один сбой — одно сообщение."""
     state = {} if state is None else state
     for p in panels:              # сколько хостов панели проверяется — 0 тоже важен
         lines.add('rwmon_panel_hosts', {'panel': p.id, 'panel_title': p.title},
@@ -400,9 +430,16 @@ def host_lines(hosts, lines, panels=(), node_ips=None, state=None):
             names.setdefault(h['address'], []).append(label)
     for address, hs in names.items():
         lines.add('rwmon_address_info', {'address': address, 'hosts': ', '.join(sorted(set(hs)))}, 1)
-    for h in hosts:
+    owners, primary = {}, {}
+    for i, h in enumerate(hosts):
+        owner = owners.setdefault(h['name'], host_owner(h, panels, by_panel, state))
+        if h['panel'] == owner or h['name'] not in primary:
+            if h['name'] not in primary or hosts[primary[h['name']]]['panel'] != owner:
+                primary[h['name']] = i
+    for i, h in enumerate(hosts):
         labels = {'panel': h['panel'], 'panel_title': h['panel_title'], 'host': h['host'],
-                  'name': h['name'], 'lite': '1' if h['lite'] else '0', 'address': h.get('address', '')}
+                  'name': h['name'], 'lite': '1' if h['lite'] else '0', 'address': h.get('address', ''),
+                  'owner': owners[h['name']], 'primary': '1' if primary[h['name']] == i else '0'}
         # какие проверки нужны хосту (тег-исключение снимает WARP или Psiphon);
         # у записи из старого кэша без 'checks' — как раньше: полный хост = обе
         checks = h['checks'] if 'checks' in h else ([] if h['lite'] else ['warp', 'psiphon'])
@@ -460,7 +497,7 @@ class Exporter:
         for ips in self.node_ips.values():
             for ip, name in ips.items():
                 node_ips.setdefault(ip, name)
-        host_lines(links.HOSTS, lines, self.cfg.panels, node_ips, self.state)
+        host_lines(links.HOSTS, lines, self.cfg.panels, node_ips, self.state, by_panel=self.node_ips)
         site_lines(list(self.sites.values()), lines)
         try:
             geocheck_lines(self._geocheck(), lines, self.cfg)
