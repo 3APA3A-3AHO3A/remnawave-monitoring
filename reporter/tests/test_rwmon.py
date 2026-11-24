@@ -258,10 +258,43 @@ class LinksTest(unittest.TestCase):
             self.assertEqual(names('monitor-psiphon.txt'), ['Poland'])
 
     def test_alert_exprs_skip(self):
-        self.assertIn('rwmon_host{psiphon="1"}', render.host_checks('psiphon'))
-        self.assertIn('rwmon_host{warp="1"}', render.host_checks('warp'))
-        self.assertTrue(render.host_checks('xray').startswith('rwmon_host *'))
-        self.assertIn('rwmon_host{psiphon="1"} unless on (name) xray_proxy_status{check="psiphon"}', render.UNCHECKED)
+        self.assertIn('rwmon_host{primary="1", psiphon="1"}', render.host_checks('psiphon'))
+        self.assertIn('rwmon_host{primary="1", warp="1"}', render.host_checks('warp'))
+        self.assertTrue(render.host_checks('xray').startswith('rwmon_host{primary="1"} *'))
+        self.assertIn('rwmon_host{primary="1", psiphon="1"} unless on (name) xray_proxy_status{check="psiphon"}',
+                      render.UNCHECKED)
+
+    def test_host_owner(self):
+        cfg = make_cfg()
+        main, res = cfg.panels
+        main.host_exit = {'LTE 3': 'CDN 1'}
+        by_panel = {'main': {'1.1.1.1': 'Russia MSK 1 · Основная', '7.7.7.7': 'CDN 1 · Основная'},
+                    'reserve': {'9.9.9.9': 'Sweden 1 · Резерв'}}
+        h = lambda panel, host, addr, name=None: {'panel': panel, 'panel_title': panel, 'host': host,
+                                                  'name': name or host, 'lite': False, 'address': addr,
+                                                  'checks': ['warp', 'psiphon']}
+        hosts = [
+            h('main', 'Москва 1', '1.1.1.1:443'), h('reserve', 'Москва 1 · R', '1.1.1.1:443', 'Москва 1'),
+            h('main', 'Швеция 1', '9.9.9.9:443'), h('reserve', 'Швеция 1 · R', '9.9.9.9:443', 'Швеция 1'),
+            h('main', 'Только OVRO', '9.9.9.9:8443'),       # нода OVRO, хоста в резервной панели нет
+            h('main', 'LTE 3', 'cdn.example:443'),            # через Cloudflare: владелец по host_exit
+            h('reserve', 'Чужой', '5.5.5.5:443'),             # нода не найдена — своя панель
+        ]
+        self.assertEqual(exporter.host_owner(hosts[5], cfg.panels, by_panel, {}), 'main')
+        self.assertEqual(exporter.host_owner(hosts[2], cfg.panels, by_panel, {}), 'reserve')
+        lines = exporter.Lines()
+        exporter.host_lines(hosts, lines, cfg.panels, state={'ip:cdn.example': ('', 0)}, by_panel=by_panel)
+        rows = [l for l in lines.text().splitlines() if l.startswith('rwmon_host{')]
+        got = {(r.split('host="')[1].split('"')[0], r.split('owner="')[1].split('"')[0],
+                r.split('primary="')[1].split('"')[0]) for r in rows}
+        self.assertEqual(got, {('Москва 1', 'main', '1'), ('Москва 1 · R', 'main', '0'),
+                               ('Швеция 1', 'reserve', '0'), ('Швеция 1 · R', 'reserve', '1'),
+                               ('Только OVRO', 'reserve', '1'), ('LTE 3', 'main', '1'), ('Чужой', 'reserve', '1')})
+        # без данных о нодах (панели ещё не опрошены) — как раньше: своя панель, первая строка
+        lines = exporter.Lines()
+        exporter.host_lines(hosts[:2], lines, cfg.panels)
+        self.assertIn('host="Москва 1 · R",name="Москва 1",lite="0",address="1.1.1.1:443",owner="main",primary="0"',
+                      lines.text())
 
     def test_connection_key(self):
         a = vless('1.1.1.1', sni='a.com', fp='edge')
@@ -405,7 +438,8 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(len(cfg.chats()), 1)
         self.assertEqual(cfg.panels[1].title, 'b')
         routes = render.policies(cfg)['policies'][0]['routes']
-        self.assertEqual(len(routes), 3)       # 2 для хостов + 1 общий: без дублей в один чат
+        # один чат на две панели — один маршрут: каждый алерт придёт туда один раз
+        self.assertEqual([r['receiver'] for r in routes], ['telegram'])
 
     def test_errors(self):
         for bad in (
@@ -583,7 +617,7 @@ class ExporterTest(unittest.TestCase):
         exporter.host_lines([{'panel': 'main', 'panel_title': 'Основная', 'host': 'LTE 1', 'name': 'LTE 1',
                               'lite': True, 'address': '1.2.3.4:443'}], lines)
         self.assertIn('rwmon_host{panel="main",panel_title="Основная",host="LTE 1",name="LTE 1",lite="1",'
-                      'address="1.2.3.4:443",warp="0",psiphon="0"} 1',
+                      'address="1.2.3.4:443",owner="main",primary="1",warp="0",psiphon="0"} 1',
                       lines.text())
         # полный хост с тегом-исключением Psiphon; запись старого кэша без 'checks' — обе проверки
         lines = exporter.Lines()
@@ -591,9 +625,10 @@ class ExporterTest(unittest.TestCase):
                               'lite': False, 'address': '5.5.5.5:443', 'checks': ['warp']},
                              {'panel': 'main', 'panel_title': 'Основная', 'host': 'Old', 'name': 'Old',
                               'lite': False, 'address': '6.6.6.6:443'}], lines)
-        self.assertIn('host="Москва 1",name="Москва 1",lite="0",address="5.5.5.5:443",warp="1",psiphon="0"} 1',
-                      lines.text())
-        self.assertIn('host="Old",name="Old",lite="0",address="6.6.6.6:443",warp="1",psiphon="1"} 1', lines.text())
+        self.assertIn('host="Москва 1",name="Москва 1",lite="0",address="5.5.5.5:443",owner="main",primary="1",'
+                      'warp="1",psiphon="0"} 1', lines.text())
+        self.assertIn('host="Old",name="Old",lite="0",address="6.6.6.6:443",owner="main",primary="1",'
+                      'warp="1",psiphon="1"} 1', lines.text())
 
     def test_host_exit(self):
         p = make_cfg().panels[0]
@@ -603,11 +638,12 @@ class ExporterTest(unittest.TestCase):
         lines = exporter.Lines()
         exporter.host_lines(hosts, lines, [p], {'1.2.3.4': 'Poland 1 · FixErrorVPN'}, {})
         text = lines.text()
-        self.assertIn('host="Poland",name="Poland",lite="0",address="1.2.3.4:443",warp="1",psiphon="1",'
-                      'exit="Poland 1 · FixErrorVPN"} 1', text)
-        self.assertIn('host="LTE 3",name="LTE 3",lite="0",address="9.9.9.9:20009",warp="1",psiphon="1",'
-                      'exit="CDN 1"} 1', text)
-        self.assertIn('host="Other",name="Other",lite="0",address="8.8.8.8:443",warp="1",psiphon="1"} 1', text)
+        self.assertIn('host="Poland",name="Poland",lite="0",address="1.2.3.4:443",owner="main",primary="1",'
+                      'warp="1",psiphon="1",exit="Poland 1 · FixErrorVPN"} 1', text)
+        self.assertIn('host="LTE 3",name="LTE 3",lite="0",address="9.9.9.9:20009",owner="main",primary="1",'
+                      'warp="1",psiphon="1",exit="CDN 1"} 1', text)
+        self.assertIn('host="Other",name="Other",lite="0",address="8.8.8.8:443",owner="main",primary="1",'
+                      'warp="1",psiphon="1"} 1', text)
 
     def test_collect_node_ips(self):
         p = make_cfg().panels[0]
@@ -757,11 +793,15 @@ class RenderTest(unittest.TestCase):
             self.assertEqual(byuid['rwmon-site-cert']['labels']['repeat'], 'daily')
             pol = load('grafana/alerting/policies.yml')['policies'][0]
             self.assertEqual(pol['repeat_interval'], '60m')
-            self.assertEqual(pol['routes'][2]['routes'][0]['repeat_interval'], '24h')
+            self.assertEqual(pol['routes'][0]['routes'][0]['repeat_interval'], '24h')
             routes = load('grafana/alerting/policies.yml')['policies'][0]['routes']
-            self.assertEqual(routes[0]['object_matchers'], [['scope', '=', 'host'], ['panel', '=', 'main']])
-            self.assertTrue(all(r.get('continue') for r in routes[2:]))
-            self.assertEqual([r['receiver'] for r in routes], ['telegram', 'telegram-reserve'] * 2)
+            # каждый алерт — во все чаты
+            self.assertEqual([r['receiver'] for r in routes], ['telegram', 'telegram-reserve'])
+            self.assertTrue(all(r['continue'] and r['object_matchers'] == [['alertname', '=~', '.+']]
+                                for r in routes))
+            # общий хост двух панелей — один алерт: проверки берут только строку primary="1"
+            self.assertIn('rwmon_host{primary="1"}', byuid['rwmon-xray-down']['data'][0]['model']['expr'])
+            self.assertIn('rwmon_host{primary="1"} * on (address)', byuid['rwmon-probe-blocked']['data'][0]['model']['expr'])
             cps = load('grafana/alerting/contact-points.yml')['contactPoints']
             self.assertEqual([c['receivers'][0]['settings']['chatid'] for c in cps], ['-100', '-200'])
             tpl = load('grafana/alerting/templates.yml')['templates'][0]['template']

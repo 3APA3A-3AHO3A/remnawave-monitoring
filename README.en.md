@@ -84,15 +84,15 @@ A message lists the affected nodes, and once everything is fixed a recovery mess
 
 | Alert | How it is detected | Sent to |
 |---|---|---|
-| Host does not accept clients | the check connects to the host like an ordinary client and cannot open a page. After the arrow the message names the node the host leads to: "LTE 3 · OVRO → CDN 1". All hosts of one node down — the node is the problem, one host down — its path to the node | the chat of the host's panel |
-| WARP / Psiphon is down | an address that the node's routing sends to WARP or Psiphon does not open through the node | the chat of the host's panel |
+| Host does not accept clients | the check connects to the host like an ordinary client and cannot open a page. After the arrow the message names the node the host leads to: "LTE 3 · OVRO → CDN 1". All hosts of one node down — the node is the problem, one host down — its path to the node | all chats |
+| WARP / Psiphon is down | an address that the node's routing sends to WARP or Psiphon does not open through the node | all chats |
 | Clients vanished from a node | the node is connected to the panel, an hour ago it had users, now almost nobody. Looks like IP blocking | all chats |
 | Outbound not responding | clients send requests to an outbound (e.g. `psiphon-out`) but almost no responses come back. **Disabled** (paused in Grafana): the outbounds sit behind balancers with a fallback, and uploading a file looks the same as a failure. A real chain failure is caught by the WARP / Psiphon checks | — |
 | Panel API unreachable | the panel does not respond, wrong address or token | all chats |
 | Panel is slow | a panel process (api, scheduler or processor) responds slower than `panel_lag_ms` (200 ms) for 5 minutes | all chats |
 | Panel process restarted | the process uptime was reset — a panel update or a crash | all chats |
 | Panel uses too much memory | a panel process uses more than `panel_memory_mb` (1024 MB) for 15 minutes | all chats |
-| Host unreachable from Russia | none of the probes in Russia can connect to the host — looks like IP blocking | the chat of the host's panel |
+| Host unreachable from Russia | none of the probes in Russia can connect to the host — looks like IP blocking | all chats |
 | Website down / from Russia | a page from `[[site]]` does not respond from the monitoring server or from the probes in Russia | all chats |
 | Certificate expires soon | the site has less than 14 days left | all chats |
 | Node overloaded | load above 0.9 per core or more than 90% memory used for 15 minutes | all chats |
@@ -272,7 +272,7 @@ metrics_password = "…"                           # METRICS_PASS
 
 For panels without `metrics_url` this alert simply never fires.
 
-**Identical hosts in different panels** (same protocol, server, port, transport and Reality key; UUID, SNI, fingerprint and name may differ — e.g. panels share nodes through a UUID mapper) are checked once. The result counts for every panel that has the host, and a failure goes to the chats of all those panels. `rwmon links` shows which hosts are checked together.
+**Identical hosts in different panels** (same protocol, server, port, transport and Reality key; UUID, SNI, fingerprint and name may differ — e.g. panels share nodes through a UUID mapper) are checked once. The result counts for every panel that has the host, and a failure arrives in each chat once, from the panel that owns the node (found by the host's IP among the nodes of all panels, or by `host_exit`). `rwmon links` shows which hosts are checked together.
 
 **Exact traffic for a panel on another server.** Expose its `/metrics` through nginx on the panel's own domain, on a secret path and with a password:
 
@@ -290,8 +290,8 @@ metrics_password = "…"    # METRICS_PASS
 
 **Where messages go:**
 
-- host failures — to the chat of the panel that owns the host;
-- everything else (nodes, the report, monitoring failures) — to all chats.
+- all alerts and the daily report — to all chats: each panel may have its own admin, but seeing the state of every server is useful to all of them;
+- a host shared by several panels gives one message per chat, not one from each panel. The message names the panel that owns the node.
 
 If two panels share a chat, a message arrives there once.
 
