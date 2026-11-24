@@ -247,7 +247,7 @@ class LinksTest(unittest.TestCase):
                                  {'outbound': vless('3.3.3.3'), 'host': 'LTE 1', 'lite': True, 'skip': []}],
                        res.id: []}
             orig = links.panel_links
-            links.panel_links = lambda rw, p, rc=(): entries[p.id]
+            links.panel_links = lambda rw, p, rc=(), **k: entries[p.id]
             try:
                 links.refresh(cfg, {main.id: None, res.id: None})
             finally:

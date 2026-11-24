@@ -61,10 +61,11 @@ flowchart LR
 Everything starts with a single `docker compose` and listens on `127.0.0.1` only: the `config` container builds the Prometheus, Grafana and checker configs from `config.toml`, Grafana is exposed through nginx. The probe from Russia is optional, in the `probe/` folder.
 
 - `reporter` gets all panel data through the API with a token, so a second panel needs neither its own domain nor access to its `/metrics`.
-- Host checks are done by [xray-checker](https://github.com/kutovoys/xray-checker). The image is built locally from v1.3.1 with three small patches (see [`checker/Dockerfile`](checker/Dockerfile)):
+- Host checks are done by [xray-checker](https://github.com/kutovoys/xray-checker). The image is built locally from v1.3.1 with four small patches (see [`checker/Dockerfile`](checker/Dockerfile)):
   - Hysteria2 with Salamander `packetSize` support;
   - retries: a single random failure (e.g. a dropped WARP connection) is not counted as an outage;
-  - the exit IP and the failure reason in metrics (`xray_proxy_exit_ip`, `xray_proxy_error_code`): the IP shows that a request went out directly, bypassing WARP or Psiphon, and the reason (timeout, closed connection, refused, TLS, DNS) goes into the alert message.
+  - the exit IP and the failure reason in metrics (`xray_proxy_exit_ip`, `xray_proxy_error_code`): the IP shows that a request went out directly, bypassing WARP or Psiphon, and the reason (timeout, closed connection, refused, TLS, DNS) goes into the alert message;
+  - connecting through a relay host (`dialerProxy`) — for the "Client from Russia" check.
 
   The first build takes a few minutes.
 - GeoCheck is run by the panel itself on every node, just like the GeoCheck button in a node card.
@@ -104,6 +105,7 @@ The reason in the line: for hosts — timeout, closed connection, refused, TLS o
 | Panel is slow | a panel process (api, scheduler or processor) responds slower than `panel_lag_ms` (200 ms) for 5 minutes | all chats |
 | Panel process restarted | the process uptime was reset — a panel update or a crash | all chats |
 | Panel uses too much memory | a panel process uses more than `panel_memory_mb` (1024 MB) for 15 minutes | all chats |
+| Host doesn't work from Russia | `[ru]`: from Russia (through the relay host) the host fails, while from the monitoring server straight to the node it works. The server is alive: the entry (relay, CDN) is broken or blocked in Russia. With `[ru]`, "Host does not accept clients" fires only if both from Russia and directly fail | all chats |
 | Host unreachable from Russia | none of the probes in Russia can connect to the host — looks like IP blocking | all chats |
 | Website down / from Russia | a page from `[[site]]` does not respond from the monitoring server or from the probes in Russia | all chats |
 | Certificate expires soon | the site has less than 14 days left | all chats |
@@ -391,6 +393,22 @@ Healthchecks.io can send notifications to Telegram.
 
 <details>
 <summary><b>🇷🇺 Probe from Russia</b></summary>
+
+### Client from Russia
+
+The probe from Russia (below) only checks that a host's port opens. The "Client from Russia" check really connects to the host, like a client app in Russia does: through a relay host in Russia — a chain "monitoring server → relay host → checked host". Nothing to install: the relay is an ordinary panel host, e.g. Moscow.
+
+```toml
+[ru]
+via = ["🇷🇺 Москва 1", "🇷🇺 Москва 2"]
+```
+
+- Each host is checked through the first host in `via` that points to a different address: Moscow 1 goes through Moscow 2. Lite hosts (`MONITORING_LTE`) are checked too. `hosts = [...]` limits this to the listed hosts (by name); without it — all hosts.
+- **Sniffing on the relay.** If the relay's inbound has sniffing without `"routeOnly": true`, Xray replaces the destination with the domain from SNI. A Reality host with a borrowed SNI (e.g. `gateway.example.com` pointing to Cloudflare) is then opened wherever the domain points, not on your server, and the check fails. Hosts whose SNI is their own domain, or whose packets are hidden by Salamander, are not affected. Options: `"routeOnly": true` in the relay inbound's sniffing, or a separate inbound for monitoring; until then list only such hosts in `hosts`.
+- For hosts whose entry is not the node itself (a relay, a CDN), "Connection" from the monitoring server goes straight to the node, bypassing the entry. Node and port come from the panel: the host's node and its inbound port. An inbound without encryption (behind nginx or a CDN) can't be reached directly — such hosts are checked through the entry, as before. The token needs read access to hosts and config profiles; without it everything works as before.
+- Alerts: works from Russia — all is well, even if the monitoring server couldn't reach the host. Fails from Russia but the node answers directly — "Host doesn't work from Russia": the entry is broken or blocked. Both fail — "Host does not accept clients". If the relay itself is down, the Russia check is ignored and only the direct one counts.
+- The chain needs one more xray-checker patch, `checker/rwmon-via.patch`.
+- One more checker process means another thousand Xray ports; `rwmon check` prints the `ip_local_reserved_ports` line.
 
 ### Probe from Russia
 

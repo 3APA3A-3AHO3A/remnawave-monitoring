@@ -60,7 +60,7 @@ class Panel:
 
 # Метки rwmon_host и правил, с которыми не должен совпасть id проверки маршрута:
 # id становится меткой rwmon_host (warp="1"), именем файла и контейнерного процесса.
-RESERVED_IDS = {'xray', 'panel', 'panel_title', 'host', 'name', 'lite', 'address', 'owner', 'primary',
+RESERVED_IDS = {'xray', 'ru', 'ruclient', 'ru_via', 'panel', 'panel_title', 'host', 'name', 'lite', 'address', 'owner', 'primary',
                 'exit', 'via', 'check', 'job', 'instance', 'ip', 'node', 'node_uuid', 'node_name',
                 'protocol', 'stable_id', 'severity', 'scope', 'repeat', 'reason'}
 MAX_ROUTE_CHECKS = 8          # порты метрик 2113–2120, порты Xray 22000–29999
@@ -136,6 +136,10 @@ class Config:
     healthcheck_url: str = ''
     sites: list = field(default_factory=list)
     probes: list = field(default_factory=list)
+    # [ru] via — хосты в РФ, через которые хосты проверяются ещё и «из РФ», как их видят
+    # клиенты из России (названия хостов с тегом host_tag; первый подходящий)
+    ru_via: list = field(default_factory=list)
+    ru_hosts: list = field(default_factory=list)   # [ru] hosts — какие хосты так проверять; пусто — все
     # из окружения
     data_dir: str = '/data'
     links_file: str = '/links/monitor.txt'
@@ -289,6 +293,8 @@ def parse(data, env=os.environ):
         healthcheck_url=str((data.get('healthcheck') or {}).get('ping_url', '')).strip(),
         sites=_sites(data.get('site') or []),
         probes=_probes(data.get('probe') or []),
+        ru_via=_ru_via(data.get('ru') or {}),
+        ru_hosts=_ru_via(data.get('ru') or {}, 'hosts', required=False),
         data_dir=env.get('DATA_DIR', '/data'),
         links_file=env.get('LINKS_FILE', '/links/monitor.txt'),
         links_file_xray=env.get('LINKS_FILE_XRAY', '/links/monitor-xray.txt'),
@@ -396,6 +402,18 @@ def _probes(items):
         names.add(name)
         out.append(Probe(name=name, url=url, user=str(s.get('user', '')), password=str(s.get('password', ''))))
     return out
+
+
+def _ru_via(ru, key='via', required=True):
+    via = ru.get(key, [])
+    if isinstance(via, str):
+        via = [via]
+    if not isinstance(via, list) or not all(isinstance(v, str) and v.strip() for v in via):
+        raise ConfigError(f'config.toml: [ru] {key} — список названий хостов, например '
+                          '["🇷🇺 Москва 1", "🇷🇺 Москва 2"]')
+    if required and ru and not via:
+        raise ConfigError('config.toml: в [ru] нужен via — хосты в РФ, через которые проверять')
+    return [v.strip() for v in via]
 
 
 def load(path=CONFIG_PATH):

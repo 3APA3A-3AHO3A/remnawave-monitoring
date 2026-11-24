@@ -92,6 +92,11 @@ class Remnawave:
     def nodes(self):
         return self._call('GET', '/api/nodes')
 
+    def hosts(self):
+        """Хосты панели: нода и inbound каждого — по ним проверка идёт на сервер в обход входа."""
+        res = self._call('GET', '/api/hosts') or []
+        return res if isinstance(res, list) else []
+
     def config_profiles(self):
         """Конфиг-профили: [{uuid, name}]. Нужно право токена на чтение профилей."""
         res = self._call('GET', '/api/config-profiles') or {}

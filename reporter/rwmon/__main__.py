@@ -106,6 +106,7 @@ def check(cfg):
             print(f'  ✗ {title}: {e}')
 
     prom = Prometheus(cfg.prometheus_url)
+    ru_found = set()
     for p in cfg.panels:
         rw = Remnawave(p)
         print(f'{p.title} ({p.id}), {p.api_url}')
@@ -116,8 +117,20 @@ def check(cfg):
                  lambda: f'{len(exporter.parse_panel_metrics(rw.raw_metrics()))} счётчиков')
         step('пользователи (System → Get Stats)',
              lambda: f'всего {rw.stats().get("users", {}).get("totalUsers", "?")}')
-        step(f'хосты для проверок (пользователь «{p.monitor_user}»)', lambda: _hosts(rw, p, cfg.route_checks))
+        step(f'хосты для проверок (пользователь «{p.monitor_user}»)',
+             lambda: _hosts(rw, p, cfg.route_checks, bool(cfg.ru_via), ru_found))
         step('Telegram-бот', lambda: '@' + Telegram(p.telegram).get_me().get('username', '?'))
+
+    if cfg.ru_via:
+        def ru_via():
+            missing = [v for v in cfg.ru_via if v not in ru_found]
+            if len(missing) == len(cfg.ru_via):
+                raise RuntimeError('ни один хост из [ru] via не найден среди хостов с тегом проверок: '
+                                   + ', '.join(cfg.ru_via))
+            return ('через ' + ', '.join(v for v in cfg.ru_via if v in ru_found)
+                    + (f'; не найдены: {", ".join(missing)}' if missing else ''))
+        print('Проверка из РФ ([ru])')
+        step('хосты-посредники', ru_via)
 
     def reporter_metrics():
         states = prom.targets('reporter')
@@ -142,7 +155,7 @@ def check(cfg):
         step('базы DB-IP Lite', geoip)
 
     print('Сервер')
-    n = 1 + len(cfg.route_checks)
+    n = 1 + len(cfg.route_checks) + (1 if cfg.ru_via else 0)
     step(f'порты проверок 21000–{20999 + 1000 * n}', lambda: ports_check(count=n))
 
     print('Prometheus')
@@ -194,12 +207,17 @@ def ports_check(proc='/proc/sys/net/ipv4', count=3):
     return 'закреплены за проверками'
 
 
-def _hosts(rw, p, route_checks=()):
-    entries = links.panel_links(rw, p, route_checks)
+def _hosts(rw, p, route_checks=(), bypass=False, found=None):
+    entries = links.panel_links(rw, p, route_checks, bypass=bypass)
     lite = [e['host'] for e in entries if e['lite']]
     parts = [f'{len(entries) - len(lite)} полных']
     if lite:
         parts.append(f'{len(lite)} лёгких ({", ".join(lite)})')
+    if found is not None:
+        found.update(e['host'] for e in entries)
+    direct = [e['host'] for e in entries if e.get('direct')]
+    if direct:
+        parts.append(f'сервер в обход входа: {", ".join(direct)}')
     for c in route_checks:
         check, title = c.id, c.title
         skipped = [e['host'] for e in entries if not e['lite'] and check in (e.get('skip') or [])]
