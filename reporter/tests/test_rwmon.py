@@ -204,16 +204,18 @@ class LinksTest(unittest.TestCase):
                                                    'tags': ['MONITORING', 'MONITORING_NO_WARP', 'MONITORING_NO_PSIPHON']}},
             {'finalRemark': 'Poland 1', 'metadata': {'remark': 'Poland 1', 'tags': ['MONITORING']}},
         ]
-        self.assertEqual(links.host_skips(raw, p.skip_tags()),
+        rc = make_cfg().route_checks
+        self.assertEqual(links.host_skips(raw, p.skip_tags(rc)),
                          {'Москва 1': ['psiphon'], 'Бэкап': ['psiphon', 'warp']})
-        # свои имена тегов в config.toml
+        # свои имена тегов в config.toml (старые настройки панели)
         p.host_tag_no_psiphon = 'NOPSI'
         self.assertEqual(links.host_skips([{'finalRemark': 'X', 'metadata': {'remark': 'X', 'tags': ['NOPSI']}}],
-                                          p.skip_tags()), {'X': ['psiphon']})
+                                          p.skip_tags(rc)), {'X': ['psiphon']})
 
     def test_combine_skip(self):
         cfg = make_cfg()
         main, res = cfg.panels
+        rc = cfg.route_checks
         checks, hosts = links.combine([
             (main, [{'outbound': vless('1.1.1.1'), 'host': 'Москва 1', 'lite': False, 'skip': ['psiphon']},
                     {'outbound': vless('2.2.2.2'), 'host': 'Poland', 'lite': False, 'skip': []},
@@ -221,7 +223,7 @@ class LinksTest(unittest.TestCase):
                     {'outbound': vless('4.4.4.4'), 'host': 'Old', 'lite': False}]),        # старый кэш без skip
             (res, [{'outbound': vless('1.1.1.1', uid='r'), 'host': 'Москва 1', 'lite': False,
                     'skip': ['psiphon']}]),
-        ])
+        ], rc)
         by = {c['name']: c['checks'] for c in checks}
         self.assertEqual(by, {'Москва 1': {'warp'}, 'Poland': {'warp', 'psiphon'}, 'LTE 1': set(),
                               'Old': {'warp', 'psiphon'}})
@@ -231,7 +233,7 @@ class LinksTest(unittest.TestCase):
         checks, _ = links.combine([
             (main, [{'outbound': vless('1.1.1.1'), 'host': 'Москва 1', 'lite': False, 'skip': ['psiphon']}]),
             (res, [{'outbound': vless('1.1.1.1', uid='r'), 'host': 'Москва 1', 'lite': False, 'skip': []}]),
-        ])
+        ], rc)
         self.assertEqual(checks[0]['checks'], {'warp', 'psiphon'})
 
     def test_refresh_check_files(self):
@@ -245,7 +247,7 @@ class LinksTest(unittest.TestCase):
                                  {'outbound': vless('3.3.3.3'), 'host': 'LTE 1', 'lite': True, 'skip': []}],
                        res.id: []}
             orig = links.panel_links
-            links.panel_links = lambda rw, p: entries[p.id]
+            links.panel_links = lambda rw, p, rc=(): entries[p.id]
             try:
                 links.refresh(cfg, {main.id: None, res.id: None})
             finally:
@@ -262,7 +264,7 @@ class LinksTest(unittest.TestCase):
         self.assertIn('rwmon_host{primary="1", warp="1"}', render.host_checks('warp'))
         self.assertTrue(render.host_checks('xray').startswith('rwmon_host{primary="1"} *'))
         self.assertIn('rwmon_host{primary="1", psiphon="1"} unless on (name) xray_proxy_status{check="psiphon"}',
-                      render.UNCHECKED)
+                      render.unchecked(make_cfg()))
 
     def test_bypass_expr(self):
         e = render._bypass('warp')

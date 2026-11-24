@@ -7,6 +7,7 @@
   geocheck  — прогнать GeoCheck сейчас (--send — сразу отправить сводку)
   report    — собрать ежедневную сводку сейчас (--dry-run — только показать)
   migrate   — напечатать config.toml из старого .env (переход с версии для одной панели)
+  migrate-checks — напечатать блоки [[check]] вместо [checks] url_warp / url_psiphon (переход на 2.0)
 
 Пример:  docker compose exec reporter python -m rwmon report --dry-run
 """
@@ -17,7 +18,7 @@ import threading
 import time
 import urllib.request
 
-from . import config, daily, exporter, geocheck, links
+from . import config, daily, egress, exporter, geocheck, links
 from .clients import Prometheus, Remnawave, Telegram
 from .util import log, now, read_json, write_json
 
@@ -53,6 +54,7 @@ def run_forever(cfg):
     prom = Prometheus(cfg.prometheus_url)
     state_path = os.path.join(cfg.data_dir, 'state.json')
     state = read_json(state_path, {})
+    links_state = {}        # кэш IP нод и сообщений об ошибках списка хостов (в файл не пишется)
     next_links = 0
     if cfg.healthcheck_url:
         threading.Thread(target=pinger, args=(cfg.healthcheck_url,), daemon=True).start()
@@ -73,9 +75,13 @@ def run_forever(cfg):
     while True:
         if time.time() >= next_links:
             try:
-                links.refresh(cfg, clients)
+                links.refresh(cfg, clients, links_state)
             except Exception as e:
                 log('links', f'ошибка: {e}')
+            try:                                  # базы страны/сети выхода — раз в месяц
+                egress.update(cfg, links_state)
+            except Exception as e:
+                log('geoip', f'ошибка: {e}')
             next_links = time.time() + cfg.links_interval
         if due(state, 'geocheck', cfg.geocheck_time):
             task('geocheck', lambda: geocheck.run(cfg, clients))
@@ -110,7 +116,7 @@ def check(cfg):
                  lambda: f'{len(exporter.parse_panel_metrics(rw.raw_metrics()))} счётчиков')
         step('пользователи (System → Get Stats)',
              lambda: f'всего {rw.stats().get("users", {}).get("totalUsers", "?")}')
-        step(f'хосты для проверок (пользователь «{p.monitor_user}»)', lambda: _hosts(rw, p))
+        step(f'хосты для проверок (пользователь «{p.monitor_user}»)', lambda: _hosts(rw, p, cfg.route_checks))
         step('Telegram-бот', lambda: '@' + Telegram(p.telegram).get_me().get('username', '?'))
 
     def reporter_metrics():
@@ -124,8 +130,20 @@ def check(cfg):
             raise RuntimeError('Prometheus ещё не успел опросить reporter — повторите через минуту')
         raise RuntimeError(f'{url}: {error}')
 
+    if egress.needed(cfg):
+        def geoip():
+            have = [k for k in egress.KINDS if os.path.exists(egress.path(cfg, k))]
+            if len(have) < len(egress.KINDS):
+                raise RuntimeError('ещё не скачаны — reporter скачает их сам в течение 10 минут после запуска '
+                                   '(нужен доступ к download.db-ip.com)')
+            days = (time.time() - min(os.path.getmtime(egress.path(cfg, k)) for k in have)) / 86400
+            return f'страна и сеть, обновлены {days:.0f} дн. назад'
+        print('Страна и сеть выхода (egress_country / egress_asn)')
+        step('базы DB-IP Lite', geoip)
+
     print('Сервер')
-    step('порты проверок 21000–23999', ports_check)
+    n = 1 + len(cfg.route_checks)
+    step(f'порты проверок 21000–{20999 + 1000 * n}', lambda: ports_check(count=n))
 
     print('Prometheus')
     step('метрики панелей от reporter', reporter_metrics)
@@ -134,7 +152,10 @@ def check(cfg):
     return 0 if ok else 1
 
 
-PORT_RANGES = ((21000, 21999), (22000, 22999), (23000, 23999))   # см. render.CHECKERS
+def port_ranges(count):
+    """Порты Xray проверок: «Подключение» — 21000–21999, каждая проверка маршрута — следующая тысяча
+    (см. render.checkers)."""
+    return [(21000 + 1000 * k, 21999 + 1000 * k) for k in range(count)]
 
 
 def _parse_ports(text):
@@ -148,8 +169,8 @@ def _parse_ports(text):
     return out
 
 
-def ports_check(proc='/proc/sys/net/ipv4'):
-    """Проверкам нужны порты 21000+, 22000+, 23000+ на 127.0.0.1. Если система раздаёт
+def ports_check(proc='/proc/sys/net/ipv4', count=3):
+    """Проверкам нужны порты 21000+, 22000+… на 127.0.0.1 — по тысяче на проверку. Если система раздаёт
     эти же порты исходящим соединениям, проверка однажды не сможет запуститься
     («address already in use») и молча перестанет проверять новые хосты."""
     with open(f'{proc}/ip_local_port_range') as f:
@@ -159,30 +180,70 @@ def ports_check(proc='/proc/sys/net/ipv4'):
             reserved = _parse_ports(f.read().strip())
     except OSError:
         reserved = set()
-    clash = [f'{a}–{b}' for a, b in PORT_RANGES
+    ranges = port_ranges(count)
+    clash = [f'{a}–{b}' for a, b in ranges
              if a <= high and b >= low and not set(range(a, b + 1)) <= reserved]
     if clash:
         raise RuntimeError(
             f'система раздаёт исходящим соединениям порты {low}–{high}, и среди них порты проверок '
             f'{", ".join(clash)}. Закрепите их: echo "net.ipv4.ip_local_reserved_ports = '
-            '21000-21999,22000-22999,23000-23999" | sudo tee /etc/sysctl.d/90-rwmon.conf '
+            f'{",".join(f"{a}-{b}" for a, b in ranges)}" | sudo tee /etc/sysctl.d/90-rwmon.conf '
             '&& sudo sysctl -p /etc/sysctl.d/90-rwmon.conf')
-    if low > 23999 or high < 21000:
+    if low > ranges[-1][1] or high < 21000:
         return 'свободны'
     return 'закреплены за проверками'
 
 
-def _hosts(rw, p):
-    entries = links.panel_links(rw, p)
+def _hosts(rw, p, route_checks=()):
+    entries = links.panel_links(rw, p, route_checks)
     lite = [e['host'] for e in entries if e['lite']]
     parts = [f'{len(entries) - len(lite)} полных']
     if lite:
         parts.append(f'{len(lite)} лёгких ({", ".join(lite)})')
-    for check, title in (('warp', 'WARP'), ('psiphon', 'Psiphon')):
+    for c in route_checks:
+        check, title = c.id, c.title
         skipped = [e['host'] for e in entries if not e['lite'] and check in (e.get('skip') or [])]
         if skipped:
             parts.append(f'без {title}: {", ".join(skipped)}')
     return ', '.join(parts)
+
+
+# ── переход на [[check]] (2.0) ───────────────────────────────
+
+def _toml_list(values):
+    return '[' + ', '.join(json.dumps(v, ensure_ascii=False) if isinstance(v, str) else str(v)
+                           for v in sorted(values)) + ']'
+
+
+def migrate_checks(cfg):
+    """Блоки [[check]] для текущих настроек: те же проверки, что работают сейчас.
+    Вставить в config.toml вместо url_warp / url_psiphon, затем ./apply.sh."""
+    out = ['# Проверки маршрутов. Вставьте в config.toml (url_warp и url_psiphon в [checks] после этого',
+           '# не нужны) и выполните ./apply.sh. Хосты выбираются по профилю ноды (profiles) или по',
+           '# названию (hosts); без них — все полные хосты. Тег skip_tag на хосте снимает с него проверку.']
+    tags = {}
+    for p in cfg.panels:
+        for tag, cid in p.skip_tags(cfg.route_checks).items():
+            tags.setdefault(cid, set()).add(tag)
+    for c in cfg.route_checks:
+        out += ['', '[[check]]', f'id = {_toml_str(c.id)}', f'title = {_toml_str(c.title)}', f'url = {_toml_str(c.url)}']
+        if c.egress:
+            out.append(f'egress = {_toml_str(c.egress)}' +
+                       ('                    # выход не с IP ноды' if c.egress == 'other' else ''))
+        if c.egress_country:
+            out.append(f'egress_country = {_toml_list(c.egress_country)}')
+        if c.egress_asn:
+            out.append(f'egress_asn = {_toml_list(c.egress_asn)}')
+        if c.profiles:
+            out.append(f'profiles = {_toml_list(c.profiles)}')
+        if c.hosts:
+            out.append(f'hosts = {_toml_list(c.hosts)}')
+        tag = sorted(tags.get(c.id) or {c.skip_tag})[0]
+        if tag:
+            out.append(f'skip_tag = {_toml_str(tag)}')
+        if c.alert:
+            out.append(f'alert = {_toml_str(c.alert)}')
+    return '\n'.join(out)
 
 
 # ── переход со старого .env ──────────────────────────────────
@@ -267,6 +328,9 @@ def main(argv):
     if cmd == 'migrate':
         migrate()
         return 0
+    if cmd == 'migrate-checks':
+        print(migrate_checks(config.load()))
+        return 0
     if cmd in ('-h', '--help', 'help'):
         print(__doc__)
         return 0
@@ -289,7 +353,7 @@ def main(argv):
                 if h['lite']:
                     notes.append('только «Подключение»')
                 else:
-                    off = [t for c, t in (('warp', 'WARP'), ('psiphon', 'Psiphon')) if c not in h['checks']]
+                    off = [c.title for c in cfg.route_checks if c.id not in h['checks']]
                     if off:
                         notes.append('без ' + ' и '.join(off))
                 if h['name'] != h['host'] + p.host_suffix:

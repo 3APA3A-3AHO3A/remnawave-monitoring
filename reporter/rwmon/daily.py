@@ -9,7 +9,9 @@ from . import geocheck
 from .clients import ApiError, Telegram
 from .util import esc, gb, log, minutes, now, promql_regex
 
-CHECK_NAMES = {'xray': 'Подключение', 'warp': 'WARP', 'psiphon': 'Psiphon'}
+def check_names(cfg):
+    """Подписи проверок: «Подключение» и проверки маршрутов из config.toml."""
+    return {'xray': 'Подключение', **{c.id: c.title for c in cfg.route_checks}}
 BILLING_DAYS = 7
 # хост «не открывается из РФ» (ни одна проба не достучалась) и доля таких хостов
 PROBE_DOWN = '(max by (address) (probe_success{kind="tcp"}) == bool 0)'
@@ -66,7 +68,7 @@ def collect(prom, cfg):
             f'sum by (panel, node_uuid, tag) (increase(rwmon_node_outbound_upload_bytes{{tag=~{tags}}}[24h])'
             f' + increase(rwmon_node_outbound_download_bytes{{tag=~{tags}}}[24h]))'):
         d['outbound'].setdefault((m.get('panel'), m.get('node_uuid')), {})[m.get('tag')] = v
-    for check in CHECK_NAMES:                     # сколько минут за сутки проверка не проходила
+    for check in check_names(cfg):                # сколько минут за сутки проверка не проходила
         hosts = 'rwmon_host' if check == 'xray' else f'rwmon_host{{{check}="1"}}'
         for m, v in prom.query(
                 f'{hosts} * on (name) group_left () '
@@ -134,7 +136,7 @@ def problem_lines(d, cfg):
         c = checks.setdefault((name or f'{pid}:{host}', check), {'hosts': [], 'mins': mins})
         c['hosts'].append((pid, host))
     for (_, check), c in checks.items():
-        add(f'{merged_name(c["hosts"], cfg)} · {CHECK_NAMES.get(check, check)}', 'не проходила проверка',
+        add(f'{merged_name(c["hosts"], cfg)} · {check_names(cfg).get(check, check)}', 'не проходила проверка',
             c['mins'])
     blocked = {}
     for pid, host, address, mins in d.get('probe_blocked') or []:

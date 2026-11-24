@@ -45,9 +45,51 @@ class Panel:
     host_tag_no_warp: str = 'MONITORING_NO_WARP'
     host_tag_no_psiphon: str = 'MONITORING_NO_PSIPHON'
 
-    def skip_tags(self):
-        """Тег-исключение → какую проверку он отключает."""
-        return {self.host_tag_no_warp: 'warp', self.host_tag_no_psiphon: 'psiphon'}
+    def skip_tags(self, checks=()):
+        """Тег-исключение → какую проверку он отключает. У проверок, собранных из старых
+        настроек, тег берётся из host_tag_no_warp / host_tag_no_psiphon панели."""
+        out = {}
+        for c in checks:
+            tag = c.skip_tag
+            if c.legacy:
+                tag = getattr(self, f'host_tag_no_{c.id}', tag)
+            if tag:
+                out[tag] = c.id
+        return out
+
+
+# Метки rwmon_host и правил, с которыми не должен совпасть id проверки маршрута:
+# id становится меткой rwmon_host (warp="1"), именем файла и контейнерного процесса.
+RESERVED_IDS = {'xray', 'panel', 'panel_title', 'host', 'name', 'lite', 'address', 'owner', 'primary',
+                'exit', 'via', 'check', 'job', 'instance', 'ip', 'node', 'node_uuid', 'node_name',
+                'protocol', 'stable_id', 'severity', 'scope', 'repeat', 'reason'}
+MAX_ROUTE_CHECKS = 8          # порты метрик 2113–2120, порты Xray 22000–29999
+
+
+@dataclass
+class RouteCheck:
+    """Проверка маршрута: что открыть через хост и где должен оказаться выход.
+    Встроенная проверка «Подключение» (xray) сюда не входит."""
+    id: str                     # латиницей: warp, psiphon, usa — метка, файл, процесс
+    title: str                  # как подписывать: «WARP», «Каскад в США»
+    url: str                    # адрес, который роутинг нод отправляет в нужный выход
+    egress: str = ''            # '' — достаточно, что открылось; other — не с IP ноды; node — с IP ноды
+    egress_country: set = field(default_factory=set)   # страны выхода (ISO, верхний регистр)
+    egress_asn: set = field(default_factory=set)       # сети выхода (номера AS)
+    profiles: set = field(default_factory=set)         # профили нод (имя или UUID, нижний регистр)
+    hosts: set = field(default_factory=set)            # названия хостов
+    skip_tag: str = ''          # тег хоста, который снимает с него эту проверку
+    alert: str = ''             # пояснение к алерту (Grafana, карточка правила)
+    legacy: bool = False        # собрана из старых [checks] url_warp / url_psiphon
+
+    def applies(self, host, profile_names):
+        """Нужна ли проверка полному хосту: по названию, по профилю его ноды;
+        без profiles и hosts — всем полным хостам."""
+        if not self.profiles and not self.hosts:
+            return True
+        if host in self.hosts:
+            return True
+        return bool(self.profiles & {str(n).lower() for n in profile_names if n})
 
 
 @dataclass
@@ -79,6 +121,7 @@ class Config:
     url_xray: str = 'https://www.google.com/generate_204'
     url_warp: str = 'https://icanhazip.com'
     url_psiphon: str = 'http://ip-api.com/line/?fields=query'
+    route_checks: list = field(default_factory=list)   # [RouteCheck]: [[check]] или старые url_*
     clients_drop_min_avg: float = 3
     clients_drop_max_now: float = 1
     panel_lag_ms: float = 200       # «панель тормозит»: задержка процесса, мс
@@ -109,6 +152,9 @@ class Config:
 
     def panel(self, pid):
         return next((p for p in self.panels if p.id == pid), None)
+
+    def route_check(self, cid):
+        return next((c for c in self.route_checks if c.id == cid), None)
 
     def chats(self):
         """Все разные чаты/топики панелей — для общих сообщений."""
@@ -228,6 +274,7 @@ def parse(data, env=os.environ):
         url_xray=chk.get('url_xray', Config.url_xray),
         url_warp=chk.get('url_warp', Config.url_warp),
         url_psiphon=chk.get('url_psiphon', Config.url_psiphon),
+        route_checks=_route_checks(data.get('check'), chk),
         clients_drop_min_avg=num(al, 'clients_drop_min_avg', 3, 'alerts', kind=float),
         clients_drop_max_now=num(al, 'clients_drop_max_now', 1, 'alerts', kind=float),
         panel_lag_ms=num(al, 'panel_lag_ms', 200, 'alerts', minimum=1, kind=float),
@@ -249,6 +296,75 @@ def parse(data, env=os.environ):
         prometheus_port=int(env.get('PROMETHEUS_PORT', 9090)),
         reporter_port=int(env.get('REPORTER_PORT', 9105)),
     )
+
+
+def legacy_route_checks(chk):
+    """Проверки из настроек версий 1.x: WARP и Psiphon с адресами из [checks]."""
+    return [
+        RouteCheck(id='warp', title='WARP', url=str(chk.get('url_warp', Config.url_warp)).strip(),
+                   egress='other', skip_tag='MONITORING_NO_WARP', legacy=True,
+                   alert='Через ноду не открывается адрес, который она отправляет в WARP.'),
+        RouteCheck(id='psiphon', title='Psiphon', url=str(chk.get('url_psiphon', Config.url_psiphon)).strip(),
+                   egress='other', skip_tag='MONITORING_NO_PSIPHON', legacy=True,
+                   alert='Через ноду не открывается адрес, который она отправляет в Psiphon: '
+                         'Gemini на этой ноде не работает.'),
+    ]
+
+
+def _str_set(value, where, key, upper=False, lower=False):
+    if value is None:
+        return set()
+    if isinstance(value, str) or not isinstance(value, list):
+        raise ConfigError(f'config.toml: {where}: {key} — список, например ["a", "b"]')
+    out = {str(v).strip() for v in value if str(v).strip()}
+    return {v.upper() for v in out} if upper else {v.lower() for v in out} if lower else out
+
+
+def _route_checks(items, chk):
+    """[[check]] — проверки маршрутов. Нет ни одного блока — старые WARP и Psiphon."""
+    if items is None:
+        return legacy_route_checks(chk)
+    if not isinstance(items, list):
+        raise ConfigError('config.toml: [[check]] — блоки проверок, каждый начинается с [[check]]')
+    if len(items) > MAX_ROUTE_CHECKS:
+        raise ConfigError(f'config.toml: проверок [[check]] больше {MAX_ROUTE_CHECKS}')
+    out, ids = [], set()
+    for i, c in enumerate(items):
+        cid = str(c.get('id', '')).strip()
+        where = f'[[check]] №{i + 1}' + (f' ({cid})' if cid else '')
+        if not re.fullmatch(r'[a-z][a-z0-9_]{0,19}', cid):
+            raise ConfigError(f'config.toml: {where}: id латиницей с маленькой буквы, например "warp"')
+        if cid in RESERVED_IDS:
+            raise ConfigError(f'config.toml: {where}: id "{cid}" занят — выберите другое')
+        if cid in ids:
+            raise ConfigError(f'config.toml: id проверки "{cid}" встречается дважды')
+        ids.add(cid)
+        url = str(c.get('url', '')).strip()
+        if not re.match(r'https?://', url):
+            raise ConfigError(f'config.toml: {where}: url должен начинаться с http:// или https://')
+        egress = str(c.get('egress', '')).strip().lower()
+        if egress not in ('', 'other', 'node'):
+            raise ConfigError(f'config.toml: {where}: egress — "other" (не с IP ноды), "node" (с IP ноды) '
+                              'или не задан')
+        asn = set()
+        for a in c.get('egress_asn') or []:
+            try:
+                asn.add(int(str(a).upper().removeprefix('AS')))
+            except ValueError:
+                raise ConfigError(f'config.toml: {where}: egress_asn — номера сетей, например [13335]') from None
+        out.append(RouteCheck(
+            id=cid,
+            title=str(c.get('title') or cid).strip(),
+            url=url,
+            egress=egress,
+            egress_country=_str_set(c.get('egress_country'), where, 'egress_country', upper=True),
+            egress_asn=asn,
+            profiles=_str_set(c.get('profiles'), where, 'profiles', lower=True),
+            hosts=_str_set(c.get('hosts'), where, 'hosts'),
+            skip_tag=str(c.get('skip_tag', f'MONITORING_NO_{cid.upper()}')).strip(),
+            alert=str(c.get('alert', '')).strip(),
+        ))
+    return out
 
 
 def _sites(items):

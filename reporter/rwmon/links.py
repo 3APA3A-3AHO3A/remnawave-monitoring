@@ -23,7 +23,7 @@ import json
 import os
 import tempfile
 
-from .util import log
+from .util import log, resolve_ip
 
 # Аутбаунды, которые не ведут на сервер: прямой выход, блок, DNS
 SERVICE_PROTOCOLS = ('freedom', 'blackhole', 'dns', 'loopback')
@@ -200,9 +200,9 @@ def write_if_changed(path, text):
     return True
 
 
-def panel_links(rw, panel):
+def panel_links(rw, panel, route_checks=()):
     """Хосты одной панели: [{'outbound', 'host', 'lite', 'skip'}] — полные, потом лёгкие.
-    skip — проверки, которые у полного хоста отключены тегом-исключением."""
+    skip — проверки маршрутов, которые у полного хоста отключены тегом-исключением."""
     user = rw.user_by_username(panel.monitor_user)
     raw = rw.raw_subscription(user['shortUuid'])
     configs = raw.get('resolvedProxyConfigs') or []
@@ -223,33 +223,92 @@ def panel_links(rw, panel):
                     'не исчерпан лимит устройств (HWID)')
         log('links', f'[{panel.title}] у пользователя «{panel.monitor_user}» нет хостов с тегами '
                      f'{panel.host_tag} / {panel.host_tag_lite}' + hint)
-    skips = host_skips(configs, panel.skip_tags())
+    skips = host_skips(configs, panel.skip_tags(route_checks))
     return ([{'outbound': ob, 'host': name, 'lite': False, 'skip': skips.get(name, [])} for ob, name in full] +
             [{'outbound': ob, 'host': name, 'lite': True, 'skip': []} for ob, name in lite])
 
 
 # Какие хосты каких панелей чем проверяются: [{panel, panel_title, host, name, lite, checks}].
-# checks — какие из проверок WARP/Psiphon нужны этому хосту в этой панели.
+# checks — какие проверки маршрутов ([[check]]) нужны этому хосту в этой панели.
 # name — название в проверке (метка name у xray_proxy_status). Читает exporter.
 HOSTS = []
 
 
-FULL_CHECKS = ('warp', 'psiphon')          # проверки только для полных хостов
+def node_map(cfg, clients, state, need_profiles=True):
+    """Ноды всех панелей: [{'panel', 'name', 'ip', 'profiles'}], profiles — UUID и имя
+    конфиг-профиля ноды. По ним проверки маршрутов выбирают хосты (profiles = [...])."""
+    nodes = []
+    for p in cfg.panels:
+        rw = clients.get(p.id)
+        if rw is None:
+            continue
+        try:
+            raw = rw.nodes() or []
+        except Exception as e:
+            log('links', f'[{p.title}] список нод не получен: {e}')
+            continue
+        names = {}
+        if need_profiles:
+            try:
+                names = {str(x.get('uuid')): str(x.get('name') or '') for x in rw.config_profiles()}
+            except Exception as e:
+                key = f'profiles:{p.id}'
+                if state.get(key) != str(e):
+                    state[key] = str(e)
+                    log('links', f'[{p.title}] имена конфиг-профилей не получены ({e}) — проверки с profiles '
+                                 'увидят только UUID профилей. Дайте токену право читать конфиг-профили.')
+        for n in raw:
+            if not isinstance(n, dict):
+                continue
+            uuid = str(n.get('configProfileUuid') or (n.get('configProfile') or {}).get('activeConfigProfileUuid') or '')
+            nodes.append({'panel': p.id, 'name': str(n.get('name') or ''),
+                          'ip': resolve_ip(str(n.get('address') or ''), state),
+                          'profiles': sorted({v for v in (uuid, names.get(uuid, '')) if v})})
+    return nodes
 
 
-def entry_checks(e):
-    """Какие из проверок WARP/Psiphon нужны записи хоста."""
+def exit_node(p, e, nodes, state):
+    """Нода, куда ведёт хост: по host_exit панели (название ноды, можно с « · панель»),
+    иначе по IP адреса хоста. Не нашлась — None."""
+    target = p.host_exit.get(e['host'])
+    if target:
+        for n in sorted(nodes, key=lambda n: n['panel'] != p.id):
+            if target in (n['name'], f"{n['name']} · {p.title}") or target.startswith(n['name'] + ' · '):
+                return n
+        return None
+    server = outbound_address(e['outbound']).rsplit(':', 1)[0].strip('[]')
+    ip = resolve_ip(server, state) if server else ''
+    if not ip:
+        return None
+    return next((n for n in sorted(nodes, key=lambda n: n['panel'] != p.id) if n['ip'] == ip), None)
+
+
+def entry_checks(e, p=None, route_checks=(), nodes=(), state=None):
+    """Какие проверки маршрутов нужны записи хоста: только полным хостам, без тега-исключения,
+    и если проверка подходит хосту по названию или по профилю его ноды."""
     if e.get('lite'):
         return set()
-    return set(FULL_CHECKS) - set(e.get('skip') or [])
+    skip = set(e.get('skip') or [])
+    out = set()
+    for c in route_checks:
+        if c.id in skip:
+            continue
+        names = []
+        if c.profiles and p is not None:
+            n = exit_node(p, e, nodes, {} if state is None else state)
+            names = n['profiles'] if n else []
+        if c.applies(e['host'], names):
+            out.add(c.id)
+    return out
 
 
-def combine(per_panel):
+def combine(per_panel, route_checks=(), nodes=(), state=None):
     """Склеить хосты всех панелей. Одинаковый хост (см. connection_key)
     проверяется один раз, а результат относится ко всем панелям, где он есть.
-    Проверки WARP/Psiphon у общего хоста — объединение того, что нужно панелям:
+    Проверки маршрутов у общего хоста — объединение того, что нужно панелям:
     если одной панели Psiphon на этом хосте нужен, он проверяется.
     per_panel — [(panel, entries)]. Возвращает (проверки, хосты)."""
+    state = {} if state is None else state
     checks, hosts, used = {}, [], set()
     for p, entries in per_panel:
         for e in entries:
@@ -266,15 +325,16 @@ def combine(per_panel):
                                    'udp': is_udp(e['outbound']), 'checks': set()}
             elif not e['lite']:
                 c['lite'] = False                    # полная проверка покрывает лёгкую
-            c['checks'] |= entry_checks(e)
+            mine = entry_checks(e, p, route_checks, nodes, state)
+            c['checks'] |= mine
             hosts.append({'panel': p.id, 'panel_title': p.title, 'host': e['host'],
                           'name': c['name'], 'lite': e['lite'], 'address': c['address'],
-                          'checks': sorted(entry_checks(e))})
+                          'checks': sorted(mine)})
     return list(checks.values()), hosts
 
 
 def check_links_file(cfg, check):
-    """Список хостов для проверки WARP или Psiphon: /links/monitor-<проверка>.txt."""
+    """Список хостов для проверки маршрута: /links/monitor-<id проверки>.txt."""
     folder = os.path.dirname(cfg.links_file) or '.'
     return os.path.join(folder, f'monitor-{check}.txt')
 
@@ -290,16 +350,17 @@ def write_probe_targets(cfg, checks):
          for s in cfg.sites], ensure_ascii=False))
 
 
-def refresh(cfg, clients):
+def refresh(cfg, clients, state=None):
     """Обновить списки проверок по всем панелям. Если панель не ответила —
     её хосты берём из прошлого удачного списка, чтобы проверки не пропали."""
     global HOSTS
+    state = {} if state is None else state
     folder = os.path.dirname(cfg.links_file) or '.'
     per_panel = []
     for p in cfg.panels:
         cache = os.path.join(folder, f'.panel-{p.id}.json')
         try:
-            entries = panel_links(clients[p.id], p)
+            entries = panel_links(clients[p.id], p, cfg.route_checks)
             write_if_changed(cache, json.dumps(entries, ensure_ascii=False))
         except Exception as e:
             log('links', f'[{p.title}] список хостов не обновлён: {e}')
@@ -312,7 +373,9 @@ def refresh(cfg, clients):
             except (OSError, ValueError):
                 entries = []
         per_panel.append((p, entries))
-    checks, HOSTS = combine(per_panel)
+    need_nodes = any(c.profiles for c in cfg.route_checks)
+    nodes = node_map(cfg, clients, state) if need_nodes else []
+    checks, HOSTS = combine(per_panel, cfg.route_checks, nodes, state)
     full = [c['config'] for c in checks if not c['lite']]
     lite = [c['config'] for c in checks if c['lite']]
     dump = lambda configs: json.dumps(configs, ensure_ascii=False, indent=1) + '\n'
@@ -320,9 +383,9 @@ def refresh(cfg, clients):
     # обновления не выполнен ./apply.sh (тот переключает их на свои списки ниже)
     changed = write_if_changed(cfg.links_file, dump(full))
     changed |= write_if_changed(cfg.links_file_xray, dump(full + lite))
-    for check in FULL_CHECKS:                    # WARP и Psiphon — без хостов с тегом-исключением
-        changed |= write_if_changed(check_links_file(cfg, check),
-                                    dump([c['config'] for c in checks if check in c['checks']]))
+    for rc in cfg.route_checks:                  # проверки маршрутов — только хосты, которым они нужны
+        changed |= write_if_changed(check_links_file(cfg, rc.id),
+                                    dump([c['config'] for c in checks if rc.id in c['checks']]))
     write_probe_targets(cfg, checks)
     if changed:
         shared = len(HOSTS) - len(checks)

@@ -1,8 +1,11 @@
 import html
+import ipaddress
 import json
 import re
 import os
+import socket
 import tempfile
+import time
 from datetime import datetime, timezone
 
 
@@ -61,3 +64,23 @@ def promql_regex(values):
     (raw-строка: обратные слэши не надо удваивать, кавычки внутри не мешают)."""
     body = '|'.join(re.sub(r'([\\.^$|?*+()\[\]{}])', r'\\\1', v) for v in values)
     return '`' + body.replace('`', '') + '`'
+
+
+def resolve_ip(address, state):
+    """Адрес ноды → IPv4 (для сопоставления нод с хостами и пробами). Кэш на час."""
+    if not address:
+        return ''
+    try:
+        ipaddress.ip_address(address)
+        return address
+    except ValueError:
+        pass
+    cached = state.get('ip:' + address)
+    if cached and time.time() - cached[1] < 3600:
+        return cached[0]
+    try:
+        ip = socket.getaddrinfo(address, None, socket.AF_INET)[0][4][0]
+    except OSError:
+        ip = cached[0] if cached else ''
+    state['ip:' + address] = (ip, time.time())
+    return ip

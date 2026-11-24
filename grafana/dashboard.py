@@ -12,6 +12,7 @@ Grafana читает только готовый JSON; этот файл ей н
   «Проба из РФ», «GeoCheck».
 """
 import json
+import math
 import os
 
 DS = {'type': 'prometheus', 'uid': 'rwmon-prometheus'}
@@ -175,7 +176,12 @@ def row(title, y, panels):
 
 # ── сам дашборд ──────────────────────────────────────────────
 
-def build():
+def build(checks=None):
+    """checks — [(id, подпись)] проверок маршрутов из config.toml (render.py собирает дашборд
+    при ./apply.sh). Без них — «Подключение», WARP и Psiphon, как в готовом JSON репозитория."""
+    global CHECKS
+    if checks is not None:
+        CHECKS = (('xray', 'Подключение'),) + tuple(checks)
     p = []
     y = 0
 
@@ -236,12 +242,14 @@ def build():
         {'id': 'organize', 'options': {
             'excludeByName': {'Time': True, 'Value #V': True},
             'indexByName': {'panel_title': 0, 'node_name': 1, 'Value #S': 2, 'Value #A': 3, 'Trend #T1': 4,
-                            'Value #Kxray': 5, 'Value #Kwarp': 6, 'Value #Kpsiphon': 7, 'Value #R': 8,
-                            'Value #U': 9, 'Value #X': 10, 'xray': 11, 'Value #G': 12, 'Value #H': 13,
-                            'Value #C': 14, 'Value #D': 15, 'Value #E': 16, 'Value #L': 17},
+                            **{f'Value #K{c}': 5 + i for i, (c, _) in enumerate(CHECKS)},
+                            **{k: v + len(CHECKS) for k, v in (
+                                ('Value #R', 5), ('Value #U', 6), ('Value #X', 7), ('xray', 8), ('Value #G', 9),
+                                ('Value #H', 10), ('Value #C', 11), ('Value #D', 12), ('Value #E', 13),
+                                ('Value #L', 14))}},
             'renameByName': {'panel_title': 'Панель', 'node_name': 'Нода', 'Value #S': 'Связь',
                              'Value #A': 'Онлайн', 'Trend #T1': 'онлайн за период',
-                             'Value #Kxray': 'Подкл.', 'Value #Kwarp': 'WARP', 'Value #Kpsiphon': 'Psiphon',
+                             **{f'Value #K{c}': ('Подкл.' if c == 'xray' else t) for c, t in CHECKS},
                              'Value #R': 'Из РФ', 'Value #U': 'Сервер', 'Value #X': 'Xray', 'xray': 'версия',
                              'Value #G': 'CPU', 'Value #H': 'RAM', 'Value #C': '↓ RX', 'Value #D': '↑ TX',
                              'Value #E': 'трафик', 'Value #L': 'лимит'}}},
@@ -257,7 +265,7 @@ def build():
                 color={'mode': 'fixed', 'fixedColor': GREEN}, custom__width=170),
         *[by_name(n, custom__width=72, custom__align='center', mappings=OK_MAP,
                   custom__cellOptions={'type': 'color-background', 'mode': 'basic'})
-          for n in ('Подкл.', 'WARP', 'Psiphon', 'Из РФ')],
+          for n in ['Подкл.', *(t for c, t in CHECKS if c != 'xray'), 'Из РФ']],
         by_name('Сервер', unit='dtdurations', decimals=0, custom__width=90, custom__align='right',
                 color={'mode': 'fixed', 'fixedColor': GREY}, custom__cellOptions={'type': 'color-text'}),
         by_name('Xray', unit='dtdurations', decimals=0, custom__width=90, custom__align='right',
@@ -275,8 +283,8 @@ def build():
         by_name('↓ RX', unit='bps', decimals=1, custom__width=95, custom__align='right'),
         by_name('↑ TX', unit='bps', decimals=1, custom__width=95, custom__align='right'),
         by_name('трафик', unit='decbytes', decimals=1, custom__width=85, custom__align='right'),
-    ], desc='Связь — нода подключена к панели. Подкл./WARP/Psiphon — проверки хостов, которые смотрят на IP '
-            'этой ноды; «Из РФ» — открывается ли нода с проб в России. Сервер и Xray — сколько работают без '
+    ], desc='Связь — нода подключена к панели. ' + '/'.join(['Подкл.', *(t for c, t in CHECKS if c != 'xray')])
+            + ' — проверки хостов, которые смотрят на IP этой ноды; «Из РФ» — открывается ли нода с проб в России. Сервер и Xray — сколько работают без '
             'перезапуска (жёлтым — Xray перезапускался меньше суток назад). CPU — load average на ядро. '
             'Трафик — клиентов за выбранный период, лимит — расход трафика ноды, если он задан в панели.',
         sort=[{'displayName': 'Онлайн', 'desc': True}])
@@ -522,8 +530,10 @@ def build():
 
     # 7. Проверки хостов
     grids = []
+    per_row = min(len(CHECKS), 4)
+    w = 24 // per_row
     for i, (c, title) in enumerate(CHECKS):
-        grids.append(table(title, {'h': 12, 'w': 8, 'x': 8 * i, 'y': y + 1}, [
+        grids.append(table(title, {'h': 12, 'w': w, 'x': w * (i % per_row), 'y': y + 1 + 12 * (i // per_row)}, [
             target(f'max by (panel_title, host) ({host_status(c)})', 'A', instant=True, fmt='table'),
         ], [
             {'id': 'groupingToMatrix', 'options': {'columnField': 'panel_title', 'rowField': 'host',
@@ -535,7 +545,8 @@ def build():
         ], desc='Строка — хост, колонка — панель. Одинаковые хосты разных панелей проверяются один раз'
                 + ('' if c == 'xray' else '. Лёгкие (LTE) хосты здесь не проверяются'),
             sort=[{'displayName': 'Хост', 'desc': False}]))
-    grids.append(history('История сбоев', {'h': 10, 'w': 24, 'x': 0, 'y': y + 13}, ' or '.join(
+    grids.append(history('История сбоев', {'h': 10, 'w': 24, 'x': 0,
+                                           'y': y + 1 + 12 * math.ceil(len(CHECKS) / per_row)}, ' or '.join(
         f'({host_status(c)}) and on (name) (min by (name) (min_over_time(xray_proxy_status{{check="{c}"}}'
         f'[$__range] @ end())) == 0)' for c, _ in CHECKS), '{{host}} · {{panel_title}} · {{check}}',
         'Только хосты, у которых за выбранный период были сбои'))

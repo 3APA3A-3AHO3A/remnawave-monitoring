@@ -21,10 +21,49 @@ interval = 300            # как часто проверять хосты, с�
 attempts = 3              # сколько раз пробовать, прежде чем считать проверку неудачной
 retry_delay = 5           # пауза между попытками, секунд
 concurrency = 20          # сколько хостов проверять одновременно (0 — все сразу)
-# Что открываем через ноду:
-url_xray = "https://www.google.com/generate_204"        # напрямую (DIRECT)
-url_warp = "https://icanhazip.com"                      # домен из geosite:category-ip-geo-detect → WARP
-url_psiphon = "http://ip-api.com/line/?fields=query"    # домен, который правилом ноды отправлен в Psiphon
+# «Подключение»: что открываем через хост, адрес должен идти с ноды напрямую (DIRECT)
+url_xray = "https://www.google.com/generate_204"
+# Только для настроек 1.x без блоков [[check]] — проверки WARP и Psiphon:
+# url_warp = "https://icanhazip.com"
+# url_psiphon = "http://ip-api.com/line/?fields=query"
+
+# ─── Проверки маршрутов ─────────────────────────────────────
+# Куда должен уходить трафик с хоста: по блоку на проверку (до 8). Нет ни одного блока —
+# работают WARP и Psiphon из url_warp / url_psiphon, как в 1.x. Готовые блоки для
+# нынешних проверок:  docker compose exec reporter python -m rwmon migrate-checks
+#
+# id             — латиницей: метка, имя процесса, тег-исключение MONITORING_NO_<ID>
+# url            — адрес, который роутинг ноды отправляет в нужный выход (для egress* — отвечает IP)
+# egress         — "other": выход не с IP ноды; "node": с IP ноды; не задано — достаточно, что открылось
+# egress_country — страны выхода (ISO); egress_asn — сети выхода (номера AS). База DB-IP Lite
+#                  скачивается сама раз в месяц
+# profiles       — конфиг-профили нод (имя или UUID): проверяются хосты, ведущие на эти ноды
+# hosts          — названия хостов (вместо профилей или в дополнение)
+# alert          — пояснение к алерту (Grafana, карточка правила)
+# Без profiles и hosts проверка идёт на всех хостах с тегом MONITORING.
+
+[[check]]
+id = "warp"
+title = "WARP"
+url = "https://icanhazip.com"              # домен из geosite:category-ip-geo-detect → WARP
+egress = "other"
+# egress_asn = [13335]                     # строже: выход именно через Cloudflare
+# profiles = ["Default Vless EU"]
+
+[[check]]
+id = "psiphon"
+title = "Psiphon"
+url = "http://ip-api.com/line/?fields=query"   # правило ноды ip-api.com → Psiphon
+egress = "other"
+alert = "Через ноду не работает Psiphon: Gemini на этой ноде не открывается."
+# profiles = ["Default Vless EU"]
+
+# [[check]]
+# id = "usa"
+# title = "Каскад в США"
+# url = "https://icanhazip.com"
+# egress_country = ["US"]
+# hosts = ["🇺🇸 Америка"]
 
 [alerts]
 # «Клиенты пропали»: за прошлый час в среднем было не меньше N человек,
@@ -107,9 +146,10 @@ title = "Основная"               # подпись в сообщения�
 api_url = "http://127.0.0.1:3000"
 api_token = ""
 monitor_user = "monitoring"      # служебный пользователь, по его подписке (Xray JSON) проверяются хосты
-host_tag = "MONITORING"          # хосты с этим тегом — все три проверки
+host_tag = "MONITORING"          # хосты с этим тегом — «Подключение» и подходящие проверки маршрутов
 host_tag_lite = "MONITORING_LITE"  # только «Подключение» (LTE, лимитированные)
-# Теги-исключения рядом с host_tag: на ноде нет WARP или Psiphon — эту проверку не делать
+# Тег MONITORING_NO_<ID> рядом с host_tag снимает с хоста проверку маршрута <id> (skip_tag в [[check]]).
+# Только для настроек 1.x без [[check]] — свои имена тегов WARP и Psiphon:
 # host_tag_no_warp = "MONITORING_NO_WARP"
 # host_tag_no_psiphon = "MONITORING_NO_PSIPHON"
 # host_suffix = ""               # подпись к названиям хостов; у первой панели пусто

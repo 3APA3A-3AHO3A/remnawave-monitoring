@@ -26,9 +26,9 @@ import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import links
-from .clients import DNS_RETRY_DELAY, ApiError, Remnawave, is_dns_error
-from .util import log, read_json
+from . import egress, links
+from .clients import DNS_RETRY_DELAY, ApiError, Prometheus, Remnawave, is_dns_error
+from .util import log, read_json, resolve_ip
 
 HELP = {
     'rwmon_panel_up': ('gauge', 'API панели отвечает (1) или нет (0)'),
@@ -63,6 +63,7 @@ HELP = {
     'rwmon_address_info': ('gauge', 'Какие хосты смотрят на этот адрес (для проб из РФ)'),
     'rwmon_panel_hosts': ('gauge', 'Сколько хостов панели проверяется'),
     'rwmon_host': ('gauge', 'Хост панели и имя его проверки (name) в xray-checker'),
+    'rwmon_exit_info': ('gauge', 'Страна и сеть IP выхода проверок (DB-IP Lite)'),
     'rwmon_users': ('gauge', 'Пользователи по статусам'),
     'rwmon_users_online': ('gauge', 'Пользователи онлайн: сейчас / за сутки / за неделю'),
     'rwmon_users_total': ('gauge', 'Всего пользователей'),
@@ -159,26 +160,6 @@ def node_is_watched(node, panel):
         return False
     names = {(node.get('name') or '').lower()} | {t.lower() for t in node.get('tags') or []}
     return not (names & panel.exclude_nodes)
-
-
-def resolve_ip(address, state):
-    """Адрес ноды → IPv4 (для сопоставления нод с хостами и пробами). Кэш на час."""
-    if not address:
-        return ''
-    try:
-        ipaddress.ip_address(address)
-        return address
-    except ValueError:
-        pass
-    cached = state.get('ip:' + address)
-    if cached and time.time() - cached[1] < 3600:
-        return cached[0]
-    try:
-        ip = socket.getaddrinfo(address, None, socket.AF_INET)[0][4][0]
-    except OSError:
-        ip = cached[0] if cached else ''
-    state['ip:' + address] = (ip, time.time())
-    return ip
 
 
 def collect_panel(panel, rw, lines, state, multi=False, node_ips=None):
@@ -307,6 +288,23 @@ def health_lines(base, metrics, lines):
                 lines.add(name, pl, m[key])
 
 
+def exit_lines(prom, lookup, lines, state):
+    """rwmon_exit_info{ip, country, asn, as_org} по IP выхода проверок (xray_proxy_exit_ip):
+    по ним правила egress_country / egress_asn видят, где оказался трафик."""
+    try:
+        ips = {m.get('ip') for m, _ in prom.query('max by (ip) (xray_proxy_exit_ip)') if m.get('ip')}
+    except Exception as e:
+        _warn(state, 'exit-ip', f'IP выхода проверок из Prometheus: {e}')
+        return
+    for ip in sorted(ips):
+        info = lookup.get(ip)
+        if info is None:
+            return                    # баз DB-IP ещё нет — подождём, пока reporter их скачает
+        country, asn, org = info
+        lines.add('rwmon_exit_info', {'ip': ip, 'country': country or '?', 'asn': str(asn or 0),
+                                      'as_org': org}, 1)
+
+
 def geocheck_lines(run, lines, cfg):
     """Последний GeoCheck в Prometheus — для таблиц «кто как видит ноду» в Grafana."""
     if not run:
@@ -414,7 +412,7 @@ def host_owner(h, panels, by_panel, state):
     return (_node_panel(lambda node_ip, name: node_ip == ip, own, by_panel) if ip else '') or own
 
 
-def host_lines(hosts, lines, panels=(), node_ips=None, state=None, by_panel=None):
+def host_lines(hosts, lines, panels=(), node_ips=None, state=None, by_panel=None, check_ids=('warp', 'psiphon')):
     """rwmon_host — по строке на хост каждой панели. Хост, общий для нескольких панелей,
     даёт несколько строк; ровно у одной primary="1" — у строки панели-владельца ноды
     (owner), а если у владельца такого хоста нет — у первой. Алерты о хостах берут только
@@ -440,10 +438,10 @@ def host_lines(hosts, lines, panels=(), node_ips=None, state=None, by_panel=None
         labels = {'panel': h['panel'], 'panel_title': h['panel_title'], 'host': h['host'],
                   'name': h['name'], 'lite': '1' if h['lite'] else '0', 'address': h.get('address', ''),
                   'owner': owners[h['name']], 'primary': '1' if primary[h['name']] == i else '0'}
-        # какие проверки нужны хосту (тег-исключение снимает WARP или Psiphon);
-        # у записи из старого кэша без 'checks' — как раньше: полный хост = обе
-        checks = h['checks'] if 'checks' in h else ([] if h['lite'] else ['warp', 'psiphon'])
-        for c in ('warp', 'psiphon'):
+        # какие проверки маршрутов нужны хосту: метка на каждую проверку, warp="1";
+        # у записи из старого кэша без 'checks' — как раньше: полному хосту все
+        checks = h['checks'] if 'checks' in h else ([] if h['lite'] else list(check_ids))
+        for c in check_ids:
             labels[c] = '1' if c in checks else '0'
         target = host_exit(h, panels, node_ips, state)
         if target:                    # в алерте: «LTE 3 · OVRO → CDN 1 · FixErrorVPN»
@@ -478,6 +476,8 @@ class Exporter:
         self.state = {}
         self.sites = {}
         self.node_ips = {}            # панель → {IP ноды: название}; при сбое панели остаётся прошлый
+        self.prom = Prometheus(cfg.prometheus_url)
+        self.exit_lookup = egress.Lookup(cfg) if egress.needed(cfg) else None
 
     def poll_once(self):
         lines = Lines()
@@ -497,8 +497,11 @@ class Exporter:
         for ips in self.node_ips.values():
             for ip, name in ips.items():
                 node_ips.setdefault(ip, name)
-        host_lines(links.HOSTS, lines, self.cfg.panels, node_ips, self.state, by_panel=self.node_ips)
+        host_lines(links.HOSTS, lines, self.cfg.panels, node_ips, self.state, by_panel=self.node_ips,
+                   check_ids=[c.id for c in self.cfg.route_checks])
         site_lines(list(self.sites.values()), lines)
+        if self.exit_lookup is not None:
+            exit_lines(self.prom, self.exit_lookup, lines, self.state)
         try:
             geocheck_lines(self._geocheck(), lines, self.cfg)
         except Exception as e:
