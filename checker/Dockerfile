@@ -1,4 +1,4 @@
-# xray-checker v1.3.1 с двумя патчами: Hysteria2 + Salamander packetSize и повторные попытки.
+# xray-checker v1.3.1 с тремя патчами: Hysteria2 + Salamander packetSize, повторные попытки и IP выхода.
 #
 # Официальный xray-checker теряет параметр packetSize у обфускации Salamander.
 # С packetSize ядро Xray работает в режиме Gecko, который несовместим с обычным
@@ -8,6 +8,10 @@
 # check-retries.patch: одна неудачная попытка (например, EOF от WARP после простоя)
 # больше не считается сбоем — проверка повторяется PROXY_CHECK_ATTEMPTS раз
 # с паузой PROXY_CHECK_RETRY_DELAY секунд.
+#
+# exit-ip.patch: метрика xray_proxy_exit_ip{..., ip="…"} — с какого IP проверка
+# вышла в интернет. Если это IP одной из наших нод, запрос ушёл напрямую, мимо
+# WARP или Psiphon: по одному «IP отличается от IP сервера проверки» этого не видно.
 #
 # Когда исправления появятся в самом xray-checker, этот файл можно удалить
 # и вернуть в docker-compose.yml готовый образ kutovoys/xray-checker.

@@ -264,6 +264,14 @@ class LinksTest(unittest.TestCase):
         self.assertIn('rwmon_host{primary="1", psiphon="1"} unless on (name) xray_proxy_status{check="psiphon"}',
                       render.UNCHECKED)
 
+    def test_bypass_expr(self):
+        e = render._bypass('warp')
+        # только хосты с проверкой WARP, по разу (primary), и только когда IP выхода — IP нашей ноды
+        self.assertIn('rwmon_host{primary="1", warp="1"} * on (name) group_left (check) max by (name, check)', e)
+        self.assertIn('xray_proxy_exit_ip{check="warp"} * on (ip) group_left () max by (ip) (rwmon_node_address)', e)
+        self.assertIn('xray_proxy_exit_ip{check="psiphon"}', render._bypass('psiphon'))
+        self.assertIn('rwmon_host{primary="1", psiphon="1"}', render._bypass('psiphon'))
+
     def test_host_owner(self):
         cfg = make_cfg()
         main, res = cfg.panels
@@ -784,7 +792,7 @@ class RenderTest(unittest.TestCase):
             prom = load('prometheus/prometheus.yml')
             self.assertEqual(prom['scrape_configs'][1]['static_configs'][1]['labels'], {'check': 'warp'})
             rules = load('grafana/alerting/rules.yml')['groups'][0]['rules']
-            self.assertEqual(len({r['uid'] for r in rules}), 19)
+            self.assertEqual(len({r['uid'] for r in rules}), 21)
             self.assertIn('rwmon_panel_process_lag_ms[5m]) > 200', json.dumps(rules))
             self.assertIn('psiphon-out|WARP', json.dumps(rules))
             byuid = {r['uid']: r for r in rules}

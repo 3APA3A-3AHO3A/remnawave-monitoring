@@ -31,3 +31,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Образ xray-checker с патчами собирается
         run: docker build -t rwmon-xray-checker:ci checker
+      - name: Тесты xray-checker с патчами
+        run: |
+          docker build --target builder -t rwmon-xray-checker:builder checker
+          docker run --rm rwmon-xray-checker:builder go test ./checker/ ./metrics/

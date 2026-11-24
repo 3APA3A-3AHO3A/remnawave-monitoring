@@ -131,6 +131,16 @@ def _checker(check):
             f'(xray_proxy_status{{check="xray"}} == 0)) * 0 + 1')
 
 
+def _bypass(check):
+    """Проверка прошла, но ответ пришёл с IP одной из наших нод: запрос ушёл напрямую,
+    мимо WARP/Psiphon (например, выход упал, а балансировщик переключился на direct).
+    IP выхода отдаёт xray-checker (патч exit-ip.patch), IP нод — reporter (rwmon_node_address)."""
+    # max by (name, check): у одного имени при обновлении списка ненадолго бывает две серии
+    via_node = (f'max by (name, check) (xray_proxy_exit_ip{{check="{check}"}} '
+                f'* on (ip) group_left () max by (ip) (rwmon_node_address))')
+    return f'({checked_hosts(check)} * on (name) group_left (check) {via_node}) * 0 + 1'
+
+
 UNCHECKED = ' or '.join(f'({checked_hosts(c)} unless on (name) xray_proxy_status{{check="{c}"}})'
                         for c, _ in CHECKERS)
 
@@ -164,6 +174,16 @@ def rules(cfg):
               'Psiphon не работает', 'Psiphon снова работает',
               'Через ноду не открывается адрес, который она отправляет в Psiphon: Gemini на этой ноде '
               'не работает. Две проверки подряд.', 'host'),
+        _rule('rwmon-warp-bypass', 'Трафик идёт мимо WARP', _bypass('warp'), for_check,
+              'Трафик идёт мимо WARP', 'Трафик снова идёт через WARP',
+              'Адрес, который нода отправляет в WARP, открылся, но с IP самой ноды: '
+              'запрос ушёл напрямую. Обычно WARP упал, а балансировщик переключился на прямой выход, '
+              'или правило маршрутизации на ноде не срабатывает. Две проверки подряд.', 'host'),
+        _rule('rwmon-psiphon-bypass', 'Трафик идёт мимо Psiphon', _bypass('psiphon'), for_check,
+              'Трафик идёт мимо Psiphon', 'Трафик снова идёт через Psiphon',
+              'Адрес, который нода отправляет в Psiphon, открылся, но с IP самой ноды: '
+              'запрос ушёл напрямую, и Gemini на этой ноде, скорее всего, не работает. Обычно Psiphon '
+              'упал, а балансировщик переключился на прямой выход. Две проверки подряд.', 'host'),
         _rule('rwmon-outbound-no-response', 'Аутбаунд не отвечает', f'''
 (
   (
