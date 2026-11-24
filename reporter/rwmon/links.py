@@ -386,9 +386,10 @@ def combine(per_panel, route_checks=(), nodes=(), state=None):
                 c = checks[key] = {'name': name, 'config': check_config(name, e.get('direct') or e['outbound']),
                                    'outbound': e['outbound'], 'lite': e['lite'],
                                    'address': outbound_address(e['outbound']),
-                                   'udp': is_udp(e['outbound']), 'checks': set()}
+                                   'udp': is_udp(e['outbound']), 'checks': set(), 'hosts': set()}
             elif not e['lite']:
                 c['lite'] = False                    # полная проверка покрывает лёгкую
+            c['hosts'].add(e['host'])              # названия хоста во всех панелях
             mine = entry_checks(e, p, route_checks, nodes, state)
             c['checks'] |= mine
             hosts.append({'panel': p.id, 'panel_title': p.title, 'host': e['host'],
@@ -397,10 +398,10 @@ def combine(per_panel, route_checks=(), nodes=(), state=None):
     return list(checks.values()), hosts
 
 
-def ru_configs(checks, per_panel, via_names):
-    """Конфиги проверки «Из РФ»: хост + аутбаунд rwmon-via — первый хост из via_names
-    на другом адресе (сам себя хост через себя не проверяет). Возвращает
-    (конфиги, {название проверки: адрес посредника})."""
+def ru_configs(checks, per_panel, via_names, only=()):
+    """Конфиги проверки «Клиент из РФ»: хост + аутбаунд rwmon-via — первый хост из via_names
+    на другом адресе (сам себя хост через себя не проверяет). only — названия хостов,
+    которые так проверять (пусто — все). Возвращает (конфиги, {название проверки: адрес посредника})."""
     vias = []
     for name in via_names:
         for _, entries in per_panel:
@@ -410,6 +411,8 @@ def ru_configs(checks, per_panel, via_names):
                 break
     configs, chosen = [], {}
     for c in checks:
+        if only and not set(c.get('hosts') or ()) & set(only):
+            continue
         via = next((v for v in vias if outbound_address(v) != c['address']), None)
         if via is None:
             continue
@@ -476,7 +479,7 @@ def refresh(cfg, clients, state=None):
         changed |= write_if_changed(check_links_file(cfg, rc.id),
                                     dump([c['config'] for c in checks if rc.id in c['checks']]))
     if cfg.ru_via:
-        ru, via = ru_configs(checks, per_panel, cfg.ru_via)
+        ru, via = ru_configs(checks, per_panel, cfg.ru_via, cfg.ru_hosts)
         for h in HOSTS:
             h['ru_via'] = via.get(h['name'], '')
         if not via:

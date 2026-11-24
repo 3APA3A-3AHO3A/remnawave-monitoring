@@ -123,6 +123,20 @@ class RuTest(unittest.TestCase):
         self.assertIn('ruclient="1"', text)
         self.assertIn('ru_via="7.7.7.1:443"', text)
 
+    def test_only_hosts(self):
+        cfg = make_cfg(ru={'via': ['Москва 1'], 'hosts': ['LTE 3']})
+        self.assertEqual(cfg.ru_hosts, ['LTE 3'])
+        per_panel = [(cfg.panels[0], [
+            {'outbound': vless('7.7.7.1'), 'host': 'Москва 1', 'lite': False, 'skip': []},
+            {'outbound': vless('8.8.8.8'), 'host': 'Польша', 'lite': False, 'skip': []},
+            {'outbound': hysteria('9.9.9.9', 20009), 'host': 'LTE 3', 'lite': True, 'skip': []}])]
+        checks, _ = links.combine(per_panel)
+        configs, via = links.ru_configs(checks, per_panel, cfg.ru_via, cfg.ru_hosts)
+        self.assertEqual([c['remarks'] for c in configs], ['LTE 3'])
+        self.assertEqual(via, {'LTE 3': '7.7.7.1:443'})
+        with self.assertRaises(config.ConfigError):
+            make_cfg(ru={'hosts': ['LTE 3']})          # без via
+
     def test_render(self):
         cfg = make_cfg(ru=RU)
         self.assertEqual(render.checkers(cfg)[-1][:2], ('ruclient', 'Клиент из РФ'))

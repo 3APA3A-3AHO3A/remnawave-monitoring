@@ -139,6 +139,7 @@ class Config:
     # [ru] via — хосты в РФ, через которые хосты проверяются ещё и «из РФ», как их видят
     # клиенты из России (названия хостов с тегом host_tag; первый подходящий)
     ru_via: list = field(default_factory=list)
+    ru_hosts: list = field(default_factory=list)   # [ru] hosts — какие хосты так проверять; пусто — все
     # из окружения
     data_dir: str = '/data'
     links_file: str = '/links/monitor.txt'
@@ -293,6 +294,7 @@ def parse(data, env=os.environ):
         sites=_sites(data.get('site') or []),
         probes=_probes(data.get('probe') or []),
         ru_via=_ru_via(data.get('ru') or {}),
+        ru_hosts=_ru_via(data.get('ru') or {}, 'hosts', required=False),
         data_dir=env.get('DATA_DIR', '/data'),
         links_file=env.get('LINKS_FILE', '/links/monitor.txt'),
         links_file_xray=env.get('LINKS_FILE_XRAY', '/links/monitor-xray.txt'),
@@ -402,13 +404,15 @@ def _probes(items):
     return out
 
 
-def _ru_via(ru):
-    via = ru.get('via', [])
+def _ru_via(ru, key='via', required=True):
+    via = ru.get(key, [])
     if isinstance(via, str):
         via = [via]
     if not isinstance(via, list) or not all(isinstance(v, str) and v.strip() for v in via):
-        raise ConfigError('config.toml: [ru] via — список названий хостов, например '
+        raise ConfigError(f'config.toml: [ru] {key} — список названий хостов, например '
                           '["🇷🇺 Москва 1", "🇷🇺 Москва 2"]')
+    if required and ru and not via:
+        raise ConfigError('config.toml: в [ru] нужен via — хосты в РФ, через которые проверять')
     return [v.strip() for v in via]
 
 
