@@ -1,4 +1,5 @@
-# xray-checker v1.3.1 с тремя патчами: Hysteria2 + Salamander packetSize, повторные попытки и IP выхода.
+# xray-checker v1.3.1 с тремя патчами: Hysteria2 + Salamander packetSize, повторные попытки,
+# IP выхода и причина сбоя в метриках.
 #
 # Официальный xray-checker теряет параметр packetSize у обфускации Salamander.
 # С packetSize ядро Xray работает в режиме Gecko, который несовместим с обычным
@@ -9,9 +10,12 @@
 # больше не считается сбоем — проверка повторяется PROXY_CHECK_ATTEMPTS раз
 # с паузой PROXY_CHECK_RETRY_DELAY секунд.
 #
-# exit-ip.patch: метрика xray_proxy_exit_ip{..., ip="…"} — с какого IP проверка
-# вышла в интернет. Если это IP одной из наших нод, запрос ушёл напрямую, мимо
-# WARP или Psiphon: по одному «IP отличается от IP сервера проверки» этого не видно.
+# rwmon-metrics.patch: две метрики для алертов.
+#   xray_proxy_exit_ip{..., ip="…"} — с какого IP проверка вышла в интернет. Если это
+#   IP одной из наших нод, запрос ушёл напрямую, мимо WARP или Psiphon: по одному
+#   «IP отличается от IP сервера проверки» этого не видно.
+#   xray_proxy_error_code — причина сбоя числом (таймаут, обрыв, отказ, TLS, DNS…),
+#   её алерт пишет в сообщении. Числа — в checker/errcode.go патча и в render.py.
 #
 # Когда исправления появятся в самом xray-checker, этот файл можно удалить
 # и вернуть в docker-compose.yml готовый образ kutovoys/xray-checker.

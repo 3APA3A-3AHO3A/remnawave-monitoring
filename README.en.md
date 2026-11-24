@@ -63,7 +63,7 @@ Everything starts with a single `docker compose` and listens on `127.0.0.1` only
 - Host checks are done by [xray-checker](https://github.com/kutovoys/xray-checker). The image is built locally from v1.3.1 with three small patches (see [`checker/Dockerfile`](checker/Dockerfile)):
   - Hysteria2 with Salamander `packetSize` support;
   - retries: a single random failure (e.g. a dropped WARP connection) is not counted as an outage;
-  - the exit IP in metrics (`xray_proxy_exit_ip`): it shows that a request went out directly, bypassing WARP or Psiphon.
+  - the exit IP and the failure reason in metrics (`xray_proxy_exit_ip`, `xray_proxy_error_code`): the IP shows that a request went out directly, bypassing WARP or Psiphon, and the reason (timeout, closed connection, refused, TLS, DNS) goes into the alert message.
 
   The first build takes a few minutes.
 - GeoCheck is run by the panel itself on every node, just like the GeoCheck button in a node card.
@@ -81,7 +81,14 @@ Everything starts with a single `docker compose` and listens on `127.0.0.1` only
 
 ### Telegram alerts
 
-A message is short: what happened and where (the hosts or nodes with the start time), and once everything is fixed a recovery message arrives. The explanation of an alert is in Grafana, in the rule card. While something is still down, a reminder comes every `repeat_minutes` (60 min); for certificates — once a day.
+A message is short: what happened, where and why — one line per host or node with the start time and the reason. Once everything is fixed a recovery message arrives. The explanation of an alert is in Grafana, in the rule card.
+
+```
+🔴 Хост не принимает клиентов
+• 🇷🇺 LTE 3 · FixErrorVPN — с 16:34 UTC · хост не ответил вовремя (таймаут)
+```
+
+The reason in the line: for hosts — timeout, closed connection, refused, TLS or DNS error; for "bypasses WARP / Psiphon" — which node's IP the request went out from; for a website — the response code or "no response"; for a certificate — days left; for "clients vanished" — how many there are now; for "node overloaded" — the CPU or memory percentage. The reason is not part of the alert labels, so a change of reason does not cause extra "recovered" and "down" messages. While something is still down, a reminder comes every `repeat_minutes` (60 min); for certificates — once a day.
 
 | Alert | How it is detected | Sent to |
 |---|---|---|
