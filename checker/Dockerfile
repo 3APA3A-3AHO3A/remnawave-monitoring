@@ -35,8 +35,10 @@ RUN for p in /tmp/patches/*.patch; do patch -p1 < "$p" || exit 1; done
 # Свежие версии библиотек с исправлениями уязвимостей: xray-checker v1.3.1 тянет их старыми
 # (их находит сканер образов). xray-core — по коммиту релиза v26.11.9: схема версий xray-core
 # (v26.x) не совпадает с модулями Go. Сломается сборка или тесты — откатить XRAY_CORE.
+# libxray (разбор ссылок в xray-checker) — коммит, собранный с этим же xray-core.
 ARG XRAY_CORE=676eaf66f8f05d4d558ee7a74b4736623d3feeb9
-RUN go get github.com/xtls/xray-core@${XRAY_CORE} \
+ARG LIBXRAY=6e33510350d18a9b906495ff81ae9eb572144ddd
+RUN go get github.com/xtls/xray-core@${XRAY_CORE} github.com/xtls/libxray@${LIBXRAY} \
         golang.org/x/net@latest golang.org/x/crypto@latest golang.org/x/text@latest \
         google.golang.org/grpc@latest github.com/klauspost/compress@latest && \
     go mod tidy && go mod download
