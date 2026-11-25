@@ -37,7 +37,7 @@ Monitoring for [Remnawave](https://docs.rw) nodes: Grafana dashboards, alerts an
 
 - **Telegram alerts** — a host does not accept clients, a route check (WARP, Psiphon, a cascade — whatever you describe in `[[check]]`) is down or exits in the wrong place, clients vanished from a node, a panel is unreachable or slow, a host cannot be reached from Russia, a website is down, a certificate is about to expire, a node is overloaded. When things recover, a recovery message follows. Details — [Alerts](#telegram-alerts).
 - **Grafana dashboard** — key numbers, a node table with "everything in one row", a card per node, outbounds, panel health, GeoCheck. "Panel" and "Node" selectors.
-- **Daily report** — what changed in GeoCheck, failures of the day without duplicates, users, traffic and upcoming server payments per panel. Plus an HTML GeoCheck table.
+- **Daily report** — what changed in GeoCheck, failures of the day without duplicates, users and traffic per panel. Plus an HTML GeoCheck table.
 - **Route checks from the config** — `[[check]]` blocks: what to open through a host and where the exit must be (not the node IP, the node IP, a country, a network). Hosts are picked by the node's config profile. Details — [Route checks](#route-checks).
 - **Multiple panels** — each with its own chat and topic. Identical hosts in different panels are checked once.
 - **Probe from Russia** — a blackbox exporter on a Russian node reveals IP blocking that is invisible from Europe.
@@ -150,7 +150,7 @@ At the configured time the daily report goes to all chats:
 
 - what changed in GeoCheck (e.g. "Google used to see the node as FI, now RU"). "Needs attention" lists only what is new since yesterday, everything unchanged is a single line; Russian nodes and services from `routed_services` are not highlighted;
 - failures of the day: one server in two panels — one line, failures shorter than `short_minutes` (2 min) — one line "and N more short ones", minutes when the probe from Russia could not reach a third of the hosts at once count as a probe failure, not a host failure;
-- per panel: users, new and expired during the day, peak clients and traffic per node, upcoming server payments.
+- per panel: users, new and expired during the day, peak clients and traffic per node.
 
 An HTML file with the full GeoCheck table for all nodes is attached to the report.
 
@@ -168,13 +168,12 @@ An HTML file with the full GeoCheck table for all nodes is attached to the repor
 ### Preparation in every panel
 
 1. **API token.** Panel → Settings → API tokens. Read permissions only:
-   - Nodes: Get nodes;
-   - Users: Get user by username;
-   - Subscriptions: Get Raw Subscription by Short UUID;
-   - Connections: Request Geocheck for Node, Get Geocheck for Node by Job ID;
-   - Config Profiles: Get config profiles — if route checks pick hosts by profile name (`profiles`). Without it, profile UUIDs still work;
-   - System: Get Stats, Get Nodes Metrics, Get Stats Digest, Get Remnawave Information;
-   - optionally Infra Billing: Get infra billing nodes — then the report shows upcoming payments.
+   - Users: Get user by username — the service user the checks run as;
+   - Subscriptions: Get Raw Subscription by Short UUID — host tags: which hosts to check;
+   - Nodes: Get nodes — nodes, their countries and status;
+   - Hosts: Get hosts and Config Profiles: Get config profiles — a host's node and inbound port: hosts behind a relay or CDN are checked on the node directly (`[ru]`), route checks pick hosts by profile name (`profiles`). Without them hosts are checked only through the entry, and `profiles` take UUIDs;
+   - Connections: Request Geocheck for Node, Get Geocheck for Node by Job ID — GeoCheck;
+   - System: Get Stats, Get Nodes Metrics, Get Stats Digest — users, node clients and traffic, the report; Get Remnawave Information, Get Remnawave Health — version and health of the panel itself.
 2. **A service user**, e.g. `monitoring`:
    - no traffic limit and no expiry date;
    - in the squads that contain the hosts to check;
