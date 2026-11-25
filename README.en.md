@@ -410,8 +410,10 @@ extra = ["example.com"]     # more domains or IPs on top of those found automati
 ```
 
 - Matching uses the RKN registry, blocked subnets and CDN lists (antifilter and others) — an unofficial source, results may differ.
-- A match fires the "Russian blocklist: address listed" alert with the reason: "domain in the RKN registry", "subnet listed: …", "blocked CDN: …". The daily report gets a "🚫 Блокировки РФ" block.
-- Only IPs and domains are sent to cheburcheck.ru — no keys, subscription links or tokens. The service allows 30 checks a minute; the monitoring makes at most 24.
+- A match fires the "Russian blocklist: address listed" alert with the reason: "domain in the RKN registry", "subnet listed: …", "IP in a blocked CDN network: …". The daily report gets a "🚫 Блокировки РФ" block.
+- A domain that merely sits behind a blocked CDN (e.g. Cloudflare) is not an alert: with Reality the domain is only in SNI and clients connect to the node IP. Such domains get one line in the report. A node IP inside a blocked CDN network is an alert — clients connect to exactly that IP.
+- On a 429 response the monitoring waits and retries; requests are 4 seconds apart.
+- Only IPs and domains are sent to cheburcheck.ru — no keys, subscription links or tokens. The service states a limit of 30 checks a minute; the monitoring makes at most 15.
 - cheburcheck scanners (checks from inside Russian operators' networks, the "TSPU block" verdict) need an API token issued on request on the website; not connected yet.
 - Check now: `docker compose exec reporter python -m rwmon rkn`.
 

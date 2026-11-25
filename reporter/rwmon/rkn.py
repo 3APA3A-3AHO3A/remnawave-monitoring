@@ -13,6 +13,7 @@ import ipaddress
 import json
 import os
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -20,7 +21,8 @@ from . import exporter, links
 from .util import esc, log, now, read_json, resolve_ip, write_json
 
 API = 'https://cheburcheck.ru/api/v1'
-PAUSE = 2.5                 # между запросами: у /check лимит 30 в минуту
+PAUSE = 4                   # между запросами: заявлено 30 в минуту, на деле 429 бывает и при 24
+RETRY_429 = (20, 40)        # ответ 429 — подождать и повторить
 TIMEOUT = 20
 
 
@@ -96,12 +98,18 @@ def targets(cfg, clients, state=None):
 def _get(path):
     req = urllib.request.Request(API + path, headers={'Accept': 'application/json',
                                                       'User-Agent': 'remnawave-monitoring'})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-        return json.loads(r.read().decode('utf-8'))
+    for wait in RETRY_429 + (None,):
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+                return json.loads(r.read().decode('utf-8'))
+        except urllib.error.HTTPError as e:
+            if e.code != 429 or wait is None:
+                raise
+            time.sleep(wait)
 
 
 def reasons(res):
-    """Ответ /check → список причин блокировки (пусто — не в списках)."""
+    """Ответ /check → (причины блокировки, заблокированные CDN)."""
     res = res or {}
     out = []
     if res.get('rkn_domain'):
@@ -109,12 +117,20 @@ def reasons(res):
     subnets = [str(s) for s in (res.get('blocked_subnets') or []) if s]
     if subnets:
         out.append('подсеть в списках: ' + ', '.join(subnets[:3]) + (' …' if len(subnets) > 3 else ''))
-    cdn = [str(k) for k, v in (res.get('cdn_providers') or {}).items() if v]
-    if cdn and res.get('blocked'):
-        out.append('заблокированный CDN: ' + ', '.join(cdn))
-    if res.get('blocked') and not out:
+    cdn = [str(k) for k, v in (res.get('cdn_providers') or {}).items() if v] if res.get('blocked') else []
+    if res.get('blocked') and not out and not cdn:
         out.append('в списках блокировок')
-    return out
+    return out, cdn
+
+
+def verdict(kind, res):
+    """(блокировка?, причина, CDN). IP ноды в сети заблокированного CDN — блокировка: клиенты
+    ходят на этот IP. Домен за таким CDN — нет: для Reality домен только в SNI, а клиент
+    подключается к IP ноды; такой домен лишь отмечаем в сводке."""
+    why, cdn = reasons(res)
+    if kind == 'node' and cdn:
+        why.append('IP в сети заблокированного CDN: ' + ', '.join(cdn))
+    return bool(why), '; '.join(why), ', '.join(cdn)
 
 
 def run(cfg, clients, check=None):
@@ -131,8 +147,8 @@ def run(cfg, clients, check=None):
             log('rkn', f'{t["target"]}: {e}')
             items.append(dict(t, ok=False))
             continue
-        why = reasons(res)
-        items.append(dict(t, ok=True, blocked=bool(why), why='; '.join(why)))
+        blocked, why, cdn = verdict(t['kind'], res)
+        items.append(dict(t, ok=True, blocked=blocked, why=why, cdn=cdn))
     if items and errors == len(items):
         raise RuntimeError('cheburcheck.ru не ответил ни на одну цель')
     data = {'time': now().strftime('%Y-%m-%d %H:%M'), 'ts': time.time(), 'items': items}
@@ -164,6 +180,10 @@ def telegram_section(data):
         lines.append(f'• {kind} {esc(x["name"])} <code>{esc(x["target"])}</code> — {esc(x.get("why", ""))}')
     if not blocked:
         lines.append(f'• ни один из {len(items) - len(failed)} адресов не в списках')
+    behind = [x for x in items if x.get('ok') and not x.get('blocked') and x.get('cdn')]
+    if behind:
+        lines.append(f'<i>за заблокированным CDN ({esc(", ".join(sorted({x["cdn"] for x in behind})))}), '
+                     f'на Reality не влияет: {esc(", ".join(x["target"] for x in behind))}</i>')
     if failed:
         lines.append(f'<i>не проверены: {len(failed)}</i>')
     return lines

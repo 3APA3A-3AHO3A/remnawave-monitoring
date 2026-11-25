@@ -51,13 +51,17 @@ class RknTest(unittest.TestCase):
         self.assertEqual(rkn.host_of('[2001:db8::1]:443'), '2001:db8::1')
         self.assertEqual(rkn.host_of('1.2.3.4'), '1.2.3.4')
 
-    def test_reasons(self):
-        self.assertEqual(rkn.reasons(CLEAN), [])
-        self.assertEqual(rkn.reasons(SUBNET), ['подсеть в списках: 1.2.3.0/24'])
-        self.assertEqual(rkn.reasons(RKN), ['домен в реестре РКН'])
-        self.assertEqual(rkn.reasons({'blocked': True, 'cdn_providers': {'Cloudflare': ['104.16.0.0/13']}}),
-                         ['заблокированный CDN: Cloudflare'])
-        self.assertEqual(rkn.reasons({'blocked': True}), ['в списках блокировок'])
+    def test_verdict(self):
+        cf = {'blocked': True, 'cdn_providers': {'cloudflare': ['104.16.0.0/13']}}
+        self.assertEqual(rkn.verdict('node', CLEAN), (False, '', ''))
+        self.assertEqual(rkn.verdict('node', SUBNET), (True, 'подсеть в списках: 1.2.3.0/24', ''))
+        self.assertEqual(rkn.verdict('domain', RKN), (True, 'домен в реестре РКН', ''))
+        # IP ноды в сети заблокированного CDN — тревога; домен за таким CDN — только пометка
+        self.assertEqual(rkn.verdict('node', cf), (True, 'IP в сети заблокированного CDN: cloudflare', 'cloudflare'))
+        self.assertEqual(rkn.verdict('domain', cf), (False, '', 'cloudflare'))
+        self.assertEqual(rkn.verdict('domain', {'blocked': True}), (True, 'в списках блокировок', ''))
+        self.assertEqual(rkn.verdict('domain', {'blocked': False, 'cdn_providers': {'cloudflare': ['x']}}),
+                         (False, '', ''))
 
     def test_targets(self):
         cfg = self.cfg()
@@ -76,10 +80,11 @@ class RknTest(unittest.TestCase):
 
     def test_run_alert_and_report(self):
         cfg = self.cfg()
-        links.DOMAINS = ['bad.example']
+        links.DOMAINS = ['bad.example', 'cf.example']
         clients = {cfg.panels[0].id: Rw([{'name': 'Sweden 1', 'address': '5.5.5.5'}]),
                    cfg.panels[1].id: Rw([])}
-        answers = {'5.5.5.5': SUBNET, 'bad.example': RKN}
+        answers = {'5.5.5.5': SUBNET, 'bad.example': RKN,
+                   'cf.example': {'blocked': True, 'cdn_providers': {'cloudflare': ['104.16.0.0/13']}}}
 
         def check(t):
             if t == 'extra.example':
@@ -97,10 +102,39 @@ class RknTest(unittest.TestCase):
         self.assertIn('нода Sweden 1', section)
         self.assertIn('домен bad.example', section)
         self.assertIn('не проверены: 1', section)
+        self.assertIn('за заблокированным CDN (cloudflare), на Reality не влияет: cf.example', section)
+        self.assertIn('target="cf.example"', text)
+        self.assertNotIn('домен cf.example', section)
         rules = json.dumps(render.rules(cfg), ensure_ascii=False)
         self.assertIn('rwmon-rkn-blocked', rules)
         self.assertNotIn('rwmon-rkn-blocked', json.dumps(render.rules(make_cfg()), ensure_ascii=False))
         self.assertEqual(daily.check_names(cfg)['xray'], 'Подключение')
+
+    def test_retry_429(self):
+        import urllib.error
+        calls = []
+
+        class Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return b'{"blocked": false}'
+
+        def urlopen(req, timeout=None):
+            calls.append(1)
+            if len(calls) == 1:
+                raise urllib.error.HTTPError(req.full_url, 429, 'Too Many Requests', {}, None)
+            return Resp()
+        orig, rkn.urllib.request.urlopen = rkn.urllib.request.urlopen, urlopen
+        try:
+            self.assertEqual(rkn._get('/check?target=x'), {'blocked': False})
+        finally:
+            rkn.urllib.request.urlopen = orig
+        self.assertEqual(len(calls), 2)
 
     def test_run_all_failed(self):
         cfg = self.cfg()
