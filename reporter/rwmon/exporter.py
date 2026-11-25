@@ -14,6 +14,7 @@ panel (id из config.toml) и panel_title (подпись).
 их нет ни на графиках, ни в алертах.
 """
 import ipaddress
+import json
 import os
 import re
 import socket
@@ -488,6 +489,7 @@ def _warn(state, key, err):
 class Exporter:
     def __init__(self, cfg):
         self.cfg = cfg
+        self.bot = None                 # bot.Bot, если в config.toml есть [bot]
         self.clients = {p.id: Remnawave(p) for p in cfg.panels}
         self.text = '# нет данных — первый опрос ещё не завершён\n'
         self.state = {}
@@ -561,6 +563,21 @@ class Exporter:
         exporter = self
 
         class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                """Алерты от Grafana для бота (contact point rwmon-bot)."""
+                if self.path.split('?')[0] != '/alert' or exporter.bot is None:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                try:
+                    payload = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))))
+                    exporter.bot.on_alert(payload)
+                    self.send_response(200)
+                except Exception as e:
+                    log('bot', f'алерт от Grafana не обработан: {e}')
+                    self.send_response(500)
+                self.end_headers()
+
             def do_GET(self):
                 if self.path.split('?')[0] != '/metrics':
                     self.send_response(404)

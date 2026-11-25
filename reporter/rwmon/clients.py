@@ -205,6 +205,23 @@ class Prometheus:
         return [(t.get('scrapeUrl', ''), t.get('health', ''), t.get('lastError', ''))
                 for t in data['data']['activeTargets'] if t.get('labels', {}).get('job') == job]
 
+    def query_range(self, expr, start, end, step):
+        """Запрос за период: [(метки, [(время, значение)])]."""
+        req = urllib.request.Request(
+            self.url + '/api/v1/query_range?' + urllib.parse.urlencode(
+                {'query': expr, 'start': f'{start:.0f}', 'end': f'{end:.0f}', 'step': f'{step:.0f}'}),
+            headers={'User-Agent': USER_AGENT})
+        data = json.loads(_open(req, 60))
+        if data.get('status') != 'success':
+            raise ApiError(f'Prometheus: {data.get("error")}')
+        out = []
+        for item in data['data']['result']:
+            try:
+                out.append((item['metric'], [(float(t), float(v)) for t, v in item['values']]))
+            except (KeyError, ValueError, TypeError):
+                pass
+        return out
+
     def by(self, expr, label, at=None):
         """Запрос, результат которого — словарь {значение метки: число}."""
         return {m.get(label, ''): v for m, v in self.query(expr, at)}

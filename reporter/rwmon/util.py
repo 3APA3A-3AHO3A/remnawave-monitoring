@@ -42,9 +42,11 @@ def write_json(path, data):
 
 
 def gb(n):
-    """Байты → «12.3 ГБ» / «850 МБ»."""
+    """Байты → «1.08 ТБ» / «12.3 ГБ» / «850 МБ»."""
     if n is None:
         return '—'
+    if n >= 1e12:
+        return f'{n / 1e12:.2f} ТБ'
     if n >= 1e9:
         return f'{n / 1e9:.1f} ГБ'
     if n >= 1e6:
