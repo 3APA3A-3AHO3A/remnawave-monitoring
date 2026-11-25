@@ -62,11 +62,12 @@ flowchart LR
 Everything starts with a single `docker compose` and listens on `127.0.0.1` only: the `config` container builds the Prometheus, Grafana and checker configs from `config.toml`, Grafana is exposed through nginx. The probe from Russia is optional, in the `probe/` folder.
 
 - `reporter` gets all panel data through the API with a token, so a second panel needs neither its own domain nor access to its `/metrics`.
-- Host checks are done by [xray-checker](https://github.com/kutovoys/xray-checker). The image is built locally from v1.3.1 with four small patches (see [`checker/Dockerfile`](checker/Dockerfile)):
+- Host checks are done by [xray-checker](https://github.com/kutovoys/xray-checker). The image is built locally from v1.3.1 with five small patches (see [`checker/Dockerfile`](checker/Dockerfile)):
   - Hysteria2 with Salamander `packetSize` support;
   - retries: a single random failure (e.g. a dropped WARP connection) is not counted as an outage;
   - the exit IP and the failure reason in metrics (`xray_proxy_exit_ip`, `xray_proxy_error_code`): the IP shows that a request went out directly, bypassing WARP or Psiphon, and the reason (timeout, closed connection, refused, TLS, DNS) goes into the alert message;
-  - connecting through a relay host (`dialerProxy`) — for the "Client from Russia" check.
+  - connecting through a relay host (`dialerProxy`) — for the "Client from Russia" check;
+  - an adapter to the new libxray API — to build with current xray-core and libraries free of known vulnerabilities.
 
   The first build takes a few minutes.
 - GeoCheck is run by the panel itself on every node, just like the GeoCheck button in a node card.

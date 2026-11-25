@@ -1,5 +1,5 @@
-# xray-checker v1.3.1 с четырьмя патчами: Hysteria2 + Salamander packetSize, повторные попытки,
-# IP выхода и причина сбоя в метриках, подключение через посредника.
+# xray-checker v1.3.1 с пятью патчами: Hysteria2 + Salamander packetSize, повторные попытки,
+# IP выхода и причина сбоя в метриках, подключение через посредника, новое API libxray.
 #
 # Официальный xray-checker теряет параметр packetSize у обфускации Salamander.
 # С packetSize ядро Xray работает в режиме Gecko, который несовместим с обычным
@@ -21,6 +21,9 @@
 #   остальные аутбаунды конфига подключаются через него (sockopt.dialerProxy),
 #   сам он отдельно не проверяется. Так работает проверка «Клиент из РФ».
 #
+# xray-libxray-api.patch: libxray под xray-core v26.11 убрал старую функцию разбора ссылок
+#   (base64 на входе и выходе) — переходник на новую share.ConvertShareLinksToXrayJson.
+#
 # Когда исправления появятся в самом xray-checker, этот файл можно удалить
 # и вернуть в docker-compose.yml готовый образ kutovoys/xray-checker.
 
@@ -31,11 +34,21 @@ RUN apk add --no-cache git patch
 RUN git clone --depth 1 --branch ${XC_VERSION} https://github.com/kutovoys/xray-checker /src
 WORKDIR /src
 COPY *.patch /tmp/patches/
-RUN for p in /tmp/patches/*.patch; do patch -p1 < "$p" || exit 1; done && go mod download
+RUN for p in /tmp/patches/*.patch; do patch -p1 < "$p" || exit 1; done
+# Свежие версии библиотек с исправлениями уязвимостей: xray-checker v1.3.1 тянет их старыми
+# (их находит сканер образов). xray-core — по коммиту релиза v26.11.9: схема версий xray-core
+# (v26.x) не совпадает с модулями Go. Сломается сборка или тесты — откатить XRAY_CORE.
+# libxray (разбор ссылок в xray-checker) — коммит, собранный с этим же xray-core.
+ARG XRAY_CORE=676eaf66f8f05d4d558ee7a74b4736623d3feeb9
+ARG LIBXRAY=6e33510350d18a9b906495ff81ae9eb572144ddd
+RUN go get github.com/xtls/xray-core@${XRAY_CORE} github.com/xtls/libxray@${LIBXRAY} \
+        golang.org/x/net@latest golang.org/x/crypto@latest golang.org/x/text@latest \
+        google.golang.org/grpc@latest github.com/klauspost/compress@latest && \
+    go mod tidy && go mod download
 RUN go build -ldflags="-s -w -X main.version=${XC_VERSION}-rwmon" -o /usr/bin/xray-checker .
 
 FROM alpine:3.24
-RUN apk add --no-cache ca-certificates tzdata && \
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates tzdata && \
     adduser -D -u 1000 appuser && \
     mkdir -p /app/geo && chown -R appuser:appuser /app
 WORKDIR /app
