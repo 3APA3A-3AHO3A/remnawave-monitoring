@@ -4,7 +4,7 @@
 
 ## 2.2.1 — 2026-11-25
 **Уязвимости в образах (по Trivy)**
-- xray-checker: свежие версии вшитых Go-библиотек — xray-core v26.11.9 и libxray под него, golang.org/x/net, x/crypto, x/text, grpc, klauspost/compress (xray-checker v1.3.1 тянул старые). Новый патч `xray-libxray-api.patch` — переходник на изменившееся API libxray. Системные пакеты Alpine обновляются при сборке.
+- xray-checker: свежие версии вшитых Go-библиотек — xray-core v26.11.9 и libxray под него, golang.org/x/net, x/crypto, x/text, grpc, klauspost/compress (xray-checker v1.3.1 тянул старые). Новый патч `xray-libxray-api.patch` — переходник на изменившееся API libxray. Учтите: xray-core v26.11 сам отказывается строить VLESS без шифрования (security=none) к публичному адресу — такой хост исключается из проверки с предупреждением в логе. Системные пакеты Alpine обновляются при сборке.
 - reporter: из образа убран pip — мониторинг пишет только на стандартной библиотеке Python, а уязвимости находились именно в pip; системные пакеты Alpine обновляются при сборке.
 
 ## 2.2.0 — 2026-11-25

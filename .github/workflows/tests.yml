@@ -34,5 +34,4 @@ jobs:
       - name: Тесты xray-checker с патчами
         run: |
           docker build --target builder -t rwmon-xray-checker:builder checker
-          docker run --rm rwmon-xray-checker:builder go test -v -run Prunes ./xray/ || true
           docker run --rm rwmon-xray-checker:builder go test ./checker/ ./metrics/ ./subscription/ ./xray/

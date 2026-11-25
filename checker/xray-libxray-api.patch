@@ -50,3 +50,16 @@ index d5fcf49..93c6d5c 100644
  
  		resultBytes, err := base64.StdEncoding.DecodeString(resultBase64)
  		if err != nil {
+diff --git a/xray/config_test.go b/xray/config_test.go
+index 16ae8b3..3a3e8d1 100644
+--- a/xray/config_test.go
++++ b/xray/config_test.go
+@@ -31,7 +31,7 @@ func TestExtractFailingOutboundTag(t *testing.T) {
+ func TestGenerateValidatedConfigPrunesUnbuildable(t *testing.T) {
+ 	good := &models.ProxyConfig{
+ 		Protocol: "vless", Server: "good.example.com", Port: 443, Name: "good",
+-		UUID: "00000000-0000-0000-0000-000000000000", Type: "tcp", Security: "none", Index: 0,
++		UUID: "00000000-0000-0000-0000-000000000000", Type: "tcp", Security: "tls", SNI: "good.example.com", Index: 0,
+ 	}
+ 	bad := &models.ProxyConfig{
+ 		Protocol: "vless", Server: "bad.example.com", Port: 443, Name: "bad",
