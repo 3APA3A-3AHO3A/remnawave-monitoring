@@ -176,9 +176,10 @@ def row(title, y, panels):
 
 # ── сам дашборд ──────────────────────────────────────────────
 
-def build(checks=None):
+def build(checks=None, servers=False):
     """checks — [(id, подпись)] проверок маршрутов из config.toml (render.py собирает дашборд
-    при ./apply.sh). Без них — «Подключение», WARP и Psiphon, как в готовом JSON репозитория."""
+    при ./apply.sh). Без них — «Подключение», WARP и Psiphon, как в готовом JSON репозитория.
+    servers — блок «Серверы нод» по node_exporter ([node_exporter] в config.toml)."""
     global CHECKS
     if checks is not None:
         CHECKS = (('xray', 'Подключение'),) + tuple(checks)
@@ -500,6 +501,70 @@ def build(checks=None):
         c['options']['legend']['sortDesc'] = True
     p.append(row('Сравнение нод', y, compare))
     y += 1
+
+    # 6а. Серверы нод по node_exporter: железо, которого не видно из API панели
+    if servers:
+        def srv(expr):                     # метрики node_exporter → одна серия на ноду
+            return f'max by (panel, node_uuid) ({expr})'
+        cpu = srv('1 - avg by (panel, node_uuid) (rate(node_cpu_seconds_total{mode="idle"}[5m]))')
+        ram = srv('1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes')
+        swap = srv('(1 - node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes) and node_memory_SwapTotal_bytes > 0')
+        disk = srv('1 - node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}')
+        ct = srv('node_nf_conntrack_entries / node_nf_conntrack_entries_limit')
+        free = srv('node_filesystem_avail_bytes{mountpoint="/"}')
+        boot = srv('time() - node_boot_time_seconds')
+        up = srv('up{job="node"}')
+        io = srv('sum by (panel, node_uuid) (rate(node_disk_read_bytes_total[5m]) + rate(node_disk_written_bytes_total[5m]))')
+        pct = lambda n, warn: by_name(n, unit='percentunit', decimals=0, custom__width=70, custom__align='right',
+                                      custom__cellOptions={'type': 'color-text'},
+                                      thresholds={'mode': 'absolute', 'steps': [{'color': 'text', 'value': None},
+                                                                                {'color': YELLOW, 'value': warn},
+                                                                                {'color': RED, 'value': 0.9}]})
+        servers_table = table('Серверы нод', {'h': 12, 'w': 24, 'x': 0, 'y': y + 1}, [
+            node_q(up, 'S'), node_q(cpu, 'C'), node_q(ram, 'M'), node_q(swap, 'W'), node_q(disk, 'D'),
+            node_q(free, 'F'), node_q(ct, 'N'), node_q(io, 'I'), node_q(boot, 'B'),
+        ], [
+            {'id': 'merge', 'options': {}},
+            {'id': 'organize', 'options': {
+                'excludeByName': {'Time': True},
+                'indexByName': {'panel_title': 0, 'node_name': 1, 'Value #S': 2, 'Value #C': 3, 'Value #M': 4,
+                                'Value #W': 5, 'Value #D': 6, 'Value #F': 7, 'Value #N': 8, 'Value #I': 9,
+                                'Value #B': 10},
+                'renameByName': {'panel_title': 'Панель', 'node_name': 'Нода', 'Value #S': 'Метрики',
+                                 'Value #C': 'CPU', 'Value #M': 'RAM', 'Value #W': 'Swap', 'Value #D': 'Диск',
+                                 'Value #F': 'свободно', 'Value #N': 'conntrack', 'Value #I': 'диск I/O',
+                                 'Value #B': 'без перезагрузки'}}},
+        ], [
+            by_name('Панель', custom__width=105, color={'mode': 'fixed', 'fixedColor': GREY},
+                    custom__cellOptions={'type': 'color-text'}),
+            by_name('Нода', custom__minWidth=140),
+            by_name('Метрики', custom__width=75, custom__align='center', custom__cellOptions={'type': 'color-text'},
+                    mappings=[{'type': 'value', 'options': {'1': {'text': 'есть', 'color': GREEN},
+                                                            '0': {'text': 'нет', 'color': RED}}}]),
+            pct('CPU', 0.7), pct('RAM', 0.8), pct('Swap', 0.5), pct('Диск', 0.8), pct('conntrack', 0.7),
+            by_name('свободно', unit='bytes', decimals=1, custom__width=90, custom__align='right'),
+            by_name('диск I/O', unit='Bps', decimals=1, custom__width=95, custom__align='right'),
+            by_name('без перезагрузки', unit='dtdurations', decimals=0, custom__width=120, custom__align='right',
+                    color={'mode': 'fixed', 'fixedColor': GREY}, custom__cellOptions={'type': 'color-text'}),
+        ], desc='Данные node_exporter на самих нодах. CPU — занятость процессора (не load average), '
+                'RAM — занято с учётом кэша, Диск — корневой раздел, conntrack — заполненность таблицы '
+                'соединений ядра (близко к 100% — новые соединения начнут теряться). '
+                'Метрики «нет» — сервер мониторинга не достучался до node_exporter (порт закрыт или служба не работает).',
+            sort=[{'displayName': 'Диск', 'desc': True}])
+        server_graphs = [servers_table] + [
+            timeseries(title, {'h': 8, 'w': 12, 'x': 12 * (i % 2), 'y': y + 13 + 8 * (i // 2)},
+                       [node_ts(expr, 'A')], 'percentunit', legend='table', placement='right', fill=0)
+            for i, (title, expr) in enumerate((('CPU: занятость процессора', cpu), ('Память', ram),
+                                               ('Диск: корневой раздел', disk), ('conntrack: таблица соединений', ct)))
+        ]
+        for c in server_graphs[1:]:          # красная пунктирная линия на 90%
+            c['fieldConfig']['defaults']['thresholds'] = limit_line
+            c['fieldConfig']['defaults']['custom']['thresholdsStyle'] = {'mode': 'dashed'}
+            c['fieldConfig']['defaults']['max'] = 1
+            c['options']['legend']['sortBy'] = 'Last *'
+            c['options']['legend']['sortDesc'] = True
+        p.append(row('Серверы нод: процессор, память, диск', y, server_graphs))
+        y += 1
 
     # 6а. Здоровье самой панели: процессы api / scheduler / processor
     proc = '{{panel_title}} · {{process}}'

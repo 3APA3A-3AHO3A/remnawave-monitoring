@@ -158,6 +158,32 @@ def parse_panel_metrics(text):
     return rows
 
 
+def is_public_ip(ip):
+    """Публичный адрес: у ноды на сервере самой панели адрес внутренний (172.18.0.1) —
+    её node_exporter с сервера мониторинга не достать."""
+    try:
+        return ipaddress.ip_address(ip).is_global
+    except ValueError:
+        return False
+
+
+def node_targets_file(cfg):
+    return os.path.join(os.path.dirname(cfg.links_file) or '.', 'nodes.json')
+
+
+def write_node_targets(cfg, by_panel):
+    """Список нод для Prometheus (file_sd): IP:порт node_exporter с метками panel и node_uuid —
+    по ним графики находят название ноды в rwmon_node_info. Одна нода в двух панелях — один раз."""
+    seen, groups = set(), []
+    for pid in sorted(by_panel):
+        for ip, labels in sorted(by_panel[pid].items()):
+            if ip in seen:
+                continue
+            seen.add(ip)
+            groups.append({'targets': [f'{ip}:{cfg.node_exporter_port}'], 'labels': dict(labels)})
+    return links.write_if_changed(node_targets_file(cfg), json.dumps(groups, ensure_ascii=False))
+
+
 def node_is_watched(node, panel):
     if node.get('isDisabled'):
         return False
@@ -165,9 +191,10 @@ def node_is_watched(node, panel):
     return not (names & panel.exclude_nodes)
 
 
-def collect_panel(panel, rw, lines, state, multi=False, node_ips=None):
+def collect_panel(panel, rw, lines, state, multi=False, node_ips=None, node_targets=None):
     """Опрос одной панели. Ошибка отдельного запроса не мешает остальным.
-    node_ips — сюда пишется «IP ноды → её название», по нему хосты узнают свою ноду."""
+    node_ips — сюда пишется «IP ноды → её название», по нему хосты узнают свою ноду.
+    node_targets — «публичный IP ноды → метки» для node_exporter (Prometheus file_sd)."""
     base = {'panel': panel.id, 'panel_title': panel.title}
     try:
         nodes = rw.nodes()
@@ -193,6 +220,8 @@ def collect_panel(panel, rw, lines, state, multi=False, node_ips=None):
             lines.add('rwmon_node_address', dict(nl, ip=ip), 1)
             if node_ips is not None:
                 node_ips.setdefault(ip, f'{name} · {panel.title}' if multi else name)
+            if node_targets is not None and is_public_ip(ip):
+                node_targets.setdefault(ip, {'panel': panel.id, 'node_uuid': uid})
         lines.add('rwmon_node_connected', nl, 1 if n.get('isConnected') else 0)
         lines.add('rwmon_node_online_users', nl, n.get('usersOnline', 0) if n.get('isConnected') else 0)
         system = n.get('system') or {}
@@ -495,16 +524,19 @@ class Exporter:
         self.state = {}
         self.sites = {}
         self.node_ips = {}            # панель → {IP ноды: название}; при сбое панели остаётся прошлый
+        self.node_targets = {}        # панель → {IP ноды: метки} для node_exporter; при сбое — прошлый
         self.prom = Prometheus(cfg.prometheus_url)
         self.exit_lookup = egress.Lookup(cfg) if egress.needed(cfg) else None
 
     def poll_once(self):
         lines = Lines()
         for p in self.cfg.panels:
-            part, ips = Lines(), {}
+            part, ips, targets = Lines(), {}, {}
             try:
-                if collect_panel(p, self.clients[p.id], part, self.state, multi=self.cfg.multi, node_ips=ips):
+                if collect_panel(p, self.clients[p.id], part, self.state, multi=self.cfg.multi, node_ips=ips,
+                                 node_targets=targets):
                     self.node_ips[p.id] = ips
+                    self.node_targets[p.id] = targets
             except Exception as e:       # неожиданный ответ одной панели не должен замораживать остальные
                 _warn(self.state, p.id + ':crash', f'[{p.title}] ошибка разбора ответа панели: {e!r}')
                 part = Lines()
@@ -516,6 +548,8 @@ class Exporter:
         for ips in self.node_ips.values():
             for ip, name in ips.items():
                 node_ips.setdefault(ip, name)
+        if self.cfg.node_exporter_port:
+            write_node_targets(self.cfg, self.node_targets)
         host_lines(links.HOSTS, lines, self.cfg.panels, node_ips, self.state, by_panel=self.node_ips,
                    check_ids=[c.id for c in self.cfg.route_checks])
         site_lines(list(self.sites.values()), lines)
