@@ -57,7 +57,7 @@ def host_of(address):
 def targets(cfg, clients, state=None):
     """Что проверять: [{'target', 'kind': 'node'|'domain', 'name'}] без повторов.
     Ноды — по IP из панелей (частные адреса пропускаем), домены — адреса и SNI
-    хостов для проверок, сайты из [[site]] и [rkn] extra."""
+    хостов для проверок, сайты из [[site]] и [rkn] extra; без того, что в [rkn] exclude."""
     state = {} if state is None else state
     out, seen = [], set()
 
@@ -92,7 +92,9 @@ def targets(cfg, clients, state=None):
                 add(d, 'node', d)
         else:
             add(d, 'domain', d)
-    return out
+    skip = {x.lower() for x in cfg.rkn_exclude}
+    return [t for t in out if t['target'].lower() not in skip
+            and not {n.lower() for n in t['name'].split(' / ')} & skip]
 
 
 def _get(path):

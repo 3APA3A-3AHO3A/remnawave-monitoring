@@ -77,6 +77,9 @@ class RknTest(unittest.TestCase):
         self.assertNotIn('6.6.6.6', got)
         for d in ('cdn.example.com', 'gateway.example.com', 'extra.example'):
             self.assertEqual(got[d]['kind'], 'domain')
+        cfg.rkn_exclude = ['Sweden 1 R', 'gateway.example.com']   # по названию ноды и по домену
+        got = {t['target'] for t in rkn.targets(cfg, clients)}
+        self.assertEqual(got, {'cdn.example.com', 'extra.example'})
 
     def test_run_alert_and_report(self):
         cfg = self.cfg()

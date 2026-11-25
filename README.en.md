@@ -407,6 +407,7 @@ Every few hours (every 6 by default) the monitoring checks via the open service 
 [rkn]
 interval_hours = 6          # how often; 1 to 168
 extra = ["example.com"]     # more domains or IPs on top of those found automatically
+exclude = ["USA 1"]         # skip: IPs, domains or node names (known things you need no alert for)
 ```
 
 - Matching uses the RKN registry, blocked subnets and CDN lists (antifilter and others) — an unofficial source, results may differ.

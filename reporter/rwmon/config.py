@@ -144,6 +144,7 @@ class Config:
     rkn_enabled: bool = False
     rkn_interval: int = 6 * 3600          # секунд между проверками
     rkn_extra: list = field(default_factory=list)  # ещё домены/IP сверх найденных автоматически
+    rkn_exclude: list = field(default_factory=list)  # что не проверять: IP, домены или названия нод
     # из окружения
     data_dir: str = '/data'
     links_file: str = '/links/monitor.txt'
@@ -427,11 +428,15 @@ def _rkn(r):
     hours = r.get('interval_hours', 6)
     if not isinstance(hours, (int, float)) or not 1 <= hours <= 168:
         raise ConfigError('config.toml: [rkn] interval_hours — число часов от 1 до 168')
-    extra = r.get('extra', [])
-    if not isinstance(extra, list) or not all(isinstance(x, str) and x.strip() for x in extra):
-        raise ConfigError('config.toml: [rkn] extra — список доменов или IP')
+    lists = {}
+    for key in ('extra', 'exclude'):
+        v = r.get(key, [])
+        if not isinstance(v, list) or not all(isinstance(x, str) and x.strip() for x in v):
+            raise ConfigError(f'config.toml: [rkn] {key} — список доменов или IP'
+                              + (' (или названий нод)' if key == 'exclude' else ''))
+        lists[key] = [x.strip() for x in v]
     return {'rkn_enabled': bool(r.get('enabled', True)), 'rkn_interval': int(hours * 3600),
-            'rkn_extra': [x.strip() for x in extra]}
+            'rkn_extra': lists['extra'], 'rkn_exclude': lists['exclude']}
 
 
 def load(path=CONFIG_PATH):
