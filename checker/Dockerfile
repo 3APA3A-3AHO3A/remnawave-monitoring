@@ -31,11 +31,19 @@ RUN apk add --no-cache git patch
 RUN git clone --depth 1 --branch ${XC_VERSION} https://github.com/kutovoys/xray-checker /src
 WORKDIR /src
 COPY *.patch /tmp/patches/
-RUN for p in /tmp/patches/*.patch; do patch -p1 < "$p" || exit 1; done && go mod download
+RUN for p in /tmp/patches/*.patch; do patch -p1 < "$p" || exit 1; done
+# Свежие версии библиотек с исправлениями уязвимостей: xray-checker v1.3.1 тянет их старыми
+# (их находит сканер образов). xray-core — по коммиту релиза v26.11.9: схема версий xray-core
+# (v26.x) не совпадает с модулями Go. Сломается сборка или тесты — откатить XRAY_CORE.
+ARG XRAY_CORE=676eaf66f8f05d4d558ee7a74b4736623d3feeb9
+RUN go get github.com/xtls/xray-core@${XRAY_CORE} \
+        golang.org/x/net@latest golang.org/x/crypto@latest golang.org/x/text@latest \
+        google.golang.org/grpc@latest github.com/klauspost/compress@latest && \
+    go mod tidy && go mod download
 RUN go build -ldflags="-s -w -X main.version=${XC_VERSION}-rwmon" -o /usr/bin/xray-checker .
 
 FROM alpine:3.24
-RUN apk add --no-cache ca-certificates tzdata && \
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates tzdata && \
     adduser -D -u 1000 appuser && \
     mkdir -p /app/geo && chown -R appuser:appuser /app
 WORKDIR /app
