@@ -41,11 +41,14 @@ def users(d, extras, pid):
 
 
 def _longest(d, cfg):
-    """Самый долгий сбой хоста за сутки: (название, минуты) или None."""
-    best = None
+    """Самый долгий сбой за сутки: (название, минуты) или None. Один сервер в двух панелях — одной строкой."""
+    hosts, best = {}, None
     for pid, host, name, check, mins in d['checks']:
-        if not best or mins > best[1]:
-            best = (f'{merged_name([(pid, host)], cfg)}', mins)
+        h = hosts.setdefault((name or f'{pid}:{host}', check), {'hosts': [], 'mins': mins})
+        h['hosts'].append((pid, host))
+    for h in hosts.values():
+        if not best or h['mins'] > best[1]:
+            best = (merged_name(h['hosts'], cfg), h['mins'])
     for (pid, uid), mins in d['offline'].items():
         info = d['info'].get((pid, uid))
         if info and mins >= 1 and (not best or mins > best[1]):
@@ -428,7 +431,7 @@ def full_html(d, extras, geo_run, rkn_data, cfg, tl=None, rkn_muted=lambda item:
     cert = _cert_min(d)
     geo = _geo_counts(geo_run)
     cards = [('онлайн сейчас', str(online), f'нод: {len(all_nodes)}'),
-             ('трафик к клиентам / от клиентов', f'{gb(down)} / {gb(up)}', 'за сутки'),
+             ('трафик ↓ / ↑', f'{gb(down)} / {gb(up)}', 'к клиентам / от клиентов, за сутки'),
              ('сбоев за сутки', str(len(problems)), f'и коротких: {short}' if short else 'дольше пары минут'),
              ('ближайший сертификат', f'{cert} дн.' if cert is not None else '—', 'сайты и панели'),
              ('GeoCheck', f'{geo["changed"]} изм.' if geo else '—',

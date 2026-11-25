@@ -98,7 +98,7 @@ class ReportTest(unittest.TestCase):
         tl = report.timeline(Prom(), data(), self.cfg, end=1_000_000)
         html = report.full_html(data(), {}, GEO, RKN, self.cfg, tl,
                                 rkn_muted=lambda x: x['target'] == '184.174.96.32')
-        for text in ('Мониторинг ·', 'онлайн сейчас', '373.0 ГБ / 15.9 ГБ', 'LTE 3 · Основная · Подключение',
+        for text in ('Мониторинг ·', 'онлайн сейчас', '373.0 ГБ / 15.9 ГБ', 'трафик ↓ / ↑', 'LTE 3 · Основная · Подключение',
                      'class="seg"', 'Ноды · Основная', 'сеть сервера ↓ / ↑', '241.0 ГБ / 236.0 ГБ',
                      'psiphon-out', 'GeoCheck — как сервисы видят ноды', 'YouTube: PL → UA',
                      'Google видит RU', 'не выполнился', 'Все сервисы по всем нодам', 'Netflix',
