@@ -5,6 +5,7 @@
   check     — проверить доступ к панелям, Prometheus и Telegram
   links     — обновить список хостов для проверок прямо сейчас
   geocheck  — прогнать GeoCheck сейчас (--send — сразу отправить сводку)
+  rkn       — проверить IP нод и домены по спискам блокировок РФ сейчас (cheburcheck.ru)
   report    — собрать ежедневную сводку сейчас (--dry-run — только показать)
   migrate   — напечатать config.toml из старого .env (переход с версии для одной панели)
   migrate-checks — напечатать блоки [[check]] вместо [checks] url_warp / url_psiphon (переход на 2.0)
@@ -18,7 +19,7 @@ import threading
 import time
 import urllib.request
 
-from . import config, daily, egress, exporter, geocheck, links
+from . import config, daily, egress, exporter, geocheck, links, rkn
 from .clients import Prometheus, Remnawave, Telegram
 from .util import log, now, read_json, write_json
 
@@ -85,6 +86,14 @@ def run_forever(cfg):
             next_links = time.time() + cfg.links_interval
         if due(state, 'geocheck', cfg.geocheck_time):
             task('geocheck', lambda: geocheck.run(cfg, clients))
+        if cfg.rkn_enabled and time.time() >= state.get('rkn_next', 0):
+            try:                                  # блокировки РФ — раз в rkn_interval
+                rkn.run(cfg, clients)
+                state['rkn_next'] = time.time() + cfg.rkn_interval
+            except Exception as e:
+                log('rkn', f'ошибка: {e} — повторю через {RETRY_AFTER // 60} мин')
+                state['rkn_next'] = time.time() + RETRY_AFTER
+            write_json(state_path, state)
         if due(state, 'report', cfg.report_time):
             today = now().strftime('%Y-%m-%d')
             parts = state.setdefault('report_parts', {})
@@ -157,6 +166,16 @@ def check(cfg):
     print('Сервер')
     n = 1 + len(cfg.route_checks) + (1 if cfg.ru_via else 0)
     step(f'порты проверок 21000–{20999 + 1000 * n}', lambda: ports_check(count=n))
+
+    if cfg.rkn_enabled:
+        print('Блокировки РФ ([rkn])')
+
+        def rkn_status():
+            st = rkn._get('/status')
+            last = rkn.load_last(cfg)
+            return (f'cheburcheck.ru отвечает, базы от {str(st.get("last_update", "?"))[:16].replace("T", " ")} UTC'
+                    + (f'; последняя проверка {last["time"]} UTC' if last else '; проверок ещё не было'))
+        step('cheburcheck.ru', rkn_status)
 
     print('Prometheus')
     step('метрики панелей от reporter', reporter_metrics)
@@ -387,6 +406,9 @@ def main(argv):
             daily.send(Prometheus(cfg.prometheus_url), clients, cfg)
         else:
             print('\n'.join(geocheck.telegram_section(geocheck.load_last(cfg))))
+    elif cmd == 'rkn':
+        links.refresh(cfg, clients)               # домены хостов — из свежего списка
+        print('\n'.join(rkn.telegram_section(rkn.run(cfg, clients))))
     elif cmd == 'report':
         daily.send(Prometheus(cfg.prometheus_url), clients, cfg, dry_run='--dry-run' in argv)
     else:

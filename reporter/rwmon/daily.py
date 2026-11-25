@@ -5,7 +5,7 @@
 """
 from datetime import timedelta
 
-from . import geocheck
+from . import geocheck, rkn
 from .clients import ApiError, Telegram
 from .util import esc, gb, log, minutes, now, promql_regex
 
@@ -157,6 +157,8 @@ def build_text(d, extras, geo_run, cfg):
                   '<code>docker compose exec reporter python -m rwmon check</code>', '']
 
     lines += geocheck.telegram_section(geo_run)
+    if cfg.rkn_enabled:
+        lines += rkn.telegram_section(rkn.load_last(cfg))
     lines.append('')
 
     # Сбои

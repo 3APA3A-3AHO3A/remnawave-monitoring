@@ -26,7 +26,7 @@ import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import egress, links
+from . import egress, links, rkn
 from .clients import DNS_RETRY_DELAY, ApiError, Prometheus, Remnawave, is_dns_error
 from .util import log, read_json, resolve_ip
 
@@ -56,6 +56,8 @@ HELP = {
     'rwmon_geocheck_info': ('gauge', 'GeoCheck: IP, сеть, тип IP ноды'),
     'rwmon_geocheck_risk': ('gauge', 'GeoCheck: риск IP, 0–100'),
     'rwmon_geocheck_timestamp_seconds': ('gauge', 'Когда был последний GeoCheck'),
+    'rwmon_rkn_blocked': ('gauge', 'Блокировки РФ (cheburcheck): IP ноды или домен в списках (1) или нет (0)'),
+    'rwmon_rkn_timestamp_seconds': ('gauge', 'Когда была последняя проверка блокировок РФ'),
     'rwmon_site_up': ('gauge', 'Сайт открывается (1) или нет (0)'),
     'rwmon_site_status_code': ('gauge', 'HTTP-код ответа сайта'),
     'rwmon_site_response_seconds': ('gauge', 'Время ответа сайта'),
@@ -305,6 +307,19 @@ def exit_lines(prom, lookup, lines, state):
                                       'as_org': org}, 1)
 
 
+def rkn_lines(data, lines):
+    """Блокировки РФ: по строке на каждый проверенный адрес; name — как подписать в алерте."""
+    if not data:
+        return
+    for x in data.get('items') or []:
+        if not x.get('ok'):
+            continue
+        name = x['name'] if x['name'] == x['target'] else f'{x["name"]} · {x["target"]}'
+        lines.add('rwmon_rkn_blocked', {'target': x['target'], 'kind': x['kind'], 'name': name,
+                                        'why': x.get('why', '')}, 1 if x.get('blocked') else 0)
+    lines.add('rwmon_rkn_timestamp_seconds', {}, data.get('ts'))
+
+
 def geocheck_lines(run, lines, cfg):
     """Последний GeoCheck в Prometheus — для таблиц «кто как видит ноду» в Grafana."""
     if not run:
@@ -508,6 +523,8 @@ class Exporter:
             geocheck_lines(self._geocheck(), lines, self.cfg)
         except Exception as e:
             _warn(self.state, 'geocheck', f'GeoCheck для Grafana: {e!r}')
+        if self.cfg.rkn_enabled:
+            rkn_lines(rkn.load_last(self.cfg), lines)
         self.text = lines.text()
 
     def _geocheck(self):

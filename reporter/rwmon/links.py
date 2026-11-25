@@ -25,6 +25,7 @@ reporter отдаёт в Prometheus метрикой rwmon_host — по ней 
 жив ли сервер.
 """
 import copy
+import ipaddress
 import json
 import os
 import tempfile
@@ -294,6 +295,7 @@ def panel_links(rw, panel, route_checks=(), bypass=False, state=None):
 # checks — какие проверки маршрутов ([[check]]) нужны этому хосту в этой панели.
 # name — название в проверке (метка name у xray_proxy_status). Читает exporter.
 HOSTS = []
+DOMAINS = []       # домены, на которые ходят клиенты: адреса и SNI хостов (для проверки блокировок РФ)
 
 
 def node_map(cfg, clients, state, need_profiles=True):
@@ -398,6 +400,29 @@ def combine(per_panel, route_checks=(), nodes=(), state=None):
     return list(checks.values()), hosts
 
 
+def client_domains(per_panel):
+    """Домены из адресов и SNI хостов всех панелей — без IP, по алфавиту."""
+    out = set()
+    for _, entries in per_panel:
+        for e in entries:
+            ob = e['outbound']
+            ss = ob.get('streamSettings') or {}
+            sec = ss.get('realitySettings') or ss.get('tlsSettings') or {}
+            for name in (outbound_address(ob).rsplit(':', 1)[0].strip('[]'), sec.get('serverName')):
+                name = str(name or '').strip().lower().rstrip('.')
+                if name and not _is_ip(name) and '.' in name:
+                    out.add(name)
+    return sorted(out)
+
+
+def _is_ip(s):
+    try:
+        ipaddress.ip_address(s)
+        return True
+    except ValueError:
+        return False
+
+
 def ru_configs(checks, per_panel, via_names, only=()):
     """Конфиги проверки «Клиент из РФ»: хост + аутбаунд rwmon-via — первый хост из via_names
     на другом адресе (сам себя хост через себя не проверяет). only — названия хостов,
@@ -445,7 +470,7 @@ def write_probe_targets(cfg, checks):
 def refresh(cfg, clients, state=None):
     """Обновить списки проверок по всем панелям. Если панель не ответила —
     её хосты берём из прошлого удачного списка, чтобы проверки не пропали."""
-    global HOSTS
+    global HOSTS, DOMAINS
     state = {} if state is None else state
     folder = os.path.dirname(cfg.links_file) or '.'
     per_panel = []
@@ -468,6 +493,7 @@ def refresh(cfg, clients, state=None):
     need_nodes = any(c.profiles for c in cfg.route_checks)
     nodes = node_map(cfg, clients, state) if need_nodes else []
     checks, HOSTS = combine(per_panel, cfg.route_checks, nodes, state)
+    DOMAINS = client_domains(per_panel)
     full = [c['config'] for c in checks if not c['lite']]
     lite = [c['config'] for c in checks if c['lite']]
     dump = lambda configs: json.dumps(configs, ensure_ascii=False, indent=1) + '\n'
