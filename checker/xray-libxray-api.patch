@@ -1,0 +1,52 @@
+diff --git a/subscription/parser.go b/subscription/parser.go
+index d5fcf49..93c6d5c 100644
+--- a/subscription/parser.go
++++ b/subscription/parser.go
+@@ -17,7 +17,7 @@ import (
+ 	"xray-checker/logger"
+ 	"xray-checker/models"
+ 
+-	libXray "github.com/xtls/libxray"
++	"github.com/xtls/libxray/share"
+ )
+ 
+ const (
+@@ -41,6 +41,20 @@ func NewParser() *Parser {
+ 	return &Parser{}
+ }
+ 
++// convertShareLinks — прежний вызов libXray.ConvertShareLinksToXrayJson (base64 на входе и на
++// выходе, ответ {success, data}) поверх нового API libxray (share.ConvertShareLinksToXrayJson
++// с обычным текстом): libxray под xray-core v26.11 убрал старую обёртку (rwmon).
++func convertShareLinks(linksBase64 string) string {
++	resp := libXrayResponse{}
++	if links, err := base64.StdEncoding.DecodeString(linksBase64); err == nil {
++		if data, err := share.ConvertShareLinksToXrayJson(string(links), ""); err == nil {
++			resp.Success, resp.Data = true, data
++		}
++	}
++	out, _ := json.Marshal(resp)
++	return base64.StdEncoding.EncodeToString(out)
++}
++
+ type libXrayResponse struct {
+ 	Success bool            `json:"success"`
+ 	Data    json.RawMessage `json:"data"`
+@@ -615,7 +629,7 @@ func parseProxyURI(line string) *models.ProxyConfig {
+ func (p *Parser) parseViaLibXray(cleanedData []byte, originalData map[string]*originalLinkData) []*models.ProxyConfig {
+ 	base64Data := base64.StdEncoding.EncodeToString(cleanedData)
+ 
+-	resultBase64 := libXray.ConvertShareLinksToXrayJson(base64Data)
++	resultBase64 := convertShareLinks(base64Data)
+ 
+ 	resultBytes, err := base64.StdEncoding.DecodeString(resultBase64)
+ 	if err != nil {
+@@ -650,7 +664,7 @@ func (p *Parser) parseLineByLine(cleanedData []byte, originalData map[string]*or
+ 		}
+ 
+ 		lineBase64 := base64.StdEncoding.EncodeToString([]byte(line))
+-		resultBase64 := libXray.ConvertShareLinksToXrayJson(lineBase64)
++		resultBase64 := convertShareLinks(lineBase64)
+ 
+ 		resultBytes, err := base64.StdEncoding.DecodeString(resultBase64)
+ 		if err != nil {
