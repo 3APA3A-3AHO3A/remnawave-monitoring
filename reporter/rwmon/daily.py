@@ -44,6 +44,11 @@ def collect(prom, cfg):
         'peak': _by(prom, 'max_over_time(rwmon_node_online_users[24h])', *pn),
         'traffic': _by(prom, 'sum by (panel, node_uuid) (increase(rwmon_node_inbound_upload_bytes[24h])'
                              ' + increase(rwmon_node_inbound_download_bytes[24h]))', *pn),
+        # трафик клиентов по направлениям и сеть сервера ноды (всё, что принял и отдал сервер)
+        'down': _by(prom, 'sum by (panel, node_uuid) (increase(rwmon_node_inbound_download_bytes[24h]))', *pn),
+        'up': _by(prom, 'sum by (panel, node_uuid) (increase(rwmon_node_inbound_upload_bytes[24h]))', *pn),
+        'net_rx': _by(prom, 'sum by (panel, node_uuid) (increase(rwmon_node_network_rx_bytes[24h]))', *pn),
+        'net_tx': _by(prom, 'sum by (panel, node_uuid) (increase(rwmon_node_network_tx_bytes[24h]))', *pn),
         'offline': _by(prom, 'sum by (panel, node_uuid) '
                              '(sum_over_time((rwmon_node_connected == bool 0)[24h:1m]))', *pn),
         'outbound': {},
@@ -212,32 +217,52 @@ def _node_name(info, cfg):
 
 
 def send(prom, clients, cfg, dry_run=False, done=None):
-    """Отправить сводку во все чаты. done — список уже доставленных частей
-    («чат:text», «чат:doc») за сегодня: при повторе после сбоя они не дублируются."""
+    """Отправить сводку во все чаты: короткое сообщение + полный HTML-отчёт файлом.
+    С ботом ([bot]) — rich-сообщение с раскрывающимися блоками, без бота — как раньше.
+    done — список уже доставленных частей («чат:text», «чат:doc») за сегодня:
+    при повторе после сбоя они не дублируются."""
+    from . import alertfmt, bot as botmod, report
+    from .config import Telegram as TgConfig
+    if cfg.bot and not botmod.daily_enabled(cfg) and not dry_run:
+        log('report', 'сводка выключена в /settings бота — не отправляю')
+        return None, None
     data = collect(prom, cfg)
     extras = {p.id: panel_extras(clients[p.id]) for p in cfg.panels}
     geo_run = geocheck.load_last(cfg)
     today = now().strftime('%Y-%m-%d')
     if geo_run and geo_run.get('date') != today:
         geo_run = None                    # вчерашний прогон в сегодняшнюю сводку не берём
-    text = build_text(data, extras, geo_run, cfg)
-    html = None
-    if geo_run and geo_run.get('results'):
-        html = geocheck.html_report(geo_run, cfg, f'GeoCheck · {today}')
+    rkn_data = rkn.load_last(cfg) if cfg.rkn_enabled else None
+    muted = botmod.rkn_muted(cfg)
+    try:
+        tl = report.timeline(prom, data, cfg)
+    except Exception as e:                # без ленты отчёт всё равно нужен
+        log('report', f'лента сбоев не собралась: {e}')
+        tl = None
+    html = report.full_html(data, extras, geo_run, rkn_data, cfg, tl, muted)
+    fname = f'monitoring-{today}.html'
+    body = report.summary_rich(data, extras, geo_run, rkn_data, cfg, muted) if cfg.bot else None
+    text = alertfmt.plain(body) if body else build_text(data, extras, geo_run, cfg)
     if dry_run:
         print(text)
-        if html:
-            print(f'\n[+ файл geocheck-{today}.html, {len(html) // 1024} КБ]')
+        print(f'\n[+ файл {fname}, {len(html) // 1024} КБ]')
         return text, html
     done = [] if done is None else done
     errors = []
-    for tg in cfg.chats():
+    chats = {}
+    for tg in cfg.chats():                 # с ботом — один бот на все чаты
+        tg = TgConfig(cfg.bot.token, tg.chat_id, tg.topic_id) if cfg.bot else tg
+        chats.setdefault((tg.chat_id, tg.topic_id), tg)
+    for tg in chats.values():
         chat = f'{tg.chat_id}/{tg.topic_id}'
-        bot = Telegram(tg)
-        parts = [('text', lambda: bot.send(text))]
-        if html:
-            parts.append(('doc', lambda: bot.send_document(f'geocheck-{today}.html', html,
-                                                           caption='🌍 Полный отчёт GeoCheck')))
+        sender = Telegram(tg)
+        if cfg.bot:
+            api = botmod.Api(cfg.bot.token)
+            send_text = (lambda api=api, tg=tg: api.send(tg.chat_id, tg.topic_id, body, []))
+        else:
+            send_text = (lambda sender=sender: sender.send(text))
+        parts = [('text', send_text),
+                 ('doc', lambda sender=sender: sender.send_document(fname, html, caption='📄 Полный отчёт за сутки'))]
         for part, fn in parts:
             key = f'{chat}:{part}'
             if key in done:
@@ -250,5 +275,5 @@ def send(prom, clients, cfg, dry_run=False, done=None):
                 break                     # файл без текста не шлём — повторим оба позже
     if errors:
         raise ApiError('не доставлено: ' + '; '.join(errors))
-    log('report', f'сводка отправлена в {len(cfg.chats())} чат(а)')
+    log('report', f'сводка отправлена в {len(chats)} чат(а)')
     return text, html

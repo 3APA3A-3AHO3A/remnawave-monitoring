@@ -4,6 +4,7 @@ import os
 import re
 import tomllib
 from dataclasses import dataclass, field
+from zoneinfo import ZoneInfo
 
 CONFIG_PATH = os.environ.get('RWMON_CONFIG', '/config/config.toml')
 
@@ -21,6 +22,16 @@ class Telegram:
     @property
     def key(self):
         return (self.bot_token, self.chat_id, self.topic_id)
+
+
+@dataclass
+class Bot:
+    """Свой бот мониторинга: алерты с кнопками, /status, /mutes, /settings.
+    Отдельный от бота панели и других сервисов: кнопки бот получает через getUpdates,
+    а два слушателя одного бота отнимают друг у друга нажатия."""
+    token: str
+    admins: set                 # Telegram ID, кому можно нажимать кнопки и команды
+    timezone: str = 'UTC'       # для тихих часов
 
 
 @dataclass
@@ -145,6 +156,7 @@ class Config:
     rkn_interval: int = 6 * 3600          # секунд между проверками
     rkn_extra: list = field(default_factory=list)  # ещё домены/IP сверх найденных автоматически
     rkn_exclude: list = field(default_factory=list)  # что не проверять: IP, домены или названия нод
+    bot: object = None              # Bot или None — тогда алерты шлёт сама Grafana, без кнопок
     # из окружения
     data_dir: str = '/data'
     links_file: str = '/links/monitor.txt'
@@ -301,6 +313,7 @@ def parse(data, env=os.environ):
         ru_via=_ru_via(data.get('ru') or {}),
         ru_hosts=_ru_via(data.get('ru') or {}, 'hosts', required=False),
         **_rkn(data.get('rkn') or {}),
+        bot=_bot(data.get('bot')),
         data_dir=env.get('DATA_DIR', '/data'),
         links_file=env.get('LINKS_FILE', '/links/monitor.txt'),
         links_file_xray=env.get('LINKS_FILE_XRAY', '/links/monitor-xray.txt'),
@@ -437,6 +450,24 @@ def _rkn(r):
         lists[key] = [x.strip() for x in v]
     return {'rkn_enabled': bool(r.get('enabled', True)), 'rkn_interval': int(hours * 3600),
             'rkn_extra': lists['extra'], 'rkn_exclude': lists['exclude']}
+
+
+def _bot(b):
+    if not b:
+        return None
+    token = str(b.get('token', '')).strip()
+    if not re.fullmatch(r'\d+:[\w-]{30,}', token):
+        raise ConfigError('config.toml: [bot] token — токен бота от @BotFather вида 123456:ABC…')
+    admins = b.get('admins', [])
+    if not isinstance(admins, list) or not admins or not all(
+            isinstance(a, int) or (isinstance(a, str) and a.strip().isdigit()) for a in admins):
+        raise ConfigError('config.toml: [bot] admins — список Telegram ID, например [123456789]')
+    tz = str(b.get('timezone', 'UTC')).strip() or 'UTC'
+    try:
+        ZoneInfo(tz)
+    except Exception:
+        raise ConfigError(f'config.toml: [bot] timezone = "{tz}" — нужен часовой пояс вида Europe/Moscow') from None
+    return Bot(token, {int(a) for a in admins}, tz)
 
 
 def load(path=CONFIG_PATH):

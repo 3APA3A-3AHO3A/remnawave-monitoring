@@ -118,6 +118,26 @@ The reason in the line: for hosts — timeout, closed connection, refused, TLS o
 
 A node disconnecting from the panel is not tracked here: Remnawave sends a webhook for that itself.
 
+#### Bot with buttons (`[bot]`)
+
+With a `[bot]` block, alerts are sent by a dedicated monitoring bot and every message gets buttons:
+
+- **🔕 1 h / 6 h / 24 h** and **Mute forever** — silence the hosts in this message. The message is updated in every chat: "Muted until 05:20 — Alex" plus a "Restore notifications" button. Muting is shared across chats: when one admin mutes, everyone sees it. Failures of other hosts under the same rule still arrive;
+- **Details** — in the same message: the rule, when it started, how long it lasts, the reason, the address, how long the check failed over the last 24 h, what to do. "Back" restores the alert;
+- **Open in Grafana** — if Grafana is reachable by domain (`GRAFANA_DOMAIN`).
+
+Commands (only for `admins`):
+
+| Command | Shows |
+|---|---|
+| `/status` | nodes per panel, hosts per check, websites, blocklists, how many alerts are firing; "What is firing" lists them, muted ones marked |
+| `/mutes` | what is muted, until when and by whom; restore one by one or all |
+| `/settings` | turn alert groups on or off (nodes and hosts, check from Russia, blocklists, panels, websites and certificates, the monitoring itself) and the daily report; how often to remind while it is still broken (30 min – 6 h); quiet hours — messages arrive without sound |
+
+Messages are Telegram rich messages (tables, collapsible blocks, time in the reader's time zone). If the client or Telegram rejects them, the same goes out as a regular message with buttons. Mutes and settings are stored by reporter (`bot.json` in its volume) and survive restarts; Grafana still sees every alert as is.
+
+The bot needs its own token: it receives buttons via `getUpdates`, and two listeners on one bot steal each other's clicks. The panel's bot or IP Limiter's bot won't do; a bot that only sends (for example, a backup bot) will. `rwmon check` reports if the bot has a webhook set.
+
 </details>
 
 <details>
@@ -155,7 +175,9 @@ At the configured time the daily report goes to all chats:
 - failures of the day: one server in two panels — one line, failures shorter than `short_minutes` (2 min) — one line "and N more short ones", minutes when the probe from Russia could not reach a third of the hosts at once count as a probe failure, not a host failure;
 - per panel: users, new and expired during the day, peak clients and traffic per node.
 
-An HTML file with the full GeoCheck table for all nodes is attached to the report.
+With the bot (`[bot]`) the report is short: a table of panels (online, last 24 h, traffic to clients ↓ and from clients ↑), failures in one line with the longest one, websites and the nearest certificate, GeoCheck and blocklists. Details are in collapsible blocks: nodes of each panel (clients now / peak, ↓, ↑, outbounds), failures as a list, GeoCheck and blocklists. A blocklist hit muted in the bot is not counted. The report can be turned off in `/settings`.
+
+One HTML report for the day is attached: cards with the key numbers, a timeline of failures, nodes of each panel with client traffic in both directions, outbounds and server network (received / sent), GeoCheck (country per service, changes, unavailable services, the full table and per-node breakdown — collapsed), websites with certificates and blocklists. The report follows the light or dark theme.
 
 </details>
 

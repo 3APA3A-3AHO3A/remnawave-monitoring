@@ -432,7 +432,14 @@ def receivers(cfg):
     return out
 
 
+BOT_REPEAT_MINUTES = 30     # с ботом Grafana повторяет часто, а как часто напоминать в чат — решает бот
+
+
 def contact_points(cfg):
+    if cfg.bot:                 # алерты принимает reporter и рассылает их своим ботом, с кнопками
+        return {'apiVersion': 1, 'contactPoints': [{'orgId': 1, 'name': 'rwmon-bot', 'receivers': [{
+            'uid': 'rwmon-bot', 'type': 'webhook', 'disableResolveMessage': False,
+            'settings': {'url': f'http://127.0.0.1:{cfg.reporter_port}/alert', 'httpMethod': 'POST'}}]}]}
     items = []
     for name, uid, tg in receivers(cfg).values():
         settings = {'bottoken': tg.bot_token, 'chatid': tg.chat_id,
@@ -452,8 +459,14 @@ def policies(cfg):
     поэтому в каждый чат приходит одно сообщение, а не два.
     Пока алерт горит, он повторяется раз в repeat_minutes; правила с меткой
     repeat=daily (сертификат) — раз в сутки."""
-    rcv = receivers(cfg)
     daily = [{'object_matchers': [['repeat', '=', 'daily']], 'repeat_interval': '24h'}]
+    if cfg.bot:
+        return {'apiVersion': 1, 'policies': [{
+            'orgId': 1, 'receiver': 'rwmon-bot',
+            'group_by': ['grafana_folder', 'alertname'],
+            'group_wait': '30s', 'group_interval': '2m', 'repeat_interval': f'{BOT_REPEAT_MINUTES}m',
+            'routes': daily}]}
+    rcv = receivers(cfg)
     routes = [{'receiver': name, 'object_matchers': [['alertname', '=~', '.+']], 'continue': True,
                'routes': daily} for name, _, _ in rcv.values()]
     return {'apiVersion': 1, 'policies': [{

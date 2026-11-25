@@ -19,7 +19,7 @@ import threading
 import time
 import urllib.request
 
-from . import config, daily, egress, exporter, geocheck, links, rkn
+from . import bot, config, daily, egress, exporter, geocheck, links, rkn
 from .clients import Prometheus, Remnawave, Telegram
 from .util import log, now, read_json, write_json
 
@@ -50,6 +50,9 @@ def pinger(url):
 
 def run_forever(cfg):
     metrics = exporter.Exporter(cfg)
+    if cfg.bot:                           # алерты с кнопками — своим ботом
+        metrics.bot = bot.Bot(cfg)
+        metrics.bot.start()
     metrics.start()
     clients = metrics.clients
     prom = Prometheus(cfg.prometheus_url)
@@ -176,6 +179,19 @@ def check(cfg):
             return (f'cheburcheck.ru отвечает, базы от {str(st.get("last_update", "?"))[:16].replace("T", " ")} UTC'
                     + (f'; последняя проверка {last["time"]} UTC' if last else '; проверок ещё не было'))
         step('cheburcheck.ru', rkn_status)
+
+    if cfg.bot:
+        print('Бот мониторинга ([bot])')
+
+        def bot_status():
+            api = bot.Api(cfg.bot.token)
+            me = api.call('getMe', {})
+            hook = api.call('getWebhookInfo', {}).get('url')
+            if hook:
+                raise RuntimeError(f'у @{me.get("username")} настроен webhook ({hook}) — кнопки до reporter '
+                                   'не дойдут; нужен бот, который больше никто не использует')
+            return f'@{me.get("username")}, админов: {len(cfg.bot.admins)}, чатов: {len({(t.chat_id, t.topic_id) for t in cfg.chats()})}'
+        step('бот', bot_status)
 
     print('Prometheus')
     step('метрики панелей от reporter', reporter_metrics)
