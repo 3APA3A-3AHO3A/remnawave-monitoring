@@ -349,6 +349,12 @@ def rules(cfg):
               'память растёт день за днём — это утечка, панель скоро упадёт; поможет перезапуск '
               '(docker compose restart remnawave) и обновление панели.',
               'all', severity='warning', window=1800),
+        *([_rule('rwmon-rkn-blocked', 'Блокировка РФ: адрес в списках', '(rwmon_rkn_blocked == 1)',
+                 '0m', 'IP ноды или домен попал в списки блокировок РФ', 'Адрес пропал из списков блокировок РФ',
+                 'Проверка cheburcheck.ru (раз в несколько часов) нашла IP ноды или домен сервиса в реестре '
+                 'РКН, в заблокированной подсети или CDN. Клиенты из России, скорее всего, до него не достучатся.',
+                 'all', reason='{{ $labels.why }}')]
+          if cfg.rkn_enabled else []),
         _rule('rwmon-reporter-down', 'reporter не отвечает', '(up{job="reporter"} == 0) * 0 + 1', '3m',
               'reporter не отвечает — данные панелей не собираются', 'reporter снова работает',
               'Посмотрите журнал: docker compose logs --tail 50 reporter', 'all'),

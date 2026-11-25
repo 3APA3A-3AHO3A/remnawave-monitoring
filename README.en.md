@@ -41,6 +41,7 @@ Monitoring for [Remnawave](https://docs.rw) nodes: Grafana dashboards, alerts an
 - **Route checks from the config** — `[[check]]` blocks: what to open through a host and where the exit must be (not the node IP, the node IP, a country, a network). Hosts are picked by the node's config profile. Details — [Route checks](#route-checks).
 - **Multiple panels** — each with its own chat and topic. Identical hosts in different panels are checked once.
 - **Probe from Russia** — a blackbox exporter on a Russian node reveals IP blocking that is invisible from Europe.
+- **Russian blocklists** — every few hours all node IPs and the service's domains are checked against Russian blocklists via [cheburcheck.ru](https://cheburcheck.ru): the RKN registry, blocked subnets and CDNs. Details — [Russian blocklists](#russian-blocklists).
 - **Websites and an external watchdog** — checks for your sales site and subscription page, certificate expiry, and a Healthchecks.io ping in case the monitoring server itself goes down.
 
 ## How it works
@@ -106,6 +107,7 @@ The reason in the line: for hosts — timeout, closed connection, refused, TLS o
 | Panel process restarted | the process uptime was reset — a panel update or a crash | all chats |
 | Panel uses too much memory | a panel process uses more than `panel_memory_mb` (1024 MB) for 15 minutes | all chats |
 | Host doesn't work from Russia | `[ru]`: from Russia (through the relay host) the host fails, while from the monitoring server straight to the node it works. The server is alive: the entry (relay, CDN) is broken or blocked in Russia. With `[ru]`, "Host does not accept clients" fires only if both from Russia and directly fail | all chats |
+| Russian blocklist: address listed | `[rkn]`: a node IP or a service domain is in the RKN registry, a blocked subnet or a CDN (per cheburcheck.ru). The message says what was found | all chats |
 | Host unreachable from Russia | none of the probes in Russia can connect to the host — looks like IP blocking | all chats |
 | Website down / from Russia | a page from `[[site]]` does not respond from the monitoring server or from the probes in Russia | all chats |
 | Certificate expires soon | the site has less than 14 days left | all chats |
@@ -392,6 +394,26 @@ Healthchecks.io can send notifications to Telegram.
 
 <details>
 <summary><b>🇷🇺 Probe from Russia</b></summary>
+
+### Russian blocklists
+
+Every few hours (every 6 by default) the monitoring checks via the open service [cheburcheck.ru](https://cheburcheck.ru) ([source](https://github.com/LowderPlay/cheburcheck)) whether any of these are on Russian blocklists:
+
+- IPs of all nodes of all panels (except disabled ones and `exclude_nodes`; private addresses are skipped);
+- domains clients connect to: addresses and SNI of checked hosts;
+- websites from `[[site]]` and anything listed in `extra`.
+
+```toml
+[rkn]
+interval_hours = 6          # how often; 1 to 168
+extra = ["example.com"]     # more domains or IPs on top of those found automatically
+```
+
+- Matching uses the RKN registry, blocked subnets and CDN lists (antifilter and others) — an unofficial source, results may differ.
+- A match fires the "Russian blocklist: address listed" alert with the reason: "domain in the RKN registry", "subnet listed: …", "blocked CDN: …". The daily report gets a "🚫 Блокировки РФ" block.
+- Only IPs and domains are sent to cheburcheck.ru — no keys, subscription links or tokens. The service allows 30 checks a minute; the monitoring makes at most 24.
+- cheburcheck scanners (checks from inside Russian operators' networks, the "TSPU block" verdict) need an API token issued on request on the website; not connected yet.
+- Check now: `docker compose exec reporter python -m rwmon rkn`.
 
 ### Client from Russia
 
