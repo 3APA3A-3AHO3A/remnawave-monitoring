@@ -82,6 +82,30 @@ def probe_jobs(cfg):
     return jobs
 
 
+# Метрики node_exporter, которые нужны графикам «Серверы нод»; остальное не храним
+NODE_METRICS = ('node_cpu_seconds_total|node_memory_(MemTotal|MemAvailable|SwapTotal|SwapFree)_bytes|'
+                'node_filesystem_(size|avail)_bytes|node_nf_conntrack_entries(_limit)?|node_boot_time_seconds|'
+                'node_network_(receive|transmit)_bytes_total|node_disk_(read|written)_bytes_total')
+
+
+def node_job(cfg):
+    """node_exporter на нодах: список адресов пишет reporter (/links/nodes.json) по нодам панелей."""
+    if not cfg.node_exporter_port:
+        return []
+    return [{
+        'job_name': 'node', 'scrape_interval': '60s', 'scrape_timeout': '15s',
+        'file_sd_configs': [{'files': ['/links/nodes.json'], 'refresh_interval': '1m'}],
+        'metric_relabel_configs': [
+            {'source_labels': ['__name__'], 'regex': NODE_METRICS, 'action': 'keep'},
+            # диски и сети контейнеров, туннелей и виртуальных устройств графикам не нужны
+            {'source_labels': ['device'], 'regex': '(lo|docker.*|veth.*|br-.*|warp.*|wg.*|tun.*|loop.*|ram.*|dm-.*)',
+             'action': 'drop'},
+            {'source_labels': ['fstype'], 'regex': '(tmpfs|overlay|squashfs|ramfs|devtmpfs|nsfs|fuse.*)',
+             'action': 'drop'},
+        ],
+    }]
+
+
 def prometheus(cfg):
     return {
         'global': {'scrape_interval': '30s', 'evaluation_interval': '30s'},
@@ -92,7 +116,7 @@ def prometheus(cfg):
                                 for check, _, port, _ in checkers(cfg)],
              # к какой панели относится проверка, знает rwmon_host (см. links.py)
              'metric_relabel_configs': [{'action': 'labeldrop', 'regex': 'sub_name|group_name'}]},
-        ] + probe_jobs(cfg),
+        ] + probe_jobs(cfg) + node_job(cfg),
     }
 
 
@@ -525,8 +549,11 @@ def dashboard(cfg):
         spec = importlib.util.spec_from_file_location('rwmon_dashboard', path)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        return mod.build([(c.id, c.title) for c in cfg.route_checks]
-                         + ([(RU_CHECK, RU_TITLE)] if cfg.ru_via else []))
+        checks = [(c.id, c.title) for c in cfg.route_checks] + ([(RU_CHECK, RU_TITLE)] if cfg.ru_via else [])
+        try:
+            return mod.build(checks, servers=bool(cfg.node_exporter_port))
+        except TypeError:                # dashboard.py старше 2.4 — без блока «Серверы нод»
+            return mod.build(checks)
     except Exception as e:
         print(f'дашборд не собран из {path} ({e!r}) — беру готовый из репозитория')
         with open(os.path.join(SRC, 'grafana', 'dashboards', 'remnawave-overview.json'), encoding='utf-8') as f:

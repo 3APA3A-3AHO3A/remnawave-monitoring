@@ -156,6 +156,8 @@ class Config:
     rkn_interval: int = 6 * 3600          # секунд между проверками
     rkn_extra: list = field(default_factory=list)  # ещё домены/IP сверх найденных автоматически
     rkn_exclude: list = field(default_factory=list)  # что не проверять: IP, домены или названия нод
+    # [node_exporter] — порт node_exporter на нодах; 0 — не собирать (графики «Серверы нод»)
+    node_exporter_port: int = 0
     bot: object = None              # Bot или None — тогда алерты шлёт сама Grafana, без кнопок
     # из окружения
     data_dir: str = '/data'
@@ -313,6 +315,7 @@ def parse(data, env=os.environ):
         ru_via=_ru_via(data.get('ru') or {}),
         ru_hosts=_ru_via(data.get('ru') or {}, 'hosts', required=False),
         **_rkn(data.get('rkn') or {}),
+        node_exporter_port=_node_exporter(data.get('node_exporter') or {}),
         bot=_bot(data.get('bot')),
         data_dir=env.get('DATA_DIR', '/data'),
         links_file=env.get('LINKS_FILE', '/links/monitor.txt'),
@@ -450,6 +453,15 @@ def _rkn(r):
         lists[key] = [x.strip() for x in v]
     return {'rkn_enabled': bool(r.get('enabled', True)), 'rkn_interval': int(hours * 3600),
             'rkn_extra': lists['extra'], 'rkn_exclude': lists['exclude']}
+
+
+def _node_exporter(n):
+    if not n:
+        return 0
+    port = n.get('port', 9100)
+    if not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535:
+        raise ConfigError('config.toml: [node_exporter] port — номер порта, например 9100')
+    return port if n.get('enabled', True) else 0
 
 
 def _bot(b):

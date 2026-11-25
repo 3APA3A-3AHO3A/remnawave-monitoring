@@ -41,6 +41,7 @@ Monitoring for [Remnawave](https://docs.rw) nodes: Grafana dashboards, alerts an
 - **Route checks from the config** — `[[check]]` blocks: what to open through a host and where the exit must be (not the node IP, the node IP, a country, a network). Hosts are picked by the node's config profile. Details — [Route checks](#route-checks).
 - **Multiple panels** — each with its own chat and topic. Identical hosts in different panels are checked once.
 - **Probe from Russia** — a blackbox exporter on a Russian node reveals IP blocking that is invisible from Europe.
+- **Node servers** — optional: disk, swap, the connection table and real CPU usage from [node_exporter](https://github.com/prometheus/node_exporter) on the nodes. Details — [Node servers](#node-servers).
 - **Russian blocklists** — every few hours all node IPs and the service's domains are checked against Russian blocklists via [cheburcheck.ru](https://cheburcheck.ru): the RKN registry, blocked subnets and CDNs. Details — [Russian blocklists](#russian-blocklists).
 - **Websites and an external watchdog** — checks for your sales site and subscription page, certificate expiry, and a Healthchecks.io ping in case the monitoring server itself goes down.
 
@@ -155,6 +156,7 @@ The bot needs its own token: it receives buttons via `getUpdates`, and two liste
 - "Outbounds per node" (collapsed) — the same cards, but only traffic through the outbounds from the "Outbound" filter (WARP, Psiphon): you can see on which node an outbound stopped responding;
 - collapsed blocks:
   - "Node comparison" — all selected nodes on one chart (clients, traffic, CPU, memory, outbounds, latency) to spot the odd one out;
+  - "Node servers" — when `[node_exporter]` is enabled: a table and charts of CPU, memory, swap, disk and the connection table per node;
   - "Panel health" — memory, latency and uptime of the panel's own processes;
   - "Host checks" — "host × panel" tables and failure history;
   - "Probe from Russia";
@@ -440,6 +442,27 @@ exclude = ["USA 1"]         # skip: IPs, domains or node names (known things you
 - Only IPs and domains are sent to cheburcheck.ru — no keys, subscription links or tokens. The service states a limit of 30 checks a minute; the monitoring makes at most 15.
 - cheburcheck scanners (checks from inside Russian operators' networks, the "TSPU block" verdict) need an API token issued on request on the website; not connected yet.
 - Check now: `docker compose exec reporter python -m rwmon rkn`.
+
+### Node servers
+
+The panel API does not show everything: no disk, swap or kernel connection table (conntrack). If [node_exporter](https://github.com/prometheus/node_exporter) runs on the nodes, the monitoring collects these metrics itself.
+
+1. On every node — node_exporter (Ubuntu package) and port 9100 open only to the monitoring server:
+   ```bash
+   sudo apt install -y prometheus-node-exporter
+   sudo ufw allow from <monitoring server IP> to any port 9100 proto tcp comment 'node_exporter'
+   ```
+2. In `config.toml`:
+   ```toml
+   [node_exporter]
+   port = 9100
+   ```
+3. `./apply.sh`.
+
+- The monitoring learns which nodes to scrape from the panels (node address) — a new node shows up on the charts by itself. Nodes with an internal address (a node on the panel server itself) are skipped; a node in two panels is scraped once.
+- Only what the charts need is stored: CPU, memory, swap, the root partition, conntrack, network, disk I/O, uptime — a few hundred series per node.
+- The dashboard gets a collapsed "Node servers" block: a table (metrics available, CPU, RAM, Swap, disk and free space, conntrack, disk I/O, time since reboot) and charts with a 90% line. The "Panel" and "Node" selectors apply.
+- No alerts on these metrics yet.
 
 ### Client from Russia
 
