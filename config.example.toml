@@ -150,11 +150,11 @@ ping_url = ""
 #   ноды, GeoCheck, сводка, сбои самого мониторинга — во все чаты.
 #
 # API-токен (Настройки → API-токены), только чтение:
-#   Nodes: Get nodes · Users: Get user by username ·
-#   Subscriptions: Get Raw Subscription by Short UUID ·
+#   Users: Get user by username · Subscriptions: Get Raw Subscription by Short UUID ·
+#   Nodes: Get nodes · Hosts: Get hosts · Config Profiles: Get config profiles ·
 #   Connections: Request Geocheck for Node, Get Geocheck for Node by Job ID ·
-#   System: Get Stats, Get Nodes Metrics, Get Stats Digest, Get Remnawave Information ·
-#   (по желанию) Infra Billing: Get infra billing nodes
+#   System: Get Stats, Get Nodes Metrics, Get Stats Digest, Get Remnawave Information,
+#   Get Remnawave Health
 
 [[panel]]
 id = "main"                      # латиницей, коротко: попадает в метки графиков

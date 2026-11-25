@@ -1,7 +1,7 @@
 """Ежедневная сводка: одна на все панели, уходит во все чаты панелей.
 
 Порядок: GeoCheck (изменения наверху) → сбои за сутки → по каждой панели
-пользователи и ноды → ближайшие оплаты серверов (если ведутся в панели).
+пользователи и ноды.
 """
 from datetime import timedelta
 
@@ -15,7 +15,6 @@ def check_names(cfg):
     if cfg.ru_via:
         names['ruclient'] = 'Клиент из РФ'
     return names
-BILLING_DAYS = 7
 # хост «не открывается из РФ» (ни одна проба не достучалась) и доля таких хостов
 PROBE_DOWN = '(max by (address) (probe_success{kind="tcp"}) == bool 0)'
 PROBE_SHARE = ('((count(max by (address) (probe_success{kind="tcp"}) == 0) or vector(0))'
@@ -82,20 +81,11 @@ def collect(prom, cfg):
 
 
 def panel_extras(rw):
-    """Из API: новые/истёкшие за сутки и ближайшие оплаты. Нет прав — тихо пропускаем."""
-    out = {'digest': None, 'billing': []}
+    """Из API: новые/истёкшие за сутки. Нет права — тихо пропускаем."""
+    out = {'digest': None}
     end = now().replace(microsecond=0)
     try:
         out['digest'] = rw.digest((end - timedelta(days=1)).isoformat(), end.isoformat())
-    except ApiError:
-        pass
-    try:
-        soon = end + timedelta(days=BILLING_DAYS)
-        for b in rw.billing_nodes().get('billingNodes') or []:
-            at = b.get('nextBillingAt') or ''
-            if at and at[:19] <= soon.strftime('%Y-%m-%dT%H:%M:%S'):
-                name = (b.get('node') or {}).get('name') or b.get('name') or '?'
-                out['billing'].append((at[:10], name, (b.get('provider') or {}).get('name', '')))
     except ApiError:
         pass
     return out
@@ -211,8 +201,6 @@ def build_text(d, extras, geo_run, cfg):
             lines.append(f'• {flag(m.get("country"))}{esc(m.get("node_name", uid))} — ' + ' · '.join(parts))
         if nodes:
             lines.append('<i>клиентов сейчас / пик за сутки · трафик клиентов · аутбаунды</i>')
-        for day, name, provider in sorted((extras.get(pid) or {}).get('billing') or []):
-            lines.append(f'💳 оплата {day[8:10]}.{day[5:7]} — {esc(name)}' + (f' ({esc(provider)})' if provider else ''))
     return '\n'.join(lines)
 
 
