@@ -1,5 +1,5 @@
-# xray-checker v1.3.1 с пятью патчами: Hysteria2 + Salamander packetSize, повторные попытки,
-# IP выхода и причина сбоя в метриках, подключение через посредника, новое API libxray.
+# xray-checker v1.3.1 с четырьмя патчами: Hysteria2 + Salamander packetSize, повторные попытки,
+# IP выхода и причина сбоя в метриках, новое API libxray.
 #
 # Официальный xray-checker теряет параметр packetSize у обфускации Salamander.
 # С packetSize ядро Xray работает в режиме Gecko, который несовместим с обычным
@@ -16,10 +16,6 @@
 #   «IP отличается от IP сервера проверки» этого не видно.
 #   xray_proxy_error_code — причина сбоя числом (таймаут, обрыв, отказ, TLS, DNS…),
 #   её алерт пишет в сообщении. Числа — в checker/errcode.go патча и в render.py.
-#
-# rwmon-via.patch: аутбаунд с тегом rwmon-via в JSON-конфиге хоста — посредник:
-#   остальные аутбаунды конфига подключаются через него (sockopt.dialerProxy),
-#   сам он отдельно не проверяется. Так работает проверка «Клиент из РФ».
 #
 # xray-libxray-api.patch: libxray под xray-core v26.11 убрал старую функцию разбора ссылок
 #   (base64 на входе и выходе) — переходник на новую share.ConvertShareLinksToXrayJson.
