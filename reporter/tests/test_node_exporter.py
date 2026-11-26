@@ -58,6 +58,23 @@ class NodeTargetsTest(unittest.TestCase):
         # нода на сервере панели (внутренний адрес) и выключенная нода в список не попадают
         self.assertEqual(targets, {'45.154.58.229': {'panel': 'main', 'node_uuid': 'u1'}})
 
+    def test_node_address_for_panel_node(self):
+        """Нода на сервере панели: в панели адрес внутренний, node_address даёт публичный — она
+        попадает в опрос, а её IP — в «IP ноды → название» (хосты узнают свою ноду)."""
+        cfg = make_cfg(panel=[{'id': 'reserve', 'title': 'OVRO', 'api_url': 'https://r.example', 'api_token': 't',
+                               'node_address': {'Panel': '143.246.198.52'},
+                               'telegram': {'bot_token': '2:y', 'chat_id': '-200'}}])
+        p = cfg.panels[0]
+        self.assertEqual(p.node_address, {'Panel': '143.246.198.52'})
+        targets, ips = {}, {}
+        exporter.collect_panel(p, PublicPanel(), exporter.Lines(), {}, node_targets=targets, node_ips=ips)
+        self.assertEqual(targets['143.246.198.52'], {'panel': 'reserve', 'node_uuid': 'u2'})
+        self.assertEqual(ips['143.246.198.52'], 'Panel')
+        with self.assertRaises(config.ConfigError):
+            make_cfg(panel=[{'id': 'r', 'title': 'R', 'api_url': 'https://r.example', 'api_token': 't',
+                             'node_address': {'Panel': 'panel.example'},
+                             'telegram': {'bot_token': '2:y', 'chat_id': '-200'}}])
+
     def test_write_file_dedup(self):
         with tempfile.TemporaryDirectory() as d:
             cfg = make_cfg(node_exporter={'port': 9100})

@@ -1,5 +1,6 @@
 """Настройки: config.toml (панели, Telegram, проверки) + немного переменных окружения
 от docker compose (порты, пути)."""
+import ipaddress
 import os
 import re
 import tomllib
@@ -52,6 +53,9 @@ class Panel:
     geocheck_exclude: set
     telegram: Telegram
     host_exit: dict = field(default_factory=dict)   # название хоста → куда ведёт (нода), для алертов
+    # название ноды → её публичный IP, если в панели у неё внутренний адрес (нода на сервере самой
+    # панели: 172.18.0.1) — для node_exporter и чтобы хосты узнавали свою ноду
+    node_address: dict = field(default_factory=dict)
     # Теги-исключения: хост с host_tag, но без WARP или Psiphon на ноде — эту проверку пропускаем
     host_tag_no_warp: str = 'MONITORING_NO_WARP'
     host_tag_no_psiphon: str = 'MONITORING_NO_PSIPHON'
@@ -217,6 +221,24 @@ def _host_exit(value, where):
     return {str(k).strip(): str(v).strip() for k, v in value.items() if str(k).strip() and str(v).strip()}
 
 
+def _node_address(value, where):
+    """node_address = { "Panel" = "203.0.113.10" } — публичный IP ноды с внутренним адресом в панели."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ConfigError(f'config.toml: {where}: node_address — таблица вида {{ "Panel" = "203.0.113.10" }}')
+    out = {}
+    for k, v in value.items():
+        k, v = str(k).strip(), str(v).strip()
+        try:
+            ipaddress.ip_address(v)
+        except ValueError:
+            raise ConfigError(f'config.toml: {where}: node_address — «{v}» у «{k}» не IP-адрес') from None
+        if k:
+            out[k] = v
+    return out
+
+
 def _lower_set(values):
     return {str(v).strip().lower() for v in values or [] if str(v).strip()}
 
@@ -273,6 +295,7 @@ def parse(data, env=os.environ):
             geocheck_exclude=_lower_set(p.get('geocheck_exclude')),
             telegram=_telegram(p.get('telegram'), f'{where} ({pid})', tg_default),
             host_exit=_host_exit(p.get('host_exit'), f'{where} ({pid})'),
+            node_address=_node_address(p.get('node_address'), f'{where} ({pid})'),
             host_tag_no_warp=str(p.get('host_tag_no_warp', 'MONITORING_NO_WARP')).strip(),
             host_tag_no_psiphon=str(p.get('host_tag_no_psiphon', 'MONITORING_NO_PSIPHON')).strip(),
         ))
