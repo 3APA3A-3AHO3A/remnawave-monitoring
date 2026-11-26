@@ -297,7 +297,8 @@ def collect_panel(panel, rw, lines, state, multi=False, node_ips=None, node_targ
         _warn(state, panel.id + ':stats', e)
 
     version = state.get(panel.id + ':version')
-    if version is None or time.time() - state.get(panel.id + ':version_at', 0) > 3600:
+    # раз в 5 минут: по смене версии бот понимает, что перезапуск панели — это обновление
+    if version is None or time.time() - state.get(panel.id + ':version_at', 0) > 300:
         try:
             version = str((rw.metadata() or {}).get('version') or '')
         except ApiError:

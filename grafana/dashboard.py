@@ -380,7 +380,167 @@ def build(checks=None, servers=False, probes=(), scanners=False):
             'админка и подписки начинают подвисать. Подробно — блок «Здоровье панелей»'))
     y += 8
 
-    # ── 3. Сайты · блокировки РКН ──
+    # ── 4. Хосты: строка на хост — итог и все проверки ──
+    cols = [('S', 'Итог', hq('max by (name) (rwmon_host_state)'))]
+    if probes:
+        cols += [(f'P{i}', pr, hq(f'max by (name) (rwmon_ru_status{{probe="{pr}"}})'))
+                 for i, pr in enumerate(probes)]
+    else:
+        cols.append(('P0', 'из РФ', hq('max by (name) (rwmon_ru_status)')))
+    cols += [('N', 'NL · вход', hq('max by (name) (xray_proxy_status{check="entry"})', 'entry')),
+             ('X', 'NL · нода', hq('max by (name) (xray_proxy_status{check="xray"})'))]
+    cols += [(f'R{i}', t, hq(f'max by (name) (xray_proxy_status{{check="{c}"}})', c))
+             for i, (c, t) in enumerate(CHECKS)]
+    cols.append(('L', 'из РФ, мс', hq('min by (name) (rwmon_ru_latency_ms > 0)')))
+    order = {'host': 0, 'panel_title': 1, 'exit': 2,
+             **{f'Value #{ref}': 3 + i for i, (ref, _, _) in enumerate(cols)}}
+    rename = {'host': 'Хост', 'panel_title': 'Панель', 'exit': '→ нода',
+              **{f'Value #{ref}': title for ref, title, _ in cols}}
+    ok_cols = [title for ref, title, _ in cols if ref not in ('S', 'L')]
+    p.append(table('Хосты', {'h': 18, 'w': 24, 'x': 0, 'y': y},
+                   [target(expr, ref, instant=True, fmt='table') for ref, _, expr in cols], [
+        {'id': 'merge', 'options': {}},
+        {'id': 'organize', 'options': {'excludeByName': {'Time': True, 'name': True},
+                                       'indexByName': order, 'renameByName': rename}},
+    ], [
+        by_name('Хост', custom__minWidth=150),
+        by_name('Панель', custom__width=105, color={'mode': 'fixed', 'fixedColor': GREY},
+                custom__cellOptions={'type': 'color-text'}),
+        by_name('→ нода', custom__minWidth=170, color={'mode': 'fixed', 'fixedColor': GREY},
+                custom__cellOptions={'type': 'color-text'}),
+        by_name('Итог', custom__width=165, custom__align='center',
+                custom__cellOptions={'type': 'color-background', 'mode': 'basic'}, mappings=STATE_MAP),
+        *[by_name(n, custom__width=82, custom__align='center', mappings=OK_MAP,
+                  custom__cellOptions={'type': 'color-text'}) for n in ok_cols],
+        by_name('из РФ, мс', unit='ms', decimals=0, custom__width=85, custom__align='right',
+                custom__cellOptions={'type': 'color-text'},
+                thresholds={'mode': 'absolute', 'steps': [{'color': 'text', 'value': None},
+                                                          {'color': YELLOW, 'value': 1500},
+                                                          {'color': RED, 'value': 4000}]}),
+    ], desc='Строка — хост панели. Итог: работает — открывается из РФ хотя бы с одной пробы (хосты МСК-нод — '
+            'с сервера мониторинга); блокировка в РФ — из России не открывается, а вход и нода работают; '
+            'сломан вход — не работает прокладка или CDN, нода жива; нода не отвечает — не открывается даже '
+            'напрямую. Колонки проб — проверка из России как приложение клиента. NL · вход — с сервера '
+            'мониторинга по адресу из подписки (только у хостов, где вход не сама нода), NL · нода — напрямую '
+            'на ноду. Дальше — проверки маршрутов. «—» — эта проверка хосту не нужна. «→ нода» — куда ведёт хост.',
+        sort=[{'displayName': 'Итог', 'desc': True}]))
+    y += 18
+
+    p.append(state_history('История хостов', {'h': 14, 'w': 24, 'x': 0, 'y': y},
+                           f'max by (name) ({host_state})', '{{name}}',
+                           'Итог по каждому хосту во времени: зелёным — работал, цветом — что было не так '
+                           '(как в таблице «Хосты»). Наведите на полосу — увидите, когда и сколько'))
+    y += 14
+
+    # ── 5. Ноды: всё про ноду в одной строке ──
+    def node_q(expr, ref, instant=True):
+        return target(f'sum by (panel_title, node_name) (({expr}) {BY_NODE})', ref, instant=instant,
+                      fmt='table' if instant else 'time_series')
+
+    def srv(expr):                         # node_exporter → одна серия на ноду
+        return f'max by (panel, node_uuid) ({expr})'
+    cpu = srv('1 - avg by (panel, node_uuid) (rate(node_cpu_seconds_total{mode="idle"}[5m]))')
+    ram = srv('1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes')
+    swap = srv('(1 - node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes) and node_memory_SwapTotal_bytes > 0')
+    disk = srv('1 - node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}')
+    ct = srv('node_nf_conntrack_entries / node_nf_conntrack_entries_limit')
+    pct = lambda n, warn, w=58: by_name(n, unit='percentunit', decimals=0, custom__width=w, custom__align='right',
+                                        custom__cellOptions={'type': 'color-text'},
+                                        thresholds={'mode': 'absolute', 'steps': [{'color': 'text', 'value': None},
+                                                                                  {'color': YELLOW, 'value': warn},
+                                                                                  {'color': RED, 'value': 0.9}]})
+    ncols = [('S', 'Связь', node_q(f'rwmon_node_connected{{{F}}}', 'S')),
+             ('A', 'Онлайн', node_q(f'rwmon_node_online_users{{{F}}}', 'A')),
+             ('P', 'пик', node_q(f'max_over_time(rwmon_node_online_users{{{F}}}[$__range])', 'P')),
+             ('G', 'CPU', node_q(f'rwmon_node_cpu_load5{{{F}}}', 'G')),
+             ('H', 'RAM', node_q(f'rwmon_node_memory_used_ratio{{{F}}}', 'H')),
+             # сколько минут за период CPU на ядро или память были выше 90% — то же, что алерт «перегружена»
+             ('W', 'перегр.', node_q('sum_over_time((max by (panel, node_uuid) ({__name__=~"rwmon_node_cpu_load5|'
+                                     f'rwmon_node_memory_used_ratio", {F}}}) > bool 0.9)[$__range:1m])', 'W'))]
+    if servers:
+        ncols += [('D', 'Диск', node_q(disk, 'D')), ('N', 'conntrack', node_q(ct, 'N'))]
+    ncols += [('C', '↓ RX', node_q(f'rwmon_node_network_rx_bytes_per_second{{{F}}} * 8', 'C')),
+              ('O', '↑ TX', node_q(f'rwmon_node_network_tx_bytes_per_second{{{F}}} * 8', 'O')),
+              ('E', 'трафик', node_q(f'sum by (panel, node_uuid) (increase(rwmon_node_inbound_upload_bytes{{{F}}}'
+                                     f'[$__range]) + increase(rwmon_node_inbound_download_bytes{{{F}}}[$__range]))', 'E')),
+              ('L', 'лимит', node_q(f'rwmon_node_traffic_used_bytes{{{F}}} / rwmon_node_traffic_limit_bytes{{{F}}}', 'L')),
+              ('U', 'Сервер', node_q(f'rwmon_node_uptime_seconds{{{F}}}', 'U')),
+              ('X', 'Xray', node_q(f'rwmon_node_xray_uptime_seconds{{{F}}}', 'X'))]
+    ntargets = [t for _, _, t in ncols] + [
+        target(f'max by (panel_title, node_name, xray) (rwmon_node_version{{{F}}} {BY_NODE})', 'V',
+               instant=True, fmt='table')]
+    nkey = lambda ref: f'Value #{ref}'
+    norder = {'panel_title': 0, 'node_name': 1, **{nkey(ref): 2 + i for i, (ref, _, _) in enumerate(ncols)},
+              'xray': 2 + len(ncols)}
+    p.append(table('Ноды', {'h': 15, 'w': 24, 'x': 0, 'y': y}, ntargets, [
+        # без графиков в ячейках: timeSeriesTable мешает merge, и Grafana показывала только первую таблицу
+        {'id': 'merge', 'options': {}},
+        {'id': 'organize', 'options': {
+            'excludeByName': {'Time': True, 'Value #V': True},
+            'indexByName': norder,
+            'renameByName': {'panel_title': 'Панель', 'node_name': 'Нода', 'xray': 'версия Xray',
+                             **{nkey(ref): title for ref, title, _ in ncols}}}},
+    ], [
+        by_name('Панель', custom__width=105, color={'mode': 'fixed', 'fixedColor': GREY},
+                custom__cellOptions={'type': 'color-text'}),
+        by_name('Нода', custom__minWidth=140),
+        by_name('Связь', custom__width=60, custom__cellOptions={'type': 'color-text'}, custom__align='center',
+                mappings=[{'type': 'value', 'options': {'1': {'text': 'да', 'color': GREEN},
+                                                        '0': {'text': 'нет', 'color': RED}}}]),
+        by_name('Онлайн', decimals=0, custom__width=70, custom__align='right'),
+        by_name('пик', decimals=0, custom__width=60, custom__align='right', color={'mode': 'fixed', 'fixedColor': GREY},
+                custom__cellOptions={'type': 'color-text'}),
+        pct('CPU', 0.7), pct('RAM', 0.8),
+        by_name('перегр.', unit='m', decimals=0, custom__width=72, custom__align='right',
+                custom__cellOptions={'type': 'color-text'},
+                mappings=[{'type': 'value', 'options': {'0': {'text': '—', 'index': 0}}}],
+                thresholds={'mode': 'absolute', 'steps': [{'color': 'text', 'value': None},
+                                                          {'color': YELLOW, 'value': 15},
+                                                          {'color': RED, 'value': 60}]}), pct('лимит', 0.8), pct('Диск', 0.8), pct('conntrack', 0.7, 80),
+        by_name('↓ RX', unit='bps', decimals=1, custom__width=92, custom__align='right'),
+        by_name('↑ TX', unit='bps', decimals=1, custom__width=92, custom__align='right'),
+        by_name('трафик', unit='decbytes', decimals=1, custom__width=82, custom__align='right'),
+        by_name('Сервер', unit='dtdurations', decimals=0, custom__width=88, custom__align='right',
+                color={'mode': 'fixed', 'fixedColor': GREY}, custom__cellOptions={'type': 'color-text'}),
+        by_name('Xray', unit='dtdurations', decimals=0, custom__width=88, custom__align='right',
+                custom__cellOptions={'type': 'color-text'},
+                thresholds={'mode': 'absolute', 'steps': [{'color': YELLOW, 'value': None},
+                                                          {'color': 'text', 'value': 86400}]}),
+        by_name('версия Xray', custom__width=85, color={'mode': 'fixed', 'fixedColor': GREY},
+                custom__cellOptions={'type': 'color-text'}),
+    ], desc='Связь — нода подключена к панели. Пик — больше всего клиентов за выбранный период. CPU — load average на ядро, RAM — занятая память (по данным панели), перегр. — сколько минут за период CPU или память были выше 90%'
+            + ('; Диск и conntrack — по node_exporter на ноде (корневой раздел и таблица соединений ядра)'
+               if servers else '')
+            + '. RX/TX — сеть сервера сейчас, трафик — клиентов за выбранный период, лимит — расход трафика ноды, '
+            'если он задан в панели. Сервер и Xray — сколько работают без перезапуска (жёлтым — Xray перезапускался '
+            'меньше суток назад).',
+        sort=[{'displayName': 'Онлайн', 'desc': True}]))
+    y += 15
+
+    # ── 6. Три общих графика ──
+    p.append(timeseries('Клиенты онлайн', {'h': 8, 'w': 8, 'x': 0, 'y': y}, [
+        target(f'sum by (panel_title) (rwmon_node_online_users{{{F}}})', 'A', '{{panel_title}}'),
+    ], 'none', stack=True, fill=35, desc='По панелям, слоями: высота — сколько всего клиентов'))
+    p.append(timeseries('Сеть всех нод', {'h': 8, 'w': 8, 'x': 8, 'y': y}, [
+        target(f'sum by (panel_title) ({smooth("rwmon_node_network_rx_bytes_per_second", F)}) * 8', 'A',
+               '{{panel_title}} ↓ RX'),
+        target(f'sum by (panel_title) ({smooth("rwmon_node_network_tx_bytes_per_second", F)}) * 8', 'B',
+               '{{panel_title}} ↑ TX'),
+    ], 'bps', overrides=negative_tx(),
+        desc='Вверх от нуля — принято серверами (RX), вниз пунктиром — отправлено (TX). '
+             'Сглажено: среднее за шаг графика'))
+    p[-1]['interval'] = '2m'
+    p.append(timeseries('Аутбаунды: $outbound', {'h': 8, 'w': 8, 'x': 16, 'y': y}, [
+        target(f'sum by (tag) (rate(rwmon_node_outbound_download_bytes{{tag=~"$outbound", {F}}}[5m])) * 8',
+               'A', '{{tag}} ответы'),
+        target(f'sum by (tag) (rate(rwmon_node_outbound_upload_bytes{{tag=~"$outbound", {F}}}[5m])) * 8',
+               'B', '{{tag}} запросы'),
+    ], 'bps', overrides=negative_tx(),
+        desc='Все ноды вместе. Вверх — ответы из аутбаунда, вниз — запросы в него. '
+             'Если запросы есть, а ответов нет — аутбаунд сломан'))
+    y += 8
+
+    # ── 6б. Сайты · блокировки РКН — справка, ниже графиков ──
     p.append(table('Сайты', {'h': 7, 'w': 12 if not scanners else 24, 'x': 0, 'y': y}, [
         target('max by (site) (rwmon_site_up)', 'A', instant=True, fmt='table'),
         target('max by (site) (probe_success{kind="http"})', 'B', instant=True, fmt='table'),
@@ -504,162 +664,9 @@ def build(checks=None, servers=False, probes=(), scanners=False):
         y += 10
     y += 7
 
-    # ── 4. Хосты: строка на хост — итог и все проверки ──
-    cols = [('S', 'Итог', hq('max by (name) (rwmon_host_state)'))]
-    if probes:
-        cols += [(f'P{i}', pr, hq(f'max by (name) (rwmon_ru_status{{probe="{pr}"}})'))
-                 for i, pr in enumerate(probes)]
-    else:
-        cols.append(('P0', 'из РФ', hq('max by (name) (rwmon_ru_status)')))
-    cols += [('N', 'NL · вход', hq('max by (name) (xray_proxy_status{check="entry"})', 'entry')),
-             ('X', 'NL · нода', hq('max by (name) (xray_proxy_status{check="xray"})'))]
-    cols += [(f'R{i}', t, hq(f'max by (name) (xray_proxy_status{{check="{c}"}})', c))
-             for i, (c, t) in enumerate(CHECKS)]
-    cols.append(('L', 'из РФ, мс', hq('min by (name) (rwmon_ru_latency_ms > 0)')))
-    order = {'host': 0, 'panel_title': 1, 'exit': 2,
-             **{f'Value #{ref}': 3 + i for i, (ref, _, _) in enumerate(cols)}}
-    rename = {'host': 'Хост', 'panel_title': 'Панель', 'exit': '→ нода',
-              **{f'Value #{ref}': title for ref, title, _ in cols}}
-    ok_cols = [title for ref, title, _ in cols if ref not in ('S', 'L')]
-    p.append(table('Хосты', {'h': 18, 'w': 24, 'x': 0, 'y': y},
-                   [target(expr, ref, instant=True, fmt='table') for ref, _, expr in cols], [
-        {'id': 'merge', 'options': {}},
-        {'id': 'organize', 'options': {'excludeByName': {'Time': True, 'name': True},
-                                       'indexByName': order, 'renameByName': rename}},
-    ], [
-        by_name('Хост', custom__minWidth=150),
-        by_name('Панель', custom__width=105, color={'mode': 'fixed', 'fixedColor': GREY},
-                custom__cellOptions={'type': 'color-text'}),
-        by_name('→ нода', custom__minWidth=170, color={'mode': 'fixed', 'fixedColor': GREY},
-                custom__cellOptions={'type': 'color-text'}),
-        by_name('Итог', custom__width=165, custom__align='center',
-                custom__cellOptions={'type': 'color-background', 'mode': 'basic'}, mappings=STATE_MAP),
-        *[by_name(n, custom__width=82, custom__align='center', mappings=OK_MAP,
-                  custom__cellOptions={'type': 'color-text'}) for n in ok_cols],
-        by_name('из РФ, мс', unit='ms', decimals=0, custom__width=85, custom__align='right',
-                custom__cellOptions={'type': 'color-text'},
-                thresholds={'mode': 'absolute', 'steps': [{'color': 'text', 'value': None},
-                                                          {'color': YELLOW, 'value': 1500},
-                                                          {'color': RED, 'value': 4000}]}),
-    ], desc='Строка — хост панели. Итог: работает — открывается из РФ хотя бы с одной пробы (хосты МСК-нод — '
-            'с сервера мониторинга); блокировка в РФ — из России не открывается, а вход и нода работают; '
-            'сломан вход — не работает прокладка или CDN, нода жива; нода не отвечает — не открывается даже '
-            'напрямую. Колонки проб — проверка из России как приложение клиента. NL · вход — с сервера '
-            'мониторинга по адресу из подписки (только у хостов, где вход не сама нода), NL · нода — напрямую '
-            'на ноду. Дальше — проверки маршрутов. «—» — эта проверка хосту не нужна. «→ нода» — куда ведёт хост.',
-        sort=[{'displayName': 'Итог', 'desc': True}]))
-    y += 18
-
-    p.append(state_history('История хостов', {'h': 14, 'w': 24, 'x': 0, 'y': y},
-                           f'max by (name) ({host_state})', '{{name}}',
-                           'Итог по каждому хосту во времени: зелёным — работал, цветом — что было не так '
-                           '(как в таблице «Хосты»). Наведите на полосу — увидите, когда и сколько'))
-    y += 14
-
-    # ── 5. Ноды: всё про ноду в одной строке ──
-    def node_q(expr, ref, instant=True):
-        return target(f'sum by (panel_title, node_name) (({expr}) {BY_NODE})', ref, instant=instant,
-                      fmt='table' if instant else 'time_series')
-
-    def srv(expr):                         # node_exporter → одна серия на ноду
-        return f'max by (panel, node_uuid) ({expr})'
-    cpu = srv('1 - avg by (panel, node_uuid) (rate(node_cpu_seconds_total{mode="idle"}[5m]))')
-    ram = srv('1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes')
-    swap = srv('(1 - node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes) and node_memory_SwapTotal_bytes > 0')
-    disk = srv('1 - node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}')
-    ct = srv('node_nf_conntrack_entries / node_nf_conntrack_entries_limit')
-    pct = lambda n, warn, w=58: by_name(n, unit='percentunit', decimals=0, custom__width=w, custom__align='right',
-                                        custom__cellOptions={'type': 'color-text'},
-                                        thresholds={'mode': 'absolute', 'steps': [{'color': 'text', 'value': None},
-                                                                                  {'color': YELLOW, 'value': warn},
-                                                                                  {'color': RED, 'value': 0.9}]})
-    ncols = [('S', 'Связь', node_q(f'rwmon_node_connected{{{F}}}', 'S')),
-             ('A', 'Онлайн', node_q(f'rwmon_node_online_users{{{F}}}', 'A')),
-             ('P', 'пик', node_q(f'max_over_time(rwmon_node_online_users{{{F}}}[$__range])', 'P')),
-             ('G', 'CPU', node_q(f'rwmon_node_cpu_load5{{{F}}}', 'G')),
-             ('H', 'RAM', node_q(f'rwmon_node_memory_used_ratio{{{F}}}', 'H'))]
-    if servers:
-        ncols += [('D', 'Диск', node_q(disk, 'D')), ('N', 'conntrack', node_q(ct, 'N'))]
-    ncols += [('C', '↓ RX', node_q(f'rwmon_node_network_rx_bytes_per_second{{{F}}} * 8', 'C')),
-              ('O', '↑ TX', node_q(f'rwmon_node_network_tx_bytes_per_second{{{F}}} * 8', 'O')),
-              ('E', 'трафик', node_q(f'sum by (panel, node_uuid) (increase(rwmon_node_inbound_upload_bytes{{{F}}}'
-                                     f'[$__range]) + increase(rwmon_node_inbound_download_bytes{{{F}}}[$__range]))', 'E')),
-              ('L', 'лимит', node_q(f'rwmon_node_traffic_used_bytes{{{F}}} / rwmon_node_traffic_limit_bytes{{{F}}}', 'L')),
-              ('U', 'Сервер', node_q(f'rwmon_node_uptime_seconds{{{F}}}', 'U')),
-              ('X', 'Xray', node_q(f'rwmon_node_xray_uptime_seconds{{{F}}}', 'X'))]
-    ntargets = [t for _, _, t in ncols] + [
-        target(f'max by (panel_title, node_name, xray) (rwmon_node_version{{{F}}} {BY_NODE})', 'V',
-               instant=True, fmt='table')]
-    nkey = lambda ref: f'Value #{ref}'
-    norder = {'panel_title': 0, 'node_name': 1, **{nkey(ref): 2 + i for i, (ref, _, _) in enumerate(ncols)},
-              'xray': 2 + len(ncols)}
-    p.append(table('Ноды', {'h': 15, 'w': 24, 'x': 0, 'y': y}, ntargets, [
-        # без графиков в ячейках: timeSeriesTable мешает merge, и Grafana показывала только первую таблицу
-        {'id': 'merge', 'options': {}},
-        {'id': 'organize', 'options': {
-            'excludeByName': {'Time': True, 'Value #V': True},
-            'indexByName': norder,
-            'renameByName': {'panel_title': 'Панель', 'node_name': 'Нода', 'xray': 'версия Xray',
-                             **{nkey(ref): title for ref, title, _ in ncols}}}},
-    ], [
-        by_name('Панель', custom__width=105, color={'mode': 'fixed', 'fixedColor': GREY},
-                custom__cellOptions={'type': 'color-text'}),
-        by_name('Нода', custom__minWidth=140),
-        by_name('Связь', custom__width=60, custom__cellOptions={'type': 'color-text'}, custom__align='center',
-                mappings=[{'type': 'value', 'options': {'1': {'text': 'да', 'color': GREEN},
-                                                        '0': {'text': 'нет', 'color': RED}}}]),
-        by_name('Онлайн', decimals=0, custom__width=70, custom__align='right'),
-        by_name('пик', decimals=0, custom__width=60, custom__align='right', color={'mode': 'fixed', 'fixedColor': GREY},
-                custom__cellOptions={'type': 'color-text'}),
-        pct('CPU', 0.7), pct('RAM', 0.8), pct('лимит', 0.8), pct('Диск', 0.8), pct('conntrack', 0.7, 80),
-        by_name('↓ RX', unit='bps', decimals=1, custom__width=92, custom__align='right'),
-        by_name('↑ TX', unit='bps', decimals=1, custom__width=92, custom__align='right'),
-        by_name('трафик', unit='decbytes', decimals=1, custom__width=82, custom__align='right'),
-        by_name('Сервер', unit='dtdurations', decimals=0, custom__width=88, custom__align='right',
-                color={'mode': 'fixed', 'fixedColor': GREY}, custom__cellOptions={'type': 'color-text'}),
-        by_name('Xray', unit='dtdurations', decimals=0, custom__width=88, custom__align='right',
-                custom__cellOptions={'type': 'color-text'},
-                thresholds={'mode': 'absolute', 'steps': [{'color': YELLOW, 'value': None},
-                                                          {'color': 'text', 'value': 86400}]}),
-        by_name('версия Xray', custom__width=85, color={'mode': 'fixed', 'fixedColor': GREY},
-                custom__cellOptions={'type': 'color-text'}),
-    ], desc='Связь — нода подключена к панели. Пик — больше всего клиентов за выбранный период. CPU — load average на ядро, RAM — занятая память (по данным панели)'
-            + ('; Диск и conntrack — по node_exporter на ноде (корневой раздел и таблица соединений ядра)'
-               if servers else '')
-            + '. RX/TX — сеть сервера сейчас, трафик — клиентов за выбранный период, лимит — расход трафика ноды, '
-            'если он задан в панели. Сервер и Xray — сколько работают без перезапуска (жёлтым — Xray перезапускался '
-            'меньше суток назад).',
-        sort=[{'displayName': 'Онлайн', 'desc': True}]))
-    y += 15
-
-    # ── 6. Три общих графика ──
-    p.append(timeseries('Клиенты онлайн', {'h': 8, 'w': 8, 'x': 0, 'y': y}, [
-        target(f'sum by (panel_title) (rwmon_node_online_users{{{F}}})', 'A', '{{panel_title}}'),
-    ], 'none', stack=True, fill=35, desc='По панелям, слоями: высота — сколько всего клиентов'))
-    p.append(timeseries('Сеть всех нод', {'h': 8, 'w': 8, 'x': 8, 'y': y}, [
-        target(f'sum by (panel_title) ({smooth("rwmon_node_network_rx_bytes_per_second", F)}) * 8', 'A',
-               '{{panel_title}} ↓ RX'),
-        target(f'sum by (panel_title) ({smooth("rwmon_node_network_tx_bytes_per_second", F)}) * 8', 'B',
-               '{{panel_title}} ↑ TX'),
-    ], 'bps', overrides=negative_tx(),
-        desc='Вверх от нуля — принято серверами (RX), вниз пунктиром — отправлено (TX). '
-             'Сглажено: среднее за шаг графика'))
-    p[-1]['interval'] = '2m'
-    p.append(timeseries('Аутбаунды: $outbound', {'h': 8, 'w': 8, 'x': 16, 'y': y}, [
-        target(f'sum by (tag) (rate(rwmon_node_outbound_download_bytes{{tag=~"$outbound", {F}}}[5m])) * 8',
-               'A', '{{tag}} ответы'),
-        target(f'sum by (tag) (rate(rwmon_node_outbound_upload_bytes{{tag=~"$outbound", {F}}}[5m])) * 8',
-               'B', '{{tag}} запросы'),
-    ], 'bps', overrides=negative_tx(),
-        desc='Все ноды вместе. Вверх — ответы из аутбаунда, вниз — запросы в него. '
-             'Если запросы есть, а ответов нет — аутбаунд сломан'))
-    y += 8
-
     # ── 7. Каждая нода отдельно: карточка на ноду — сеть сервера ──
     one = f'topk by (panel, node_uuid) (1, rwmon_node_info{{{F}, node=~"$node"}})'
     one_by = f'* on (panel, node_uuid) group_left (node) {one}'
-    p.append({'id': _next(), 'type': 'row', 'title': 'Каждая нода отдельно', 'collapsed': False,
-              'gridPos': {'h': 1, 'w': 24, 'x': 0, 'y': y}, 'panels': []})
     card = timeseries('$node', {'h': 6, 'w': 6, 'x': 0, 'y': y + 1}, [
         target(f'sum by (node) (({smooth("rwmon_node_network_rx_bytes_per_second", F)} * 8) {one_by})',
                'A', '↓ принято'),
@@ -675,8 +682,9 @@ def build(checks=None, servers=False, probes=(), scanners=False):
     card['options']['legend'] = {'showLegend': False, 'displayMode': 'hidden', 'placement': 'bottom', 'calcs': []}
     card['options']['tooltip'] = {'mode': 'multi', 'sort': 'none'}
     card['fieldConfig']['defaults']['custom']['lineWidth'] = 1.5
-    p.append(card)
-    y += 7
+    # свёрнуто: 17 повторяющихся графиков тормозили открытие дашборда
+    p.append(row('Каждая нода отдельно: сеть сервера', y, [card]))
+    y += 1
 
     # ── свёрнутые блоки с подробностями ──
     # Выходы по нодам: такие же карточки, но только выходы из фильтра «Аутбаунд»

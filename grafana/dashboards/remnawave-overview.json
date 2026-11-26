@@ -1485,569 +1485,6 @@
     {
       "id": 10,
       "type": "table",
-      "title": "Сайты",
-      "description": "Сайты из [[site]] в config.toml: проверка с сервера мониторинга и с проб в России, код и время ответа, сколько осталось до конца сертификата",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "rwmon-prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 0,
-        "y": 12
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "max by (site) (rwmon_site_up)",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "max by (site) (probe_success{kind=\"http\"})",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "refId": "E",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "max by (site) (rwmon_site_status_code)",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "refId": "C",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "max by (site) (rwmon_site_response_seconds)",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "refId": "D",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "max by (site) (rwmon_site_cert_expiry_timestamp_seconds - time())",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "merge",
-          "options": {}
-        },
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true
-            },
-            "indexByName": {
-              "site": 0,
-              "Value #A": 1,
-              "Value #B": 2,
-              "Value #E": 3,
-              "Value #C": 4,
-              "Value #D": 5
-            },
-            "renameByName": {
-              "site": "Сайт",
-              "Value #A": "открывается",
-              "Value #B": "из РФ",
-              "Value #E": "код",
-              "Value #C": "ответ",
-              "Value #D": "сертификат"
-            }
-          }
-        }
-      ],
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "sortBy": [],
-        "footer": {
-          "show": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "filterable": false,
-            "wrapHeaderText": true,
-            "cellOptions": {
-              "type": "auto"
-            }
-          },
-          "noValue": "Добавьте [[site]] в config.toml"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Сайт"
-            },
-            "properties": [
-              {
-                "id": "custom.minWidth",
-                "value": 150
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "открывается"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 92
-              },
-              {
-                "id": "custom.align",
-                "value": "center"
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "1": {
-                        "text": "OK",
-                        "color": "green",
-                        "index": 0
-                      },
-                      "0": {
-                        "text": "СБОЙ",
-                        "color": "red",
-                        "index": 1
-                      }
-                    }
-                  },
-                  {
-                    "type": "special",
-                    "options": {
-                      "match": "null",
-                      "result": {
-                        "text": "—",
-                        "color": "#5a6270",
-                        "index": 2
-                      }
-                    }
-                  }
-                ]
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "из РФ"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 92
-              },
-              {
-                "id": "custom.align",
-                "value": "center"
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "1": {
-                        "text": "OK",
-                        "color": "green",
-                        "index": 0
-                      },
-                      "0": {
-                        "text": "СБОЙ",
-                        "color": "red",
-                        "index": 1
-                      }
-                    }
-                  },
-                  {
-                    "type": "special",
-                    "options": {
-                      "match": "null",
-                      "result": {
-                        "text": "—",
-                        "color": "#5a6270",
-                        "index": 2
-                      }
-                    }
-                  }
-                ]
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "код"
-            },
-            "properties": [
-              {
-                "id": "decimals",
-                "value": 0
-              },
-              {
-                "id": "custom.width",
-                "value": 52
-              },
-              {
-                "id": "custom.align",
-                "value": "right"
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "red",
-                      "value": null
-                    },
-                    {
-                      "color": "text",
-                      "value": 200
-                    },
-                    {
-                      "color": "red",
-                      "value": 400
-                    }
-                  ]
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "ответ"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "s"
-              },
-              {
-                "id": "decimals",
-                "value": 2
-              },
-              {
-                "id": "custom.width",
-                "value": 68
-              },
-              {
-                "id": "custom.align",
-                "value": "right"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "сертификат"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "dtdurations"
-              },
-              {
-                "id": "decimals",
-                "value": 0
-              },
-              {
-                "id": "custom.width",
-                "value": 95
-              },
-              {
-                "id": "custom.align",
-                "value": "right"
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "red",
-                      "value": null
-                    },
-                    {
-                      "color": "yellow",
-                      "value": 604800
-                    },
-                    {
-                      "color": "text",
-                      "value": 1209600
-                    }
-                  ]
-                }
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": 11,
-      "type": "table",
-      "title": "Блокировки РКН",
-      "description": "IP нод и домены сервиса по спискам блокировок РФ (cheburcheck.ru, раз в несколько часов; блок [rkn] в config.toml). «В списках» — адрес в реестре РКН, в заблокированной подсети или CDN.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "rwmon-prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 12,
-        "y": 12
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "max by (name, kind, why) (rwmon_rkn_blocked)",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true
-            },
-            "indexByName": {
-              "Value": 0,
-              "name": 1,
-              "kind": 2,
-              "why": 3
-            },
-            "renameByName": {
-              "Value": "статус",
-              "name": "Что",
-              "kind": "тип",
-              "why": "причина"
-            }
-          }
-        }
-      ],
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "sortBy": [
-          {
-            "displayName": "статус",
-            "desc": true
-          }
-        ],
-        "footer": {
-          "show": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "filterable": false,
-            "wrapHeaderText": true,
-            "cellOptions": {
-              "type": "auto"
-            }
-          },
-          "noValue": "Проверки блокировок нет — блок [rkn] в config.toml"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "статус"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 95
-              },
-              {
-                "id": "custom.align",
-                "value": "center"
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "1": {
-                        "text": "в списках",
-                        "color": "red",
-                        "index": 0
-                      },
-                      "0": {
-                        "text": "чисто",
-                        "color": "green",
-                        "index": 1
-                      }
-                    }
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Что"
-            },
-            "properties": [
-              {
-                "id": "custom.minWidth",
-                "value": 150
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "тип"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 70
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "text"
-                }
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "node": {
-                        "text": "нода"
-                      },
-                      "domain": {
-                        "text": "домен"
-                      },
-                      "extra": {
-                        "text": "доп."
-                      }
-                    }
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "причина"
-            },
-            "properties": [
-              {
-                "id": "custom.minWidth",
-                "value": 160
-              },
-              {
-                "id": "noValue",
-                "value": ""
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": 12,
-      "type": "table",
       "title": "Хосты",
       "description": "Строка — хост панели. Итог: работает — открывается из РФ хотя бы с одной пробы (хосты МСК-нод — с сервера мониторинга); блокировка в РФ — из России не открывается, а вход и нода работают; сломан вход — не работает прокладка или CDN, нода жива; нода не отвечает — не открывается даже напрямую. Колонки проб — проверка из России как приложение клиента. NL · вход — с сервера мониторинга по адресу из подписки (только у хостов, где вход не сама нода), NL · нода — напрямую на ноду. Дальше — проверки маршрутов. «—» — эта проверка хосту не нужна. «→ нода» — куда ведёт хост.",
       "datasource": {
@@ -2058,7 +1495,7 @@
         "h": 18,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 12
       },
       "targets": [
         {
@@ -2650,7 +2087,7 @@
       }
     },
     {
-      "id": 13,
+      "id": 11,
       "type": "state-timeline",
       "title": "История хостов",
       "description": "Итог по каждому хосту во времени: зелёным — работал, цветом — что было не так (как в таблице «Хосты»). Наведите на полосу — увидите, когда и сколько",
@@ -2662,7 +2099,7 @@
         "h": 14,
         "w": 24,
         "x": 0,
-        "y": 37
+        "y": 30
       },
       "targets": [
         {
@@ -2747,10 +2184,10 @@
       }
     },
     {
-      "id": 14,
+      "id": 12,
       "type": "table",
       "title": "Ноды",
-      "description": "Связь — нода подключена к панели. Пик — больше всего клиентов за выбранный период. CPU — load average на ядро, RAM — занятая память (по данным панели). RX/TX — сеть сервера сейчас, трафик — клиентов за выбранный период, лимит — расход трафика ноды, если он задан в панели. Сервер и Xray — сколько работают без перезапуска (жёлтым — Xray перезапускался меньше суток назад).",
+      "description": "Связь — нода подключена к панели. Пик — больше всего клиентов за выбранный период. CPU — load average на ядро, RAM — занятая память (по данным панели), перегр. — сколько минут за период CPU или память были выше 90%. RX/TX — сеть сервера сейчас, трафик — клиентов за выбранный период, лимит — расход трафика ноды, если он задан в панели. Сервер и Xray — сколько работают без перезапуска (жёлтым — Xray перезапускался меньше суток назад).",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
@@ -2759,7 +2196,7 @@
         "h": 15,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 44
       },
       "targets": [
         {
@@ -2817,6 +2254,18 @@
             "uid": "rwmon-prometheus"
           },
           "expr": "sum by (panel_title, node_name) ((rwmon_node_memory_used_ratio{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "W",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "sum by (panel_title, node_name) ((sum_over_time((max by (panel, node_uuid) ({__name__=~\"rwmon_node_cpu_load5|rwmon_node_memory_used_ratio\", panel_title=~\"$panel\"}) > bool 0.9)[$__range:1m])) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -2927,13 +2376,14 @@
               "Value #P": 4,
               "Value #G": 5,
               "Value #H": 6,
-              "Value #C": 7,
-              "Value #O": 8,
-              "Value #E": 9,
-              "Value #L": 10,
-              "Value #U": 11,
-              "Value #X": 12,
-              "xray": 13
+              "Value #W": 7,
+              "Value #C": 8,
+              "Value #O": 9,
+              "Value #E": 10,
+              "Value #L": 11,
+              "Value #U": 12,
+              "Value #X": 13,
+              "xray": 14
             },
             "renameByName": {
               "panel_title": "Панель",
@@ -2944,6 +2394,7 @@
               "Value #P": "пик",
               "Value #G": "CPU",
               "Value #H": "RAM",
+              "Value #W": "перегр.",
               "Value #C": "↓ RX",
               "Value #O": "↑ TX",
               "Value #E": "трафик",
@@ -3204,6 +2655,70 @@
                     {
                       "color": "red",
                       "value": 0.9
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "перегр."
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "m"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 72
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "—",
+                        "index": 0
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 15
+                    },
+                    {
+                      "color": "red",
+                      "value": 60
                     }
                   ]
                 }
@@ -3544,7 +3059,7 @@
       }
     },
     {
-      "id": 15,
+      "id": 13,
       "type": "timeseries",
       "title": "Клиенты онлайн",
       "description": "По панелям, слоями: высота — сколько всего клиентов",
@@ -3556,7 +3071,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 66
+        "y": 59
       },
       "targets": [
         {
@@ -3603,7 +3118,7 @@
       }
     },
     {
-      "id": 16,
+      "id": 14,
       "type": "timeseries",
       "title": "Сеть всех нод",
       "description": "Вверх от нуля — принято серверами (RX), вниз пунктиром — отправлено (TX). Сглажено: среднее за шаг графика",
@@ -3615,7 +3130,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 66
+        "y": 59
       },
       "targets": [
         {
@@ -3701,7 +3216,7 @@
       "interval": "2m"
     },
     {
-      "id": 17,
+      "id": 15,
       "type": "timeseries",
       "title": "Аутбаунды: $outbound",
       "description": "Все ноды вместе. Вверх — ответы из аутбаунда, вниз — запросы в него. Если запросы есть, а ответов нет — аутбаунд сломан",
@@ -3713,7 +3228,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 66
+        "y": 59
       },
       "targets": [
         {
@@ -3798,32 +3313,19 @@
       }
     },
     {
-      "id": 18,
-      "type": "row",
-      "title": "Каждая нода отдельно",
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 74
-      },
-      "panels": []
-    },
-    {
-      "id": 19,
-      "type": "timeseries",
-      "title": "$node",
-      "description": "Сеть сервера ноды: вверх (зелёным) — принято, вниз (жёлтым) — отправлено. Сглажено: среднее за шаг графика. Показываются ноды, выбранные вверху в «Нода».",
+      "id": 16,
+      "type": "table",
+      "title": "Сайты",
+      "description": "Сайты из [[site]] в config.toml: проверка с сервера мониторинга и с проб в России, код и время ответа, сколько осталось до конца сертификата",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
       },
       "gridPos": {
-        "h": 6,
-        "w": 6,
+        "h": 7,
+        "w": 12,
         "x": 0,
-        "y": 75
+        "y": 67
       },
       "targets": [
         {
@@ -3832,10 +3334,11 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (node) ((avg_over_time(rwmon_node_network_rx_bytes_per_second{panel_title=~\"$panel\"}[$__interval]) * 8) * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
-          "legendFormat": "↓ принято",
-          "range": true,
-          "instant": false
+          "expr": "max by (site) (rwmon_site_up)",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
         },
         {
           "refId": "B",
@@ -3843,52 +3346,161 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (node) ((avg_over_time(rwmon_node_network_tx_bytes_per_second{panel_title=~\"$panel\"}[$__interval]) * 8) * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
-          "legendFormat": "↑ отправлено",
-          "range": true,
-          "instant": false
+          "expr": "max by (site) (probe_success{kind=\"http\"})",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (site) (rwmon_site_status_code)",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (site) (rwmon_site_response_seconds)",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (site) (rwmon_site_cert_expiry_timestamp_seconds - time())",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "site": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #E": 3,
+              "Value #C": 4,
+              "Value #D": 5
+            },
+            "renameByName": {
+              "site": "Сайт",
+              "Value #A": "открывается",
+              "Value #B": "из РФ",
+              "Value #E": "код",
+              "Value #C": "ответ",
+              "Value #D": "сертификат"
+            }
+          }
         }
       ],
       "options": {
-        "legend": {
-          "showLegend": false,
-          "displayMode": "hidden",
-          "placement": "bottom",
-          "calcs": []
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [],
+        "footer": {
+          "show": false
         }
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "bps",
-          "min": null,
           "custom": {
-            "lineWidth": 1.5,
-            "fillOpacity": 30,
-            "gradientMode": "opacity",
-            "showPoints": "never",
-            "spanNulls": 120000,
-            "stacking": {
-              "mode": "none"
-            },
-            "axisSoftMin": 0
-          }
+            "align": "auto",
+            "filterable": false,
+            "wrapHeaderText": true,
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "noValue": "Добавьте [[site]] в config.toml"
         },
         "overrides": [
           {
             "matcher": {
               "id": "byName",
-              "options": "↓ принято"
+              "options": "Сайт"
             },
             "properties": [
               {
-                "id": "color",
+                "id": "custom.minWidth",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "открывается"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 92
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "OK",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "СБОЙ",
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "—",
+                        "color": "#5a6270",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
                 "value": {
-                  "mode": "fixed",
-                  "fixedColor": "green"
+                  "type": "color-text"
                 }
               }
             ]
@@ -3896,28 +3508,495 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "↑ отправлено"
+              "options": "из РФ"
             },
             "properties": [
               {
-                "id": "color",
+                "id": "custom.width",
+                "value": 92
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "OK",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "СБОЙ",
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "—",
+                        "color": "#5a6270",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
                 "value": {
-                  "mode": "fixed",
-                  "fixedColor": "yellow"
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "код"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 52
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
                 }
               },
               {
-                "id": "custom.transform",
-                "value": "negative-Y"
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "text",
+                      "value": 200
+                    },
+                    {
+                      "color": "red",
+                      "value": 400
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ответ"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.width",
+                "value": 68
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "сертификат"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dtdurations"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 95
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 604800
+                    },
+                    {
+                      "color": "text",
+                      "value": 1209600
+                    }
+                  ]
+                }
               }
             ]
           }
         ]
+      }
+    },
+    {
+      "id": 17,
+      "type": "table",
+      "title": "Блокировки РКН",
+      "description": "IP нод и домены сервиса по спискам блокировок РФ (cheburcheck.ru, раз в несколько часов; блок [rkn] в config.toml). «В списках» — адрес в реестре РКН, в заблокированной подсети или CDN.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "rwmon-prometheus"
       },
-      "interval": "2m",
-      "repeat": "node",
-      "repeatDirection": "h",
-      "maxPerRow": 4
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 67
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (name, kind, why) (rwmon_rkn_blocked)",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "Value": 0,
+              "name": 1,
+              "kind": 2,
+              "why": 3
+            },
+            "renameByName": {
+              "Value": "статус",
+              "name": "Что",
+              "kind": "тип",
+              "why": "причина"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "статус",
+            "desc": true
+          }
+        ],
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": false,
+            "wrapHeaderText": true,
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "noValue": "Проверки блокировок нет — блок [rkn] в config.toml"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "статус"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 95
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "в списках",
+                        "color": "red",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "чисто",
+                        "color": "green",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Что"
+            },
+            "properties": [
+              {
+                "id": "custom.minWidth",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "тип"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 70
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "node": {
+                        "text": "нода"
+                      },
+                      "domain": {
+                        "text": "домен"
+                      },
+                      "extra": {
+                        "text": "доп."
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "причина"
+            },
+            "properties": [
+              {
+                "id": "custom.minWidth",
+                "value": 160
+              },
+              {
+                "id": "noValue",
+                "value": ""
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 19,
+      "type": "row",
+      "title": "Каждая нода отдельно: сеть сервера",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 74
+      },
+      "panels": [
+        {
+          "id": 18,
+          "type": "timeseries",
+          "title": "$node",
+          "description": "Сеть сервера ноды: вверх (зелёным) — принято, вниз (жёлтым) — отправлено. Сглажено: среднее за шаг графика. Показываются ноды, выбранные вверху в «Нода».",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 0,
+            "y": 75
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "sum by (node) ((avg_over_time(rwmon_node_network_rx_bytes_per_second{panel_title=~\"$panel\"}[$__interval]) * 8) * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+              "legendFormat": "↓ принято",
+              "range": true,
+              "instant": false
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "sum by (node) ((avg_over_time(rwmon_node_network_tx_bytes_per_second{panel_title=~\"$panel\"}[$__interval]) * 8) * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+              "legendFormat": "↑ отправлено",
+              "range": true,
+              "instant": false
+            }
+          ],
+          "options": {
+            "legend": {
+              "showLegend": false,
+              "displayMode": "hidden",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bps",
+              "min": null,
+              "custom": {
+                "lineWidth": 1.5,
+                "fillOpacity": 30,
+                "gradientMode": "opacity",
+                "showPoints": "never",
+                "spanNulls": 120000,
+                "stacking": {
+                  "mode": "none"
+                },
+                "axisSoftMin": 0
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "↓ принято"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "green"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "↑ отправлено"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "yellow"
+                    }
+                  },
+                  {
+                    "id": "custom.transform",
+                    "value": "negative-Y"
+                  }
+                ]
+              }
+            ]
+          },
+          "interval": "2m",
+          "repeat": "node",
+          "repeatDirection": "h",
+          "maxPerRow": 4
+        }
+      ]
     },
     {
       "id": 21,
@@ -3928,7 +4007,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 81
+        "y": 75
       },
       "panels": [
         {
@@ -3944,7 +4023,7 @@
             "h": 7,
             "w": 6,
             "x": 0,
-            "y": 82
+            "y": 76
           },
           "targets": [
             {
@@ -4078,7 +4157,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 82
+        "y": 76
       },
       "panels": [
         {
@@ -4094,7 +4173,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 83
+            "y": 77
           },
           "targets": [
             {
@@ -4158,7 +4237,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 83
+            "y": 77
           },
           "targets": [
             {
@@ -4260,7 +4339,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 91
+            "y": 85
           },
           "targets": [
             {
@@ -4341,7 +4420,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 91
+            "y": 85
           },
           "targets": [
             {
@@ -4422,7 +4501,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 99
+            "y": 93
           },
           "targets": [
             {
@@ -4522,7 +4601,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 83
+        "y": 77
       },
       "panels": [
         {
@@ -4538,7 +4617,7 @@
             "h": 12,
             "w": 24,
             "x": 0,
-            "y": 84
+            "y": 78
           },
           "targets": [
             {
@@ -4618,7 +4697,7 @@
             "h": 9,
             "w": 24,
             "x": 0,
-            "y": 96
+            "y": 90
           },
           "targets": [
             {
@@ -4682,7 +4761,7 @@
             "h": 12,
             "w": 24,
             "x": 0,
-            "y": 105
+            "y": 99
           },
           "targets": [
             {
@@ -4762,7 +4841,7 @@
             "h": 9,
             "w": 24,
             "x": 0,
-            "y": 117
+            "y": 111
           },
           "targets": [
             {
@@ -4824,7 +4903,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 84
+        "y": 78
       },
       "panels": [
         {
@@ -4840,7 +4919,7 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 85
+            "y": 79
           },
           "targets": [
             {
@@ -4918,7 +4997,7 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 85
+            "y": 79
           },
           "targets": [
             {
@@ -4996,7 +5075,7 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 85
+            "y": 79
           },
           "targets": [
             {
@@ -5056,7 +5135,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 85
+        "y": 79
       },
       "panels": [
         {
@@ -5072,7 +5151,7 @@
             "h": 12,
             "w": 24,
             "x": 0,
-            "y": 86
+            "y": 80
           },
           "targets": [
             {
@@ -5284,7 +5363,7 @@
             "h": 16,
             "w": 24,
             "x": 0,
-            "y": 98
+            "y": 92
           },
           "targets": [
             {
@@ -5432,7 +5511,7 @@
             "h": 16,
             "w": 24,
             "x": 0,
-            "y": 114
+            "y": 108
           },
           "targets": [
             {
@@ -5614,7 +5693,7 @@
             "h": 16,
             "w": 24,
             "x": 0,
-            "y": 130
+            "y": 124
           },
           "targets": [
             {

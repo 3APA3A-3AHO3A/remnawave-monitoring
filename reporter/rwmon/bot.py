@@ -27,7 +27,10 @@ REPEAT_PRESETS = (30, 60, 180, 360)
 QUIET_PRESETS = {'': 'нет', '23-08': '23–08', '00-09': '00–09', '22-07': '22–07'}
 KEEP_MESSAGES = 3 * 86400          # сколько помнить отправленные алерты (для кнопок)
 COMMANDS = [('status', 'Что сейчас с серверами'), ('mutes', 'Что заглушено'),
-            ('settings', 'Настройки уведомлений')]
+            ('settings', 'Настройки уведомлений'), ('work', 'Режим работ: алерты без звука на 1 час')]
+WORK_MINUTES = 60                  # режим работ — на час, продлевается кнопкой
+KEEP_WORK = 7 * 86400              # сколько помнить окна работ (для сводки)
+RESTART_UID = 'rwmon-panel-restart'
 
 
 def _mute_label(minutes):
@@ -98,7 +101,7 @@ class Bot:
         self.path = f'{cfg.data_dir}/bot.json'
         self.lock = threading.RLock()
         self.state = read_json(self.path, {})
-        for k, v in (('settings', {}), ('mutes', []), ('msgs', {}), ('firing', {}), ('last', {})):
+        for k, v in (('settings', {}), ('mutes', []), ('msgs', {}), ('firing', {}), ('last', {}), ('work', [])):
             self.state.setdefault(k, v)
         self.username = ''
         self.rule_uid = self._rule_uids()
@@ -118,6 +121,7 @@ class Bot:
             now = time.time()
             self.state['mutes'] = [m for m in self.state['mutes'] if not m['until'] or m['until'] > now]
             self.state['msgs'] = {k: v for k, v in self.state['msgs'].items() if now - v['at'] < KEEP_MESSAGES}
+            self.state['work'] = [w for w in self.state['work'] if now - w[1] < KEEP_WORK]
             write_json(self.path, self.state)
 
     @property
@@ -144,6 +148,59 @@ class Bot:
         a, b = (int(x) for x in q.split('-'))
         h = datetime.now(ZoneInfo(self.cfg.bot.timezone)).hour
         return a <= h < b if a < b else (h >= a or h < b)
+
+    # ── режим работ ──
+    def work_until(self):
+        """До какого времени идут работы (0 — не идут)."""
+        now = time.time()
+        return max((w[1] for w in self.state['work'] if w[0] <= now < w[1]), default=0)
+
+    def work_start(self, minutes=WORK_MINUTES):
+        now, until = time.time(), self.work_until()
+        if until:                       # уже идут — продлеваем
+            for w in self.state['work']:
+                if w[1] == until:
+                    w[1] = until + minutes * 60
+        else:
+            self.state['work'].append([now, now + minutes * 60])
+        self.save()
+
+    def work_stop(self):
+        now = time.time()
+        for w in self.state['work']:
+            if w[0] <= now < w[1]:
+                w[1] = now
+        self.save()
+
+    def work_body(self):
+        until = self.work_until()
+        if until:
+            body = (f'<h4>🛠 Идут работы — до {F.tg_time(until, "t")}</h4>'
+                    '<p>Алерты приходят без звука и с пометкой «работы», в сводке это время отмечено.</p>')
+            rows = [[F.cb('+1 час', 'wk:more'), F.cb('Завершить работы', 'wk:end', 'success')]]
+        else:
+            body = ('<h4>Режим работ выключен</h4><p>Включите перед перезапусками и переустановками: '
+                    'алерты на час станут тихими, а сбои в это время сводка отметит как работы.</p>')
+            rows = [[F.cb('🛠 Начать работы на 1 час', 'wk:start')]]
+        return body, rows
+
+    # ── перезапуск панели при обновлении ──
+    def panel_updates(self, alerts):
+        """Для алертов «процесс панели перезапустился»: {panel: новая версия}, если версия панели
+        сменилась за последние 40 минут — тогда это обновление, а не падение."""
+        out = {}
+        for a in alerts:
+            pid = (a.get('labels') or {}).get('panel', '')
+            if not pid or pid in out:
+                continue
+            try:
+                seen = self.prom.query(f'count by (version) (count_over_time(rwmon_panel_info{{panel="{pid}"}}[40m]))')
+                now_v = self.prom.query(f'max by (version) (rwmon_panel_info{{panel="{pid}"}})')
+            except Exception:
+                continue
+            if len(seen) > 1 and now_v:
+                out[pid] = now_v[0][0].get('version', '')
+        return out
 
     # ── тишина ──
     def muted(self, alert):
@@ -187,9 +244,20 @@ class Bot:
             gid = secrets.token_hex(4)
             msg = {'at': time.time(), 'firing': firing, 'resolved': resolved, 'copies': [],
                    'url': self._grafana_url(firing or resolved)}
+            silent = self.quiet_now()
+            if self.work_until():
+                msg['work'] = True
+                silent = True
+            uids = {self.rule_uid.get((a.get('labels') or {}).get('alertname', ''), '') for a in firing or resolved}
+            if not firing and uids == {RESTART_UID}:
+                silent = True               # «работает без перезапусков» — справка, без звука
+            if firing and uids == {RESTART_UID}:
+                upd = self.panel_updates(firing)
+                if len(upd) == len({(a.get('labels') or {}).get('panel') for a in firing}):
+                    msg['updated'] = upd     # все перезапуски — обновления: сообщаем тихо
+                    silent = True
             self.state['msgs'][gid] = msg
             body, rows = self.render_alert(gid)
-            silent = self.quiet_now()
             for chat, topic in self.chats():
                 try:
                     mid, mode = self.api.send(chat, topic, body, rows, silent)
@@ -204,7 +272,13 @@ class Bot:
 
     def render_alert(self, gid):
         msg = self.state['msgs'][gid]
+        if msg.get('updated'):
+            titles = {p.id: p.title for p in self.cfg.panels}
+            return ''.join(f'<p>🔄 Панель {esc(titles.get(pid, pid))} обновлена до {esc(v)} — перезапуск ожидаемый</p>'
+                           for pid, v in msg['updated'].items()), []
         body = F.alert_body(msg['firing'], msg['resolved'], self.cfg.multi)
+        if msg.get('work'):
+            body = '<p>🛠 <i>Идут работы</i></p>' + body
         if not msg['firing']:
             return body, []
         mute = msg.get('mute')
@@ -418,6 +492,13 @@ class Bot:
                 if rest in self.state['msgs']:
                     self.api.edit(chat, mid, mode, *self.render_alert(rest))
                 return ''
+            if kind == 'wk':
+                if rest == 'end':
+                    self.work_stop()
+                elif rest in ('start', 'more'):
+                    self.work_start()
+                self.api.edit(chat, mid, mode, *self.work_body())
+                return {'end': 'Работы завершены', 'start': 'Работы начаты', 'more': 'Продлено на час'}.get(rest, '')
             if kind == 'st':
                 self.api.edit(chat, mid, mode, *(self.firing_body() if rest == 'f' else self.status_body()))
                 return ''
@@ -452,7 +533,7 @@ class Bot:
         if not self.is_admin(m.get('from')):
             return
         screens = {'status': self.status_body, 'mutes': self.mutes_body, 'settings': self.settings_body,
-                   'start': self.status_body}
+                   'start': self.status_body, 'work': self.work_body}
         if cmd not in screens:
             return
         chat = m['chat']['id']
@@ -499,6 +580,14 @@ class Bot:
 
     def start(self):
         threading.Thread(target=self.poll_forever, daemon=True).start()
+
+
+def work_windows(cfg, since):
+    """Окна режима работ после since (для сводки): [(начало, конец)]."""
+    if not cfg.bot:
+        return []
+    state = read_json(f'{cfg.data_dir}/bot.json', {}) or {}
+    return [(a, b) for a, b in state.get('work') or [] if b > since]
 
 
 def daily_enabled(cfg):

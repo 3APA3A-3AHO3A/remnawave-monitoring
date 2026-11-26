@@ -3,6 +3,7 @@
 Порядок: GeoCheck (изменения наверху) → сбои за сутки → по каждой панели
 пользователи и ноды.
 """
+import time
 from datetime import timedelta
 
 from . import geocheck, rkn, scan
@@ -64,6 +65,13 @@ def collect(prom, cfg):
         'site_cert': _by(prom, '(rwmon_site_cert_expiry_timestamp_seconds - time()) / 86400', 'site'),
         'site_up': _by(prom, 'rwmon_site_up', 'site'),
         'states': [],
+        # сколько минут за сутки нода была перегружена (CPU на ядро или память выше 90%)
+        'overload': _by(prom, 'sum by (panel, node_uuid) (sum_over_time((max by (panel, node_uuid) '
+                              '({__name__=~"rwmon_node_cpu_load5|rwmon_node_memory_used_ratio"}) > bool 0.9)[24h:1m]))',
+                        *pn),
+        # с node_exporter: «нужна перезагрузка» и возраст geo-баз, дней
+        'reboot': _by(prom, 'max by (panel, node_uuid) (node_reboot_required)', *pn),
+        'geo_age': _by(prom, '(time() - min by (panel, node_uuid) (rwmon_geodata_mtime_seconds > 0)) / 86400', *pn),
         # сколько минут за сутки проба из РФ не присылала результаты
         'probe_silent': _by(prom, 'sum by (probe) (sum_over_time((rwmon_ru_probe_up == bool 0)[24h:1m]))',
                             'probe'),
@@ -245,7 +253,12 @@ def send(prom, clients, cfg, dry_run=False, done=None):
         tl = None
     html = report.full_html(data, extras, geo_run, rkn_data, cfg, tl, muted)
     fname = f'monitoring-{today}.html'
-    body = report.summary_rich(data, extras, geo_run, rkn_data, cfg, muted) if cfg.bot else None
+    scan_data = None
+    if cfg.rkn_enabled and cfg.rkn_token:
+        scan_data = scan.load(cfg)
+    work = botmod.work_windows(cfg, time.time() - 86400)
+    body = (report.summary_rich(data, extras, geo_run, rkn_data, cfg, muted, scan_data=scan_data, work=work)
+            if cfg.bot else None)
     text = alertfmt.plain(body) if body else build_text(data, extras, geo_run, cfg)
     if dry_run:
         print(text)
