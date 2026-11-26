@@ -14,7 +14,6 @@ Grafana читает только готовый JSON; этот файл ей н
   проверки подробно, здоровье панелей, GeoCheck.
 """
 import json
-import math
 import os
 
 DS = {'type': 'prometheus', 'uid': 'rwmon-prometheus'}
