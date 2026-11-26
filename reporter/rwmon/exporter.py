@@ -229,7 +229,7 @@ def collect_panel(panel, rw, lines, state, multi=False, node_ips=None, node_targ
         name = n.get('name') or uid
         lines.add('rwmon_node_info', dict(nl, node_name=name, node=f'{name} · {panel.title}' if multi else name,
                                           country=(n.get('countryCode') or '').upper()), 1)
-        ip = resolve_ip(str(n.get('address') or ''), state)
+        ip = resolve_ip((getattr(panel, 'node_address', None) or {}).get(name) or str(n.get('address') or ''), state)
         if ip:
             lines.add('rwmon_node_address', dict(nl, ip=ip), 1)
             if node_ips is not None:

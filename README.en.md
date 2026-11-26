@@ -286,6 +286,7 @@ One panel — one `[[panel]]` block:
 | `exclude_nodes` | nodes (names or tags) not to watch. Nodes disabled in the panel are hidden automatically |
 | `geocheck_exclude` | nodes where GeoCheck is not run |
 | `host_exit` | where a host leads, for alerts: `{ "LTE 3" = "CDN 1" }`. Only needed for hosts behind Cloudflare or a relay — when the host address matches a node IP, the node is found automatically |
+| `node_address` | the public IP of a node whose panel address is internal (a node on the panel server itself, `172.18.0.1`): `{ "Panel" = "203.0.113.10" }`. Its node_exporter is scraped at this address, and hosts on this IP find their node |
 | `metrics_url` and login | optional, exact traffic from the panel's `/metrics` (see below) |
 | `[panel.telegram]` | the panel's bot, chat and topic |
 
