@@ -111,15 +111,15 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Онлайн",
-      "description": "Клиентов на нодах выбранных панелей прямо сейчас",
+      "title": "Пользователи",
+      "description": "Онлайн — клиентов на нодах выбранных панелей прямо сейчас; подписок — активных",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
       },
       "gridPos": {
         "h": 4,
-        "w": 3,
+        "w": 4,
         "x": 0,
         "y": 0
       },
@@ -131,7 +131,18 @@
             "uid": "rwmon-prometheus"
           },
           "expr": "sum(rwmon_node_online_users{panel_title=~\"$panel\"})",
-          "legendFormat": "",
+          "legendFormat": "онлайн",
+          "range": false,
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "sum(rwmon_users{status=\"ACTIVE\", panel_title=~\"$panel\"})",
+          "legendFormat": "подписок",
           "range": false,
           "instant": true
         }
@@ -146,14 +157,14 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "justifyMode": "center",
-        "textMode": "value",
-        "orientation": "vertical",
+        "justifyMode": "auto",
+        "textMode": "value_and_name",
+        "orientation": "horizontal",
         "wideLayout": true,
         "showPercentChange": false,
         "text": {
           "titleSize": 12,
-          "valueSize": 30
+          "valueSize": 18
         }
       },
       "fieldConfig": {
@@ -173,7 +184,23 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              }
+            ]
+          }
+        ]
       }
     },
     {
@@ -188,7 +215,7 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 3,
+        "x": 4,
         "y": 0
       },
       "targets": [
@@ -292,7 +319,7 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 7,
+        "x": 8,
         "y": 0
       },
       "targets": [
@@ -395,8 +422,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 3,
-        "x": 11,
+        "w": 4,
+        "x": 12,
         "y": 0
       },
       "targets": [
@@ -492,7 +519,7 @@
       "id": 5,
       "type": "stat",
       "title": "Сеть нод",
-      "description": "Скорость сетевых интерфейсов всех серверов нод: RX — принято сервером, TX — отправлено",
+      "description": "Скорость сетевых интерфейсов всех серверов нод сейчас: RX — принято сервером, TX — отправлено",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
@@ -500,7 +527,7 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 14,
+        "x": 16,
         "y": 0
       },
       "targets": [
@@ -571,15 +598,15 @@
       "id": 6,
       "type": "stat",
       "title": "Трафик",
-      "description": "Трафик клиентов: сколько скачали и отправили через все ноды за выбранный период",
+      "description": "Трафик клиентов через все ноды за выбранный период: скачали (к клиентам) и отправили (от клиентов)",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
       },
       "gridPos": {
         "h": 4,
-        "w": 3,
-        "x": 18,
+        "w": 4,
+        "x": 20,
         "y": 0
       },
       "targets": [
@@ -589,76 +616,8 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum(increase(rwmon_node_inbound_upload_bytes{panel_title=~\"$panel\"}[$__range]) + increase(rwmon_node_inbound_download_bytes{panel_title=~\"$panel\"}[$__range]))",
-          "legendFormat": "",
-          "range": false,
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "textMode": "value",
-        "orientation": "vertical",
-        "wideLayout": true,
-        "showPercentChange": false,
-        "text": {
-          "titleSize": 12,
-          "valueSize": 30
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "decbytes",
-          "decimals": 1,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 7,
-      "type": "stat",
-      "title": "Подписки",
-      "description": "Активные подписки и сколько пользователей было онлайн за сутки",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "rwmon-prometheus"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 3,
-        "x": 21,
-        "y": 0
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "sum(rwmon_users{status=\"ACTIVE\", panel_title=~\"$panel\"})",
-          "legendFormat": "активных",
+          "expr": "sum(increase(rwmon_node_inbound_download_bytes{panel_title=~\"$panel\"}[$__range]))",
+          "legendFormat": "↓ клиентам",
           "range": false,
           "instant": true
         },
@@ -668,8 +627,8 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum(rwmon_users_online{period=\"lastDay\", panel_title=~\"$panel\"})",
-          "legendFormat": "за сутки",
+          "expr": "sum(increase(rwmon_node_inbound_upload_bytes{panel_title=~\"$panel\"}[$__range]))",
+          "legendFormat": "↑ от клиентов",
           "range": false,
           "instant": true
         }
@@ -696,8 +655,8 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "none",
-          "decimals": 0,
+          "unit": "decbytes",
+          "decimals": 1,
           "color": {
             "mode": "thresholds"
           },
@@ -705,33 +664,17 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "text",
                 "value": null
               }
             ]
           }
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "B"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "text"
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       }
     },
     {
-      "id": 8,
+      "id": 7,
       "type": "table",
       "title": "Сейчас не работает",
       "description": "Хосты, которые не работают прямо сейчас, и сколько уже (в пределах суток). «Что» — итог: блокировка в РФ (из России не открывается, а вход и нода работают), сломан вход (прокладка, CDN), нода не отвечает. Ниже — проверки маршрутов (WARP, Psiphon), если не проходят.",
@@ -942,7 +885,7 @@
       }
     },
     {
-      "id": 9,
+      "id": 8,
       "type": "table",
       "title": "Пробы из РФ",
       "description": "Серверы в России, которые проверяют хосты как клиент из РФ. «Хостов» — сколько проверяет (МСК-ноды из РФ не проверяются — их проверяет сервер мониторинга). «Не открылось» — сколько хостов не открылись с этой пробы в последней проверке. «Данные» — сколько секунд назад проба присылала результаты (раз в минуту; дольше 3 минут — молчит).",
@@ -1200,7 +1143,7 @@
       }
     },
     {
-      "id": 10,
+      "id": 9,
       "type": "table",
       "title": "Панели",
       "description": "«Без рестарта» — сколько работает самый «молодой» процесс панели (жёлтым — меньше часа). «Задержка» — насколько подтормаживает самый медленный процесс: до 50 мс норма, от 200 мс админка и подписки начинают подвисать. Подробно — блок «Здоровье панелей»",
@@ -1484,7 +1427,7 @@
       }
     },
     {
-      "id": 11,
+      "id": 10,
       "type": "table",
       "title": "Сайты",
       "description": "Сайты из [[site]] в config.toml: проверка с сервера мониторинга и с проб в России, код и время ответа, сколько осталось до конца сертификата",
@@ -1853,7 +1796,7 @@
       }
     },
     {
-      "id": 12,
+      "id": 11,
       "type": "table",
       "title": "Блокировки РКН",
       "description": "IP нод и домены сервиса по спискам блокировок РФ (cheburcheck.ru, раз в несколько часов; блок [rkn] в config.toml). «В списках» — адрес в реестре РКН, в заблокированной подсети или CDN.",
@@ -2043,7 +1986,7 @@
       }
     },
     {
-      "id": 13,
+      "id": 12,
       "type": "table",
       "title": "Хосты",
       "description": "Строка — хост панели. Итог: работает — открывается из РФ хотя бы с одной пробы (хосты МСК-нод — с сервера мониторинга); блокировка в РФ — из России не открывается, а вход и нода работают; сломан вход — не работает прокладка или CDN, нода жива; нода не отвечает — не открывается даже напрямую. Колонки проб — проверка из России как приложение клиента. NL · вход — с сервера мониторинга по адресу из подписки (только у хостов, где вход не сама нода), NL · нода — напрямую на ноду. Дальше — проверки маршрутов. «·» — эта проверка хосту не нужна. «→ нода» — куда ведёт хост.",
@@ -2647,7 +2590,7 @@
       }
     },
     {
-      "id": 14,
+      "id": 13,
       "type": "state-timeline",
       "title": "История хостов",
       "description": "Итог по каждому хосту во времени: зелёным — работал, цветом — что было не так (как в таблице «Хосты»). Наведите на полосу — увидите, когда и сколько",
@@ -2744,7 +2687,7 @@
       }
     },
     {
-      "id": 15,
+      "id": 14,
       "type": "table",
       "title": "Ноды",
       "description": "Связь — нода подключена к панели. CPU — load average на ядро, RAM — занятая память (по данным панели). RX/TX — сеть сервера сейчас, трафик — клиентов за выбранный период, лимит — расход трафика ноды, если он задан в панели. Сервер и Xray — сколько работают без перезапуска (жёлтым — Xray перезапускался меньше суток назад).",
@@ -3537,7 +3480,7 @@
       }
     },
     {
-      "id": 16,
+      "id": 15,
       "type": "timeseries",
       "title": "Клиенты онлайн",
       "description": "По панелям, слоями: высота — сколько всего клиентов",
@@ -3596,7 +3539,7 @@
       }
     },
     {
-      "id": 17,
+      "id": 16,
       "type": "timeseries",
       "title": "Сеть всех нод",
       "description": "Вверх от нуля — принято серверами (RX), вниз пунктиром — отправлено (TX). Сглажено: среднее за шаг графика",
@@ -3694,7 +3637,7 @@
       "interval": "2m"
     },
     {
-      "id": 18,
+      "id": 17,
       "type": "timeseries",
       "title": "Аутбаунды: $outbound",
       "description": "Все ноды вместе. Вверх — ответы из аутбаунда, вниз — запросы в него. Если запросы есть, а ответов нет — аутбаунд сломан",
@@ -3791,7 +3734,7 @@
       }
     },
     {
-      "id": 19,
+      "id": 18,
       "type": "row",
       "title": "Каждая нода отдельно",
       "collapsed": false,
@@ -3804,7 +3747,7 @@
       "panels": []
     },
     {
-      "id": 20,
+      "id": 19,
       "type": "timeseries",
       "title": "$node",
       "description": "Сеть сервера ноды: вверх (зелёным) — принято, вниз (жёлтым) — отправлено. Сглажено: среднее за шаг графика. Показываются ноды, выбранные вверху в «Нода».",
@@ -3913,7 +3856,7 @@
       "maxPerRow": 4
     },
     {
-      "id": 22,
+      "id": 21,
       "type": "row",
       "title": "Выходы по нодам: $outbound",
       "collapsed": true,
@@ -3925,7 +3868,7 @@
       },
       "panels": [
         {
-          "id": 21,
+          "id": 20,
           "type": "timeseries",
           "title": "$node",
           "description": "Трафик ноды через выходы, выбранные вверху в «Аутбаунд»: вверх — ответы из выхода, вниз пунктиром — запросы в него. Psiphon — по правой шкале: через него идёт намного меньше. Запросы есть, а ответов нет — выход на этой ноде сломан. Пусто — через выход на этой ноде никто не ходил.",
@@ -4063,7 +4006,7 @@
       ]
     },
     {
-      "id": 28,
+      "id": 27,
       "type": "row",
       "title": "Сравнение нод",
       "collapsed": true,
@@ -4075,7 +4018,7 @@
       },
       "panels": [
         {
-          "id": 23,
+          "id": 22,
           "type": "timeseries",
           "title": "Клиенты на нодах",
           "description": "",
@@ -4139,7 +4082,7 @@
           }
         },
         {
-          "id": 24,
+          "id": 23,
           "type": "timeseries",
           "title": "Трафик клиентов: к клиентам ↑ / от клиентов ↓",
           "description": "",
@@ -4241,7 +4184,7 @@
           }
         },
         {
-          "id": 25,
+          "id": 24,
           "type": "timeseries",
           "title": "CPU: load average на ядро",
           "description": "",
@@ -4322,7 +4265,7 @@
           }
         },
         {
-          "id": 26,
+          "id": 25,
           "type": "timeseries",
           "title": "Память",
           "description": "",
@@ -4403,7 +4346,7 @@
           }
         },
         {
-          "id": 27,
+          "id": 26,
           "type": "timeseries",
           "title": "Аутбаунды $outbound: ответы ↑ / запросы ↓",
           "description": "",
@@ -4507,7 +4450,7 @@
       ]
     },
     {
-      "id": 33,
+      "id": 32,
       "type": "row",
       "title": "Проверки подробно: из РФ и с сервера мониторинга",
       "collapsed": true,
@@ -4519,7 +4462,7 @@
       },
       "panels": [
         {
-          "id": 29,
+          "id": 28,
           "type": "state-timeline",
           "title": "Из РФ: что не открывалось",
           "description": "Хосты, которые хотя бы раз за период не открылись с какой-нибудь пробы в России. Не открывается с одной пробы — скорее всего, проблема у неё самой; со всех — у хоста.",
@@ -4599,7 +4542,7 @@
           }
         },
         {
-          "id": 30,
+          "id": 29,
           "type": "timeseries",
           "title": "Из РФ: время ответа через хост",
           "description": "Сколько занимает проверка из России: подключение к хосту и загрузка страницы",
@@ -4663,7 +4606,7 @@
           }
         },
         {
-          "id": 31,
+          "id": 30,
           "type": "state-timeline",
           "title": "С сервера мониторинга: что не проходило",
           "description": "Проверки с сервера мониторинга, которые хотя бы раз за период не проходили: через вход, напрямую на ноду и проверки маршрутов",
@@ -4743,7 +4686,7 @@
           }
         },
         {
-          "id": 32,
+          "id": 31,
           "type": "timeseries",
           "title": "С сервера мониторинга: время ответа на ноду",
           "description": "Сколько занимает проверка «на ноду» с сервера мониторинга",
@@ -4809,7 +4752,7 @@
       ]
     },
     {
-      "id": 37,
+      "id": 36,
       "type": "row",
       "title": "Здоровье панелей",
       "collapsed": true,
@@ -4821,7 +4764,7 @@
       },
       "panels": [
         {
-          "id": 34,
+          "id": 33,
           "type": "timeseries",
           "title": "Память процессов панели",
           "description": "Сколько памяти занимает каждый процесс. Норма — ровная линия; если растёт день за днём и не падает — утечка. Красная линия — порог алерта по умолчанию (panel_memory_mb = 1024)",
@@ -4899,7 +4842,7 @@
           }
         },
         {
-          "id": 35,
+          "id": 34,
           "type": "timeseries",
           "title": "Задержка процессов панели",
           "description": "Насколько процесс не успевает разбирать свою очередь дел (99-й перцентиль). До 50 мс — норма. Красная линия — порог алерта «Панель тормозит» по умолчанию (panel_lag_ms = 200)",
@@ -4977,7 +4920,7 @@
           }
         },
         {
-          "id": 36,
+          "id": 35,
           "type": "timeseries",
           "title": "Работает без перезапуска",
           "description": "Линия растёт, пока процесс работает; падение в ноль — перезапуск (обновление панели или падение)",
@@ -5041,7 +4984,7 @@
       ]
     },
     {
-      "id": 42,
+      "id": 41,
       "type": "row",
       "title": "GeoCheck: как видят ноды",
       "collapsed": true,
@@ -5053,7 +4996,7 @@
       },
       "panels": [
         {
-          "id": 38,
+          "id": 37,
           "type": "table",
           "title": "IP нод",
           "description": "IP, сеть и тип IP по последнему GeoCheck. Риск — оценка репутации IP (0–100)",
@@ -5265,7 +5208,7 @@
           }
         },
         {
-          "id": 39,
+          "id": 38,
           "type": "table",
           "title": "Как сервисы видят ноды",
           "description": "Страна, которую определяет каждый сервис (последний GeoCheck). Красным — RU и BY. yes/no — ответы на вопросы вроде «показывает ли Google капчу»",
@@ -5413,7 +5356,7 @@
           }
         },
         {
-          "id": 40,
+          "id": 39,
           "type": "table",
           "title": "Доступ к сервисам",
           "description": "Открывается ли сервис с IP ноды: ✓ — да, ✗ — нет, рядом — регион, который он определил",
@@ -5595,7 +5538,7 @@
           }
         },
         {
-          "id": 41,
+          "id": 40,
           "type": "table",
           "title": "GeoIP-базы и CDN",
           "description": "Что о стране IP ноды записано в базах GeoIP и что видят CDN",

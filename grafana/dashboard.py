@@ -5,7 +5,7 @@ Grafana читает только готовый JSON; этот файл ей н
 
 Устройство (сверху вниз):
   переменные «Панель», «Нода», «Аутбаунд»;
-  цифры: онлайн, ноды, хосты, пробы из РФ, сеть, трафик, подписки;
+  цифры: пользователи, ноды, хосты, пробы из РФ, сеть, трафик;
   «Сейчас не работает», пробы из РФ, панели; сайты и блокировки РКН;
   «Хосты» — строка на хост: итог и все проверки (из РФ с каждой пробы, с сервера
   мониторинга через вход и на ноду, проверки маршрутов), история итога;
@@ -232,39 +232,39 @@ def build(checks=None, servers=False, probes=()):
 
     # ── 1. Цифры сверху ──
     host_state = f'(rwmon_host{{{F}}} * on (name) group_left () max by (name) (rwmon_host_state))'
-    p.append(stat('Онлайн', 0, [target(f'sum(rwmon_node_online_users{{{F}}})', 'A', instant=True)], w=3,
-                  desc='Клиентов на нодах выбранных панелей прямо сейчас'))
-    p.append(stat('Ноды', 3, [
+    p.append(stat('Пользователи', 0, [
+        target(f'sum(rwmon_node_online_users{{{F}}})', 'A', 'онлайн', instant=True),
+        target(f'sum(rwmon_users{{status="ACTIVE", {F}}})', 'B', 'подписок', instant=True),
+    ], overrides=[by_ref('B', color={'mode': 'fixed', 'fixedColor': GREY})],
+        desc='Онлайн — клиентов на нодах выбранных панелей прямо сейчас; подписок — активных'))
+    p.append(stat('Ноды', 4, [
         target(f'sum(rwmon_node_connected{{{F}}})', 'A', 'на связи', instant=True),
         target(f'count(rwmon_node_connected{{{F}}} == 0) or vector(0)', 'B', 'отключены', instant=True),
-    ], overrides=[by_ref('B', thresholds={'mode': 'absolute', 'steps': red_if_positive()})], w=4,
+    ], overrides=[by_ref('B', thresholds={'mode': 'absolute', 'steps': red_if_positive()})],
         desc='Выключенные в панели ноды и ноды из exclude_nodes не считаются'))
-    p.append(stat('Хосты', 7, [
+    p.append(stat('Хосты', 8, [
         target(f'count(count by (name) ({host_state} == 0)) or vector(0)', 'A', 'работают', instant=True),
         target(f'count(count by (name) ({host_state} > 0)) or vector(0)', 'B', 'не работают', instant=True),
-    ], overrides=[by_ref('B', thresholds={'mode': 'absolute', 'steps': red_if_positive()})], w=4,
+    ], overrides=[by_ref('B', thresholds={'mode': 'absolute', 'steps': red_if_positive()})],
         desc='Итог по хостам с тегами проверки: работает — открывается из РФ (а хосты МСК-нод — '
              'с сервера мониторинга). Почему не работает — в таблице «Хосты»'))
-    p.append(stat('Пробы РФ', 11, [
+    p.append(stat('Пробы РФ', 12, [
         target('sum(rwmon_ru_probe_up) or vector(0)', 'A', 'на связи', instant=True),
         target('count(rwmon_ru_probe_up == 0) or vector(0)', 'B', 'молчат', instant=True),
-    ], overrides=[by_ref('B', thresholds={'mode': 'absolute', 'steps': red_if_positive()})], w=3,
+    ], overrides=[by_ref('B', thresholds={'mode': 'absolute', 'steps': red_if_positive()})],
         desc='Серверы в России, которые проверяют хосты как клиент из РФ ([[probe]], папка probe/)'))
-    p.append(stat('Сеть нод', 14, [
+    p.append(stat('Сеть нод', 16, [
         target(f'sum(rwmon_node_network_rx_bytes_per_second{{{F}}}) * 8', 'A', '↓ RX', instant=True),
         target(f'sum(rwmon_node_network_tx_bytes_per_second{{{F}}}) * 8', 'B', '↑ TX', instant=True),
-    ], unit='bps', decimals=1, steps=[{'color': BLUE, 'value': None}], w=4,
-        desc='Скорость сетевых интерфейсов всех серверов нод: RX — принято сервером, TX — отправлено'))
-    p.append(stat('Трафик', 18, [target(
-        f'sum(increase(rwmon_node_inbound_upload_bytes{{{F}}}[$__range]) '
-        f'+ increase(rwmon_node_inbound_download_bytes{{{F}}}[$__range]))', 'A', instant=True)],
-        unit='decbytes', decimals=1, steps=[{'color': GREY, 'value': None}], w=3,
-        desc='Трафик клиентов: сколько скачали и отправили через все ноды за выбранный период'))
-    p.append(stat('Подписки', 21, [
-        target(f'sum(rwmon_users{{status="ACTIVE", {F}}})', 'A', 'активных', instant=True),
-        target(f'sum(rwmon_users_online{{period="lastDay", {F}}})', 'B', 'за сутки', instant=True),
-    ], overrides=[by_ref('B', color={'mode': 'fixed', 'fixedColor': GREY})], w=3,
-        desc='Активные подписки и сколько пользователей было онлайн за сутки'))
+    ], unit='bps', decimals=1, steps=[{'color': BLUE, 'value': None}],
+        desc='Скорость сетевых интерфейсов всех серверов нод сейчас: RX — принято сервером, TX — отправлено'))
+    p.append(stat('Трафик', 20, [
+        target(f'sum(increase(rwmon_node_inbound_download_bytes{{{F}}}[$__range]))', 'A', '↓ клиентам',
+               instant=True),
+        target(f'sum(increase(rwmon_node_inbound_upload_bytes{{{F}}}[$__range]))', 'B', '↑ от клиентов',
+               instant=True),
+    ], unit='decbytes', decimals=1, steps=[{'color': GREY, 'value': None}],
+        desc='Трафик клиентов через все ноды за выбранный период: скачали (к клиентам) и отправили (от клиентов)'))
     y = 4
 
     # ── 2. Сейчас не работает · пробы из РФ · панели ──
