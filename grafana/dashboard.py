@@ -713,25 +713,20 @@ def build(checks=None, servers=False, probes=()):
         y += 1
 
     # Проверки подробно: из РФ по пробам и с сервера мониторинга
-    nl_checks = (('entry', 'через вход'), ('xray', 'на ноду')) + tuple(CHECKS)
     detail = [
-        history('Из РФ: что не открывалось', {'h': 10, 'w': 24, 'x': 0, 'y': y + 1},
-                'max by (name, probe) (rwmon_ru_status) and on (name, probe) '
-                '(min by (name, probe) (min_over_time(rwmon_ru_status[$__range] @ end())) == 0)',
-                '{{name}} · {{probe}}',
-                'Хосты, которые хотя бы раз за период не открылись с какой-нибудь пробы в России. '
-                'Не открывается с одной пробы — скорее всего, проблема у неё самой; со всех — у хоста.'),
-        timeseries('Из РФ: время ответа через хост', {'h': 9, 'w': 24, 'x': 0, 'y': y + 11}, [
+        history('Из РФ: история по хостам', {'h': 12, 'w': 24, 'x': 0, 'y': y + 1},
+                'min by (name) (rwmon_ru_status)', '{{name}}',
+                'Открывался ли хост из России: красным — хотя бы с одной пробы не открылся '
+                '(худший результат проб). По пробам отдельно — в подсказке графика ниже.'),
+        timeseries('Из РФ: время ответа через хост', {'h': 9, 'w': 24, 'x': 0, 'y': y + 13}, [
             target('max by (name, probe) (rwmon_ru_latency_ms > 0)', 'A', '{{name}} · {{probe}}'),
         ], 'ms', legend='table', placement='right', fill=0,
-            desc='Сколько занимает проверка из России: подключение к хосту и загрузка страницы'),
-        history('С сервера мониторинга: что не проходило', {'h': 10, 'w': 24, 'x': 0, 'y': y + 20}, ' or '.join(
-            f'label_replace(({host_status(c)}) and on (name) (min by (name) (min_over_time(xray_proxy_status'
-            f'{{check="{c}"}}[$__range] @ end())) == 0), "what", "{t}", "", "")' for c, t in nl_checks),
-            '{{host}} · {{panel_title}} · {{what}}',
-            'Проверки с сервера мониторинга, которые хотя бы раз за период не проходили: через вход, '
-            'напрямую на ноду и проверки маршрутов'),
-        timeseries('С сервера мониторинга: время ответа на ноду', {'h': 9, 'w': 24, 'x': 0, 'y': y + 30}, [
+            desc='Сколько занимает проверка из России: подключение к хосту и загрузка страницы, по каждой пробе'),
+        history('С сервера мониторинга: история по хостам', {'h': 12, 'w': 24, 'x': 0, 'y': y + 22},
+                'min by (name) (xray_proxy_status{name!="rwmon-empty"})', '{{name}}',
+                'Худший результат проверок с сервера мониторинга: через вход, на ноду и проверок маршрутов '
+                '(WARP, Psiphon). Красным — хоть одна не прошла; какая — в таблице «Хосты»'),
+        timeseries('С сервера мониторинга: время ответа на ноду', {'h': 9, 'w': 24, 'x': 0, 'y': y + 34}, [
             target(f'max by (host, panel_title) ({hosts("xray")} * on (name) group_left () '
                    f'max by (name) (xray_proxy_latency_ms{{check="xray"}} > 0))', 'A', '{{host}} · {{panel_title}}'),
         ], 'ms', legend='table', placement='right', fill=0,
