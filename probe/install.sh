@@ -81,10 +81,13 @@ if ! grep -qs "$RESERVED" /etc/sysctl.d/90-rwmon-probe.conf; then
   echo "порты проверок $RESERVED закреплены"
 fi
 
+IMAGE="ghcr.io/3apa3a-3aho3a/rwmon-xray-checker:${CHECKER_TAG:-latest}"
 if docker compose pull -q checker 2>/dev/null; then
   echo "образ проверки скачан"
+elif docker image inspect "$IMAGE" >/dev/null 2>&1; then
+  echo "образ проверки не скачался — использую тот, что уже есть"
 else
-  echo "готового образа нет — собираю проверку здесь (несколько минут)"
+  echo "готового образа нет — собираю проверку здесь (несколько минут, нагружает процессор)"
   docker compose build checker
 fi
 docker compose up -d --remove-orphans
