@@ -495,8 +495,9 @@ probe_interval_minutes = 30  # how often the next address is checked, minutes; 5
 ```
 
 - Same addresses as for the lists. They are checked one at a time, round-robin: each time the one checked longest ago. At 30 minutes a round of 40 addresses takes less than a day.
+- Out of turn: as soon as a host stops opening from Russia (the "blocked in Russia?" or "entry broken or blocked" verdict), its node and entry IPs go to the scanners right away, without waiting for the round — you see whether and how operators block it. An address scanned less than 3 hours ago is not rechecked: cheburcheck keeps a measurement that long and would return the same answer.
 - Checks spend no credits, but the request rate is limited. On a 429 the pause doubles (up to 6 hours) until the service answers again; on a rejected token the monitoring logs it and waits 6 hours.
-- A block counts when at least two scanners see it: a single verdict can be wrong. Then the "Russian blocklist: scanners see a block" alert fires with the kind of block; which ISPs — in the daily report ("📡 Сканеры в сетях РФ") and in the "у кого блокируют" column of the "Блокировки РКН" table on the dashboard.
+- A block counts when at least two scanners see it: a single verdict can be wrong. Then the "Russian blocklist: scanners see a block" alert fires with the kind of block; which ISPs — in the daily report ("📡 Сканеры в сетях РФ") and in the "Блокировки РКН" table on the dashboard: the scanners' verdict, how many of those that answered open or block it, when it was checked and which ISPs block it.
 - The token is kept only in `config.toml` and goes only to cheburcheck.ru, in a request header.
 - Check an address now: `docker compose exec reporter python -m rwmon scan <IP or domain>`; whether the token is accepted — in `rwmon check`.
 

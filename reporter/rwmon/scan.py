@@ -29,6 +29,11 @@ MIN_BAD = 2                 # столько сканеров должны ви�
 STREAM_TIMEOUT = 150        # сколько ждём событие done, секунд
 BACKOFF_MAX = 6 * 3600
 KEEP = 3 * 86400            # результаты старше не показываем: адрес, видимо, убрали из проверок
+CACHE = 3 * 3600            # столько cheburcheck хранит измерение: внеочередная проверка раньше
+                            # вернула бы тот же сохранённый ответ
+URGENT = {}                 # {IP: имя хоста} — не открываются из РФ; ставит exporter
+WAKE = threading.Event()    # будит поток, когда появился новый срочный адрес
+_lock = threading.Lock()
 
 
 class RateLimited(Exception):
@@ -154,6 +159,28 @@ def kinds(item):
     return ', '.join(BAD[v] for v in BAD if (item.get('by') or {}).get(v))
 
 
+def set_urgent(urgent):
+    """Хосты, что не открываются из РФ: их IP — сканерам вне очереди. Будим поток, только если
+    появился адрес, которого в срочных ещё не было."""
+    global URGENT
+    with _lock:
+        new = set(urgent) - set(URGENT)
+        URGENT = dict(urgent)
+    if new:
+        WAKE.set()
+
+
+def urgent_pick(items):
+    """Срочный адрес, если есть: не проверявшийся сканерами дольше CACHE."""
+    with _lock:
+        cand = [(ip, name) for ip, name in URGENT.items()
+                if time.time() - items.get(ip, {}).get('ts', 0) > CACHE]
+    if not cand:
+        return None
+    ip, name = min(cand, key=lambda x: items.get(x[0], {}).get('ts', 0))
+    return {'target': ip, 'kind': 'node', 'name': name, 'urgent': True}
+
+
 def pick(tgts, items):
     """Следующий адрес: тот, что не проверяли дольше всех (новые — первыми)."""
     if not tgts:
@@ -167,9 +194,16 @@ def step(cfg, clients, data, probe_fn=None):
     items = data.setdefault('items', {})
     tgts = rkn.targets(cfg, clients)
     current = {t['target'] for t in tgts}
-    for k in [k for k, v in items.items() if k not in current or time.time() - v.get('ts', 0) > KEEP]:
+    with _lock:
+        hot = set(URGENT)
+    for k in [k for k, v in items.items() if time.time() - v.get('ts', 0) > KEEP
+              or (k not in current and k not in hot and time.time() - v.get('ts', 0) > 86400)]:
         items.pop(k)
-    t = pick(tgts, items)
+    names = {t['target']: t for t in tgts}
+    t = urgent_pick(items)
+    if t and t['target'] in names:                 # адрес и так в списке — его подпись и вид
+        t = dict(names[t['target']], urgent=True)
+    t = t or pick(tgts, items)
     if not t:
         return interval
     try:
@@ -190,7 +224,8 @@ def step(cfg, clients, data, probe_fn=None):
         return interval
     items[t['target']] = dict(s, name=t['name'], kind=t['kind'], ts=time.time(),
                               time=now().strftime('%Y-%m-%d %H:%M'))
-    log('scan', f'{t["target"]}: ответили {s["answered"]} из {s["online"]}, ok {s["ok"]}'
+    log('scan', ('вне очереди (не открывается из РФ) ' if t.get('urgent') else '')
+                + f'{t["target"]}: ответили {s["answered"]} из {s["online"]}, ok {s["ok"]}'
                 + (f', блокировка: {why(s)}' if s['bad'] else ''))
     return interval
 
@@ -206,7 +241,17 @@ def loop(cfg, clients, stop=None):
         except Exception as e:
             log('scan', f'ошибка: {e} — повторю через {cfg.rkn_probe_interval // 60} мин')
             wait = cfg.rkn_probe_interval
-        time.sleep(wait)
+        sleep(wait, data, stop)
+
+
+def sleep(wait, data, stop=None):
+    """Ждать до следующего шага; срочный адрес прерывает ожидание — но не паузу после 429."""
+    end = time.time() + wait
+    while time.time() < end and not (stop and stop.is_set()):
+        if WAKE.wait(max(0.0, end - time.time())):
+            WAKE.clear()
+            if not data.get('backoff') and urgent_pick(data.get('items') or {}):
+                return
 
 
 def start(cfg, clients):

@@ -289,7 +289,7 @@ def build(checks=None, servers=False, probes=(), scanners=False):
     what_map = [{'type': 'value', 'options': {
         **{str(v): {'text': t, 'color': col} for v, t, col in STATES if v},
         **{str(10 + i): {'text': f'{t} не работает', 'color': 'orange'} for i, (_, t) in enumerate(CHECKS)}}}]
-    p.append(table('Сейчас не работает', {'h': 8, 'w': 10, 'x': 0, 'y': y}, [
+    p.append(table('Сейчас не работает', {'h': 8, 'w': 7, 'x': 0, 'y': y}, [
         target(' or '.join(down_a), 'A', instant=True, fmt='table'),
         target(' or '.join(down_b), 'B', instant=True, fmt='table'),
     ], [
@@ -311,7 +311,7 @@ def build(checks=None, servers=False, probes=(), scanners=False):
         sort=[{'displayName': 'сколько', 'desc': True}]))
     p[-1]['fieldConfig']['defaults']['noValue'] = 'Всё работает'
 
-    p.append(table('Пробы из РФ', {'h': 8, 'w': 7, 'x': 10, 'y': y}, [
+    p.append(table('Пробы из РФ', {'h': 8, 'w': 8, 'x': 7, 'y': y}, [
         target('max by (probe) (rwmon_ru_probe_up)', 'A', instant=True, fmt='table'),
         target('max by (probe) (rwmon_ru_probe_hosts)', 'B', instant=True, fmt='table'),
         target('(count by (probe) (rwmon_ru_status == 0)) or (max by (probe) (rwmon_ru_probe_up) * 0)', 'C',
@@ -325,14 +325,15 @@ def build(checks=None, servers=False, probes=(), scanners=False):
             'renameByName': {'probe': 'Проба', 'Value #A': 'связь', 'Value #B': 'хостов',
                              'Value #C': 'не открылось', 'Value #D': 'данные'}}},
     ], [
-        by_name('связь', custom__align='center', custom__cellOptions={'type': 'color-text'},
+        by_name('Проба', custom__width=75),
+        by_name('связь', custom__width=75, custom__align='center', custom__cellOptions={'type': 'color-text'},
                 mappings=[{'type': 'value', 'options': {'1': {'text': 'OK', 'color': GREEN},
                                                         '0': {'text': 'молчит', 'color': RED}}}]),
-        by_name('хостов', decimals=0, custom__align='right'),
-        by_name('не открылось', decimals=0, custom__align='right',
+        by_name('хостов', custom__width=70, decimals=0, custom__align='right'),
+        by_name('не открылось', custom__width=95, decimals=0, custom__align='right',
                 custom__cellOptions={'type': 'color-text'},
                 thresholds={'mode': 'absolute', 'steps': red_if_positive()}),
-        by_name('данные', unit='s', decimals=0, custom__align='right',
+        by_name('данные', custom__width=80, unit='s', decimals=0, custom__align='right',
                 custom__cellOptions={'type': 'color-text'},
                 thresholds={'mode': 'absolute', 'steps': [{'color': 'text', 'value': None},
                                                           {'color': YELLOW, 'value': 120},
@@ -344,7 +345,7 @@ def build(checks=None, servers=False, probes=(), scanners=False):
         sort=[{'displayName': 'Проба', 'desc': False}]))
     p[-1]['fieldConfig']['defaults']['noValue'] = 'Пробы не подключены — README, «Проверка из РФ»'
 
-    p.append(table('Панели', {'h': 8, 'w': 7, 'x': 17, 'y': y}, [
+    p.append(table('Панели', {'h': 8, 'w': 9, 'x': 15, 'y': y}, [
         target(f'max by (panel_title) (rwmon_panel_up{{{F}}})', 'A', instant=True, fmt='table'),
         target(f'max by (panel_title, version) (rwmon_panel_info{{{F}}})', 'B', instant=True, fmt='table'),
         target(f'sum by (panel_title) (rwmon_users_total{{{F}}})', 'D', instant=True, fmt='table'),
@@ -360,15 +361,16 @@ def build(checks=None, servers=False, probes=(), scanners=False):
                              'Value #D': 'польз.', 'Value #U': 'без рестарта', 'Value #L': 'задержка'}}},
     ], [
         by_name('Панель', custom__minWidth=90),
-        by_name('API', custom__align='center', custom__cellOptions={'type': 'color-text'},
+        by_name('версия', custom__width=70),
+        by_name('API', custom__width=60, custom__align='center', custom__cellOptions={'type': 'color-text'},
                 mappings=[{'type': 'value', 'options': {'1': {'text': 'OK', 'color': GREEN},
                                                         '0': {'text': 'НЕТ', 'color': RED}}}]),
-        by_name('польз.', decimals=0, custom__align='right'),
-        by_name('без рестарта', unit='dtdurations', decimals=0, custom__align='right',
+        by_name('польз.', custom__width=70, decimals=0, custom__align='right'),
+        by_name('без рестарта', custom__width=115, unit='dtdurations', decimals=0, custom__align='right',
                 custom__cellOptions={'type': 'color-text'},
                 thresholds={'mode': 'absolute', 'steps': [{'color': YELLOW, 'value': None},
                                                           {'color': 'text', 'value': 3600}]}),
-        by_name('задержка', unit='ms', decimals=0, custom__align='right',
+        by_name('задержка', custom__width=85, unit='ms', decimals=0, custom__align='right',
                 custom__cellOptions={'type': 'color-text'},
                 thresholds={'mode': 'absolute', 'steps': [{'color': 'text', 'value': None},
                                                           {'color': YELLOW, 'value': 50},
@@ -379,7 +381,7 @@ def build(checks=None, servers=False, probes=(), scanners=False):
     y += 8
 
     # ── 3. Сайты · блокировки РКН ──
-    p.append(table('Сайты', {'h': 7, 'w': 12, 'x': 0, 'y': y}, [
+    p.append(table('Сайты', {'h': 7, 'w': 12 if not scanners else 24, 'x': 0, 'y': y}, [
         target('max by (site) (rwmon_site_up)', 'A', instant=True, fmt='table'),
         target('max by (site) (probe_success{kind="http"})', 'B', instant=True, fmt='table'),
         target('max by (site) (rwmon_site_status_code)', 'E', instant=True, fmt='table'),
@@ -436,7 +438,49 @@ def build(checks=None, servers=False, probes=(), scanners=False):
                                   'text': 'ещё нет', 'color': GREY, 'index': 2}}}]),
                   by_name('у кого блокируют', custom__minWidth=200)]
     rkn_col = 'списки' if scanners else 'статус'
-    p.append(table('Блокировки РКН', {'h': 7, 'w': 12, 'x': 12, 'y': y}, rkn_q, rkn_t, [
+    rkn_q = [target('max by (name, kind, why) (rwmon_rkn_blocked)', 'A', instant=True, fmt='table')]
+    rkn_t = [{'id': 'organize', 'options': {
+        'excludeByName': {'Time': True},
+        'indexByName': {'Value': 0, 'name': 1, 'kind': 2, 'why': 3},
+        'renameByName': {'Value': 'статус', 'name': 'Что', 'kind': 'тип', 'why': 'причина'}}}]
+    scan_o = []
+    if scanners:
+        # Сканеры в сетях РФ: итог, сколько открывают/блокируют из ответивших, когда, у кого
+        sq = lambda m, ref: target(f'max by (name) ({m})', ref, instant=True, fmt='table')
+        rkn_q += [sq('rwmon_rkn_scan_blocked', 'B'),
+                  sq('rwmon_rkn_scan_ok', 'D'), sq('rwmon_rkn_scan_bad', 'E'),
+                  sq('rwmon_rkn_scan_answered', 'F'), sq('time() - rwmon_rkn_scan_timestamp_seconds', 'G'),
+                  target('max by (name, who) (rwmon_rkn_scan_info)', 'C', instant=True, fmt='table')]
+        rkn_t = [{'id': 'merge', 'options': {}},
+                 {'id': 'organize', 'options': {
+                     'excludeByName': {'Time': True, 'Value #C': True},
+                     'indexByName': {'name': 0, 'kind': 1, 'Value #A': 2, 'why': 3, 'Value #B': 4,
+                                     'Value #D': 5, 'Value #E': 6, 'Value #F': 7, 'Value #G': 8, 'who': 9},
+                     'renameByName': {'Value #A': 'списки', 'why': 'причина (списки)', 'name': 'Что',
+                                      'kind': 'тип', 'Value #B': 'сканеры', 'Value #D': 'открывают',
+                                      'Value #E': 'блокируют', 'Value #F': 'ответили',
+                                      'Value #G': 'проверено', 'who': 'у кого блокируют'}}}]
+        num = dict(custom__width=95, custom__align='center', noValue='—')
+        scan_o = [by_name('сканеры', custom__width=110, custom__align='center',
+                          custom__cellOptions={'type': 'color-text'},
+                          mappings=[{'type': 'value', 'options': {
+                              '1': {'text': 'блокируют', 'color': RED, 'index': 0},
+                              '0': {'text': 'открывают', 'color': GREEN, 'index': 1}}},
+                              {'type': 'special', 'options': {'match': 'null+nan', 'result': {
+                                  'text': 'ещё нет', 'color': GREY, 'index': 2}}}]),
+                  by_name('открывают', **num),
+                  by_name('блокируют', **num, custom__cellOptions={'type': 'color-text'},
+                          thresholds={'mode': 'absolute', 'steps': [{'color': 'text', 'value': None},
+                                                                    {'color': YELLOW, 'value': 1},
+                                                                    {'color': RED, 'value': 2}]}),
+                  by_name('ответили', **num),
+                  by_name('проверено', custom__width=110, custom__align='right', unit='dtdurations',
+                          decimals=0, noValue='—'),
+                  by_name('у кого блокируют', custom__minWidth=220, noValue=''),
+                  by_name('причина (списки)', custom__minWidth=160, noValue='')]
+    p.append(table('Блокировки РКН', {'h': 10 if scanners else 7, 'w': 24 if scanners else 12,
+                                       'x': 0 if scanners else 12, 'y': y + 7 if scanners else y},
+                   rkn_q, rkn_t, [
         by_name(rkn_col, custom__width=95, custom__align='center',
                 custom__cellOptions={'type': 'color-text'},
                 mappings=[{'type': 'value', 'options': {'1': {'text': 'в списках', 'color': RED, 'index': 0},
@@ -446,15 +490,18 @@ def build(checks=None, servers=False, probes=(), scanners=False):
                 custom__cellOptions={'type': 'color-text'},
                 mappings=[{'type': 'value', 'options': {'node': {'text': 'нода'}, 'domain': {'text': 'домен'},
                                                         'extra': {'text': 'доп.'}}}]),
-        by_name('причина', custom__minWidth=160),
+        by_name('причина', custom__minWidth=160, noValue=''),
         *scan_o,
     ], desc='IP нод и домены сервиса по спискам блокировок РФ (cheburcheck.ru, раз в несколько часов; '
             'блок [rkn] в config.toml). «В списках» — адрес в реестре РКН, в заблокированной подсети или CDN.'
-            + (' «Сканеры» — проверка изнутри сетей операторов РФ (адреса по кругу, каждый примерно раз '
-               'в сутки): «блокируют» — блокировку видят хотя бы два сканера; кто именно — в последней колонке.'
+            + (' Сканеры — проверка изнутри сетей операторов РФ, адреса по кругу: «открывают» и «блокируют» — '
+               'сколько сканеров из ответивших; «блокируют» в итоге — когда блокировку видят хотя бы два; '
+               'у кого именно — в последней колонке.'
                if scanners else ''),
-        sort=[{'displayName': rkn_col, 'desc': True}]))
+        sort=[{'displayName': 'сканеры' if scanners else rkn_col, 'desc': True}]))
     p[-1]['fieldConfig']['defaults']['noValue'] = 'Проверки блокировок нет — блок [rkn] в config.toml'
+    if scanners:
+        y += 10
     y += 7
 
     # ── 4. Хосты: строка на хост — итог и все проверки ──

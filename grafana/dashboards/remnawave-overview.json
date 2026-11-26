@@ -684,7 +684,7 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 10,
+        "w": 7,
         "x": 0,
         "y": 4
       },
@@ -895,8 +895,8 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 7,
-        "x": 10,
+        "w": 8,
+        "x": 7,
         "y": 4
       },
       "targets": [
@@ -1006,9 +1006,25 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "Проба"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 75
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "связь"
             },
             "properties": [
+              {
+                "id": "custom.width",
+                "value": 75
+              },
               {
                 "id": "custom.align",
                 "value": "center"
@@ -1046,6 +1062,10 @@
             },
             "properties": [
               {
+                "id": "custom.width",
+                "value": 70
+              },
+              {
                 "id": "decimals",
                 "value": 0
               },
@@ -1061,6 +1081,10 @@
               "options": "не открылось"
             },
             "properties": [
+              {
+                "id": "custom.width",
+                "value": 95
+              },
               {
                 "id": "decimals",
                 "value": 0
@@ -1099,6 +1123,10 @@
               "options": "данные"
             },
             "properties": [
+              {
+                "id": "custom.width",
+                "value": 80
+              },
               {
                 "id": "unit",
                 "value": "s"
@@ -1153,8 +1181,8 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 7,
-        "x": 17,
+        "w": 9,
+        "x": 15,
         "y": 4
       },
       "targets": [
@@ -1286,9 +1314,25 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "версия"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "API"
             },
             "properties": [
+              {
+                "id": "custom.width",
+                "value": 60
+              },
               {
                 "id": "custom.align",
                 "value": "center"
@@ -1326,6 +1370,10 @@
             },
             "properties": [
               {
+                "id": "custom.width",
+                "value": 70
+              },
+              {
                 "id": "decimals",
                 "value": 0
               },
@@ -1341,6 +1389,10 @@
               "options": "без рестарта"
             },
             "properties": [
+              {
+                "id": "custom.width",
+                "value": 115
+              },
               {
                 "id": "unit",
                 "value": "dtdurations"
@@ -1383,6 +1435,10 @@
               "options": "задержка"
             },
             "properties": [
+              {
+                "id": "custom.width",
+                "value": 85
+              },
               {
                 "id": "unit",
                 "value": "ms"
@@ -1979,6 +2035,10 @@
               {
                 "id": "custom.minWidth",
                 "value": 160
+              },
+              {
+                "id": "noValue",
+                "value": ""
               }
             ]
           }
