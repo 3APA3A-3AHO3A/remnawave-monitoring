@@ -1603,8 +1603,8 @@
                     "options": {
                       "match": "null",
                       "result": {
-                        "text": "·",
-                        "color": "transparent",
+                        "text": "—",
+                        "color": "#5a6270",
                         "index": 2
                       }
                     }
@@ -1656,8 +1656,8 @@
                     "options": {
                       "match": "null",
                       "result": {
-                        "text": "·",
-                        "color": "transparent",
+                        "text": "—",
+                        "color": "#5a6270",
                         "index": 2
                       }
                     }
@@ -1989,7 +1989,7 @@
       "id": 12,
       "type": "table",
       "title": "Хосты",
-      "description": "Строка — хост панели. Итог: работает — открывается из РФ хотя бы с одной пробы (хосты МСК-нод — с сервера мониторинга); блокировка в РФ — из России не открывается, а вход и нода работают; сломан вход — не работает прокладка или CDN, нода жива; нода не отвечает — не открывается даже напрямую. Колонки проб — проверка из России как приложение клиента. NL · вход — с сервера мониторинга по адресу из подписки (только у хостов, где вход не сама нода), NL · нода — напрямую на ноду. Дальше — проверки маршрутов. «·» — эта проверка хосту не нужна. «→ нода» — куда ведёт хост.",
+      "description": "Строка — хост панели. Итог: работает — открывается из РФ хотя бы с одной пробы (хосты МСК-нод — с сервера мониторинга); блокировка в РФ — из России не открывается, а вход и нода работают; сломан вход — не работает прокладка или CDN, нода жива; нода не отвечает — не открывается даже напрямую. Колонки проб — проверка из России как приложение клиента. NL · вход — с сервера мониторинга по адресу из подписки (только у хостов, где вход не сама нода), NL · нода — напрямую на ноду. Дальше — проверки маршрутов. «—» — эта проверка хосту не нужна. «→ нода» — куда ведёт хост.",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
@@ -2308,8 +2308,8 @@
                     "options": {
                       "match": "null",
                       "result": {
-                        "text": "·",
-                        "color": "transparent",
+                        "text": "—",
+                        "color": "#5a6270",
                         "index": 2
                       }
                     }
@@ -2361,8 +2361,8 @@
                     "options": {
                       "match": "null",
                       "result": {
-                        "text": "·",
-                        "color": "transparent",
+                        "text": "—",
+                        "color": "#5a6270",
                         "index": 2
                       }
                     }
@@ -2414,8 +2414,8 @@
                     "options": {
                       "match": "null",
                       "result": {
-                        "text": "·",
-                        "color": "transparent",
+                        "text": "—",
+                        "color": "#5a6270",
                         "index": 2
                       }
                     }
@@ -2467,8 +2467,8 @@
                     "options": {
                       "match": "null",
                       "result": {
-                        "text": "·",
-                        "color": "transparent",
+                        "text": "—",
+                        "color": "#5a6270",
                         "index": 2
                       }
                     }
@@ -2520,8 +2520,8 @@
                     "options": {
                       "match": "null",
                       "result": {
-                        "text": "·",
-                        "color": "transparent",
+                        "text": "—",
+                        "color": "#5a6270",
                         "index": 2
                       }
                     }
@@ -2690,7 +2690,7 @@
       "id": 14,
       "type": "table",
       "title": "Ноды",
-      "description": "Связь — нода подключена к панели. CPU — load average на ядро, RAM — занятая память (по данным панели). RX/TX — сеть сервера сейчас, трафик — клиентов за выбранный период, лимит — расход трафика ноды, если он задан в панели. Сервер и Xray — сколько работают без перезапуска (жёлтым — Xray перезапускался меньше суток назад).",
+      "description": "Связь — нода подключена к панели. Пик — больше всего клиентов за выбранный период. CPU — load average на ядро, RAM — занятая память (по данным панели). RX/TX — сеть сервера сейчас, трафик — клиентов за выбранный период, лимит — расход трафика ноды, если он задан в панели. Сервер и Xray — сколько работают без перезапуска (жёлтым — Xray перезапускался меньше суток назад).",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
@@ -2727,15 +2727,16 @@
           "format": "table"
         },
         {
-          "refId": "T1",
+          "refId": "P",
           "datasource": {
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (panel_title, node_name) ((rwmon_node_online_users{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+          "expr": "sum by (panel_title, node_name) ((max_over_time(rwmon_node_online_users{panel_title=~\"$panel\"}[$__range])) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
           "legendFormat": "",
-          "range": true,
-          "instant": false
+          "range": false,
+          "instant": true,
+          "format": "table"
         },
         {
           "refId": "G",
@@ -2848,10 +2849,6 @@
       ],
       "transformations": [
         {
-          "id": "timeSeriesTable",
-          "options": {}
-        },
-        {
           "id": "merge",
           "options": {}
         },
@@ -2867,7 +2864,7 @@
               "node_name": 1,
               "Value #S": 2,
               "Value #A": 3,
-              "Trend #T1": 4,
+              "Value #P": 4,
               "Value #G": 5,
               "Value #H": 6,
               "Value #C": 7,
@@ -2884,7 +2881,7 @@
               "xray": "версия Xray",
               "Value #S": "Связь",
               "Value #A": "Онлайн",
-              "Trend #T1": "онлайн за период",
+              "Value #P": "пик",
               "Value #G": "CPU",
               "Value #H": "RAM",
               "Value #C": "↓ RX",
@@ -3023,26 +3020,33 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "онлайн за период"
+              "options": "пик"
             },
             "properties": [
               {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "sparkline",
-                  "hideValue": true
-                }
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 60
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
               },
               {
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "green"
+                  "fixedColor": "text"
                 }
               },
               {
-                "id": "custom.width",
-                "value": 160
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
               }
             ]
           },

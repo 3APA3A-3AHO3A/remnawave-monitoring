@@ -27,7 +27,7 @@ CHECKS = (('warp', 'WARP'), ('psiphon', 'Psiphon'))      # проверки ма
 GREEN, RED, YELLOW, BLUE, GREY = 'green', 'red', 'yellow', 'blue', 'text'
 OK_MAP = [{'type': 'value', 'options': {'1': {'text': 'OK', 'color': GREEN, 'index': 0},
                                         '0': {'text': 'СБОЙ', 'color': RED, 'index': 1}}},
-          {'type': 'special', 'options': {'match': 'null', 'result': {'text': '·', 'color': 'transparent', 'index': 2}}}]
+          {'type': 'special', 'options': {'match': 'null', 'result': {'text': '—', 'color': '#5a6270', 'index': 2}}}]
 
 
 def hosts(check):
@@ -478,7 +478,7 @@ def build(checks=None, servers=False, probes=()):
             'сломан вход — не работает прокладка или CDN, нода жива; нода не отвечает — не открывается даже '
             'напрямую. Колонки проб — проверка из России как приложение клиента. NL · вход — с сервера '
             'мониторинга по адресу из подписки (только у хостов, где вход не сама нода), NL · нода — напрямую '
-            'на ноду. Дальше — проверки маршрутов. «·» — эта проверка хосту не нужна. «→ нода» — куда ведёт хост.',
+            'на ноду. Дальше — проверки маршрутов. «—» — эта проверка хосту не нужна. «→ нода» — куда ведёт хост.',
         sort=[{'displayName': 'Итог', 'desc': True}]))
     y += 18
 
@@ -507,7 +507,7 @@ def build(checks=None, servers=False, probes=()):
                                                                                   {'color': RED, 'value': 0.9}]})
     ncols = [('S', 'Связь', node_q(f'rwmon_node_connected{{{F}}}', 'S')),
              ('A', 'Онлайн', node_q(f'rwmon_node_online_users{{{F}}}', 'A')),
-             ('T1', 'онлайн за период', node_q(f'rwmon_node_online_users{{{F}}}', 'T1', instant=False)),
+             ('P', 'пик', node_q(f'max_over_time(rwmon_node_online_users{{{F}}}[$__range])', 'P')),
              ('G', 'CPU', node_q(f'rwmon_node_cpu_load5{{{F}}}', 'G')),
              ('H', 'RAM', node_q(f'rwmon_node_memory_used_ratio{{{F}}}', 'H'))]
     if servers:
@@ -522,11 +522,11 @@ def build(checks=None, servers=False, probes=()):
     ntargets = [t for _, _, t in ncols] + [
         target(f'max by (panel_title, node_name, xray) (rwmon_node_version{{{F}}} {BY_NODE})', 'V',
                instant=True, fmt='table')]
-    nkey = lambda ref: f'Trend #{ref}' if ref == 'T1' else f'Value #{ref}'
+    nkey = lambda ref: f'Value #{ref}'
     norder = {'panel_title': 0, 'node_name': 1, **{nkey(ref): 2 + i for i, (ref, _, _) in enumerate(ncols)},
               'xray': 2 + len(ncols)}
     p.append(table('Ноды', {'h': 15, 'w': 24, 'x': 0, 'y': y}, ntargets, [
-        {'id': 'timeSeriesTable', 'options': {}},
+        # без графиков в ячейках: timeSeriesTable мешает merge, и Grafana показывала только первую таблицу
         {'id': 'merge', 'options': {}},
         {'id': 'organize', 'options': {
             'excludeByName': {'Time': True, 'Value #V': True},
@@ -541,8 +541,8 @@ def build(checks=None, servers=False, probes=()):
                 mappings=[{'type': 'value', 'options': {'1': {'text': 'да', 'color': GREEN},
                                                         '0': {'text': 'нет', 'color': RED}}}]),
         by_name('Онлайн', decimals=0, custom__width=70, custom__align='right'),
-        by_name('онлайн за период', custom__cellOptions={'type': 'sparkline', 'hideValue': True},
-                color={'mode': 'fixed', 'fixedColor': GREEN}, custom__width=160),
+        by_name('пик', decimals=0, custom__width=60, custom__align='right', color={'mode': 'fixed', 'fixedColor': GREY},
+                custom__cellOptions={'type': 'color-text'}),
         pct('CPU', 0.7), pct('RAM', 0.8), pct('лимит', 0.8), pct('Диск', 0.8), pct('conntrack', 0.7, 80),
         by_name('↓ RX', unit='bps', decimals=1, custom__width=92, custom__align='right'),
         by_name('↑ TX', unit='bps', decimals=1, custom__width=92, custom__align='right'),
@@ -555,7 +555,7 @@ def build(checks=None, servers=False, probes=()):
                                                           {'color': 'text', 'value': 86400}]}),
         by_name('версия Xray', custom__width=85, color={'mode': 'fixed', 'fixedColor': GREY},
                 custom__cellOptions={'type': 'color-text'}),
-    ], desc='Связь — нода подключена к панели. CPU — load average на ядро, RAM — занятая память (по данным панели)'
+    ], desc='Связь — нода подключена к панели. Пик — больше всего клиентов за выбранный период. CPU — load average на ядро, RAM — занятая память (по данным панели)'
             + ('; Диск и conntrack — по node_exporter на ноде (корневой раздел и таблица соединений ядра)'
                if servers else '')
             + '. RX/TX — сеть сервера сейчас, трафик — клиентов за выбранный период, лимит — расход трафика ноды, '
