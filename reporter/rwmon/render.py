@@ -367,6 +367,13 @@ def rules(cfg):
                  'РКН, в заблокированной подсети или CDN. Клиенты из России, скорее всего, до него не достучатся.',
                  'all', reason='{{ $labels.why }}')]
           if cfg.rkn_enabled else []),
+        *([_rule('rwmon-rkn-scan', 'Блокировка РФ: сканеры видят блок', '(rwmon_rkn_scan_blocked == 1)',
+                 '0m', 'Адрес блокируют в сетях операторов РФ', 'Сканеры в сетях РФ снова открывают адрес',
+                 'Сканеры cheburcheck.ru внутри сетей операторов РФ (адреса проверяются по кругу) видят '
+                 'блокировку: ТСПУ, по SNI или подменой DNS. В причине — у каких провайдеров. Клиенты у '
+                 'этих операторов, скорее всего, не подключаются.',
+                 'all', reason='{{ $labels.why }}')]
+          if cfg.rkn_enabled and cfg.rkn_token else []),
         _rule('rwmon-reporter-down', 'reporter не отвечает', '(up{job="reporter"} == 0) * 0 + 1', '3m',
               'reporter не отвечает — данные панелей не собираются', 'reporter снова работает',
               'Посмотрите журнал: docker compose logs --tail 50 reporter', 'all'),
@@ -536,7 +543,8 @@ def dashboard(cfg):
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         checks = [(c.id, c.title) for c in cfg.route_checks]
-        return mod.build(checks, servers=bool(cfg.node_exporter_port), probes=[p.name for p in cfg.probes])
+        return mod.build(checks, servers=bool(cfg.node_exporter_port), probes=[p.name for p in cfg.probes],
+                         scanners=bool(cfg.rkn_enabled and cfg.rkn_token))
     except Exception as e:
         print(f'дашборд не собран из {path} ({e!r}) — беру готовый из репозитория')
         with open(os.path.join(SRC, 'grafana', 'dashboards', 'remnawave-overview.json'), encoding='utf-8') as f:

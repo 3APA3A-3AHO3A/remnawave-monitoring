@@ -15,7 +15,7 @@ CATEGORIES = [
     ('nodes', 'Ноды и хосты', ('-down', '-bypass', '-direct', '-egress', 'clients-dropped',
                                'outbound-no-response', 'node-overload')),
     ('ru', 'Пробы из РФ', ('probe-down', 'site-down-ru')),
-    ('rkn', 'Блокировки РКН', ('rkn-blocked',)),
+    ('rkn', 'Блокировки РКН', ('rkn-blocked', 'rkn-scan')),
     ('panels', 'Панели', ('panel-metrics', 'panel-slow', 'panel-restart', 'panel-memory',
                           'panel-no-hosts')),
     ('sites', 'Сайты и сертификаты', ('site-down', 'site-cert')),

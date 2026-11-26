@@ -218,7 +218,7 @@ def limit_90(panels):
 
 # ── сам дашборд ──────────────────────────────────────────────
 
-def build(checks=None, servers=False, probes=()):
+def build(checks=None, servers=False, probes=(), scanners=False):
     """checks — [(id, подпись)] проверок маршрутов из config.toml (render.py собирает дашборд
     при ./apply.sh). Без них — WARP и Psiphon, как в готовом JSON репозитория.
     servers — блок «Серверы нод» и колонки диска по node_exporter ([node_exporter] в config.toml).
@@ -411,15 +411,33 @@ def build(checks=None, servers=False, probes=()):
             'код и время ответа, сколько осталось до конца сертификата'))
     p[-1]['fieldConfig']['defaults']['noValue'] = 'Добавьте [[site]] в config.toml'
 
-    p.append(table('Блокировки РКН', {'h': 7, 'w': 12, 'x': 12, 'y': y}, [
-        target('max by (name, kind, why) (rwmon_rkn_blocked)', 'A', instant=True, fmt='table'),
-    ], [
-        {'id': 'organize', 'options': {
-            'excludeByName': {'Time': True},
-            'indexByName': {'Value': 0, 'name': 1, 'kind': 2, 'why': 3},
-            'renameByName': {'Value': 'статус', 'name': 'Что', 'kind': 'тип', 'why': 'причина'}}},
-    ], [
-        by_name('статус', custom__width=95, custom__align='center',
+    rkn_q = [target('max by (name, kind, why) (rwmon_rkn_blocked)', 'A', instant=True, fmt='table')]
+    rkn_t = [{'id': 'organize', 'options': {
+        'excludeByName': {'Time': True},
+        'indexByName': {'Value': 0, 'name': 1, 'kind': 2, 'why': 3},
+        'renameByName': {'Value': 'статус', 'name': 'Что', 'kind': 'тип', 'why': 'причина'}}}]
+    scan_o = []
+    if scanners:
+        # Вторая и третья колонки — сканеры в сетях РФ: итог и у кого блокировка
+        rkn_q += [target('max by (name) (rwmon_rkn_scan_blocked)', 'B', instant=True, fmt='table'),
+                  target('max by (name, who) (rwmon_rkn_scan_info)', 'C', instant=True, fmt='table')]
+        rkn_t = [{'id': 'merge', 'options': {}},
+                 {'id': 'organize', 'options': {
+                     'excludeByName': {'Time': True, 'Value #C': True},
+                     'indexByName': {'Value #A': 0, 'Value #B': 1, 'name': 2, 'kind': 3, 'why': 4, 'who': 5},
+                     'renameByName': {'Value #A': 'списки', 'Value #B': 'сканеры', 'name': 'Что',
+                                      'kind': 'тип', 'why': 'причина', 'who': 'у кого блокируют'}}}]
+        scan_o = [by_name('сканеры', custom__width=95, custom__align='center',
+                          custom__cellOptions={'type': 'color-text'},
+                          mappings=[{'type': 'value', 'options': {
+                              '1': {'text': 'блокируют', 'color': RED, 'index': 0},
+                              '0': {'text': 'открывают', 'color': GREEN, 'index': 1}}},
+                              {'type': 'special', 'options': {'match': 'null', 'result': {
+                                  'text': 'ещё нет', 'color': GREY, 'index': 2}}}]),
+                  by_name('у кого блокируют', custom__minWidth=200)]
+    rkn_col = 'списки' if scanners else 'статус'
+    p.append(table('Блокировки РКН', {'h': 7, 'w': 12, 'x': 12, 'y': y}, rkn_q, rkn_t, [
+        by_name(rkn_col, custom__width=95, custom__align='center',
                 custom__cellOptions={'type': 'color-text'},
                 mappings=[{'type': 'value', 'options': {'1': {'text': 'в списках', 'color': RED, 'index': 0},
                                                         '0': {'text': 'чисто', 'color': GREEN, 'index': 1}}}]),
@@ -429,9 +447,13 @@ def build(checks=None, servers=False, probes=()):
                 mappings=[{'type': 'value', 'options': {'node': {'text': 'нода'}, 'domain': {'text': 'домен'},
                                                         'extra': {'text': 'доп.'}}}]),
         by_name('причина', custom__minWidth=160),
+        *scan_o,
     ], desc='IP нод и домены сервиса по спискам блокировок РФ (cheburcheck.ru, раз в несколько часов; '
-            'блок [rkn] в config.toml). «В списках» — адрес в реестре РКН, в заблокированной подсети или CDN.',
-        sort=[{'displayName': 'статус', 'desc': True}]))
+            'блок [rkn] в config.toml). «В списках» — адрес в реестре РКН, в заблокированной подсети или CDN.'
+            + (' «Сканеры» — проверка изнутри сетей операторов РФ (адреса по кругу, каждый примерно раз '
+               'в сутки): «блокируют» — блокировку видят хотя бы два сканера; кто именно — в последней колонке.'
+               if scanners else ''),
+        sort=[{'displayName': rkn_col, 'desc': True}]))
     p[-1]['fieldConfig']['defaults']['noValue'] = 'Проверки блокировок нет — блок [rkn] в config.toml'
     y += 7
 

@@ -6,6 +6,7 @@
   links     — обновить список хостов для проверок прямо сейчас
   geocheck  — прогнать GeoCheck сейчас (--send — сразу отправить сводку)
   rkn       — проверить IP нод и домены по спискам блокировок РФ сейчас (cheburcheck.ru)
+  scan      — проверить адрес сканерами cheburcheck в сетях РФ сейчас: scan <IP или домен>
   report    — собрать ежедневную сводку сейчас (--dry-run — только показать)
   migrate   — напечатать config.toml из старого .env (переход с версии для одной панели)
   migrate-checks — напечатать блоки [[check]] вместо [checks] url_warp / url_psiphon (переход на 2.0)
@@ -19,7 +20,7 @@ import threading
 import time
 import urllib.request
 
-from . import bot, config, daily, egress, exporter, feed, geocheck, links, render, rkn
+from . import bot, config, daily, egress, exporter, feed, geocheck, links, render, rkn, scan
 from .clients import Prometheus, Remnawave, Telegram
 from .util import log, now, read_json, write_json
 
@@ -62,6 +63,7 @@ def run_forever(cfg):
     next_links = 0
     if cfg.healthcheck_url:
         threading.Thread(target=pinger, args=(cfg.healthcheck_url,), daemon=True).start()
+    scan.start(cfg, clients)              # сканеры cheburcheck — своим потоком, по одному адресу
     log('main', f'запущен для панелей: {", ".join(p.title for p in cfg.panels)}; '
                 f'GeoCheck в {cfg.geocheck_time[0]:02d}:{cfg.geocheck_time[1]:02d}, '
                 f'сводка в {cfg.report_time[0]:02d}:{cfg.report_time[1]:02d} UTC')
@@ -199,6 +201,17 @@ def check(cfg):
             return (f'cheburcheck.ru отвечает, базы от {str(st.get("last_update", "?"))[:16].replace("T", " ")} UTC'
                     + (f'; последняя проверка {last["time"]} UTC' if last else '; проверок ещё не было'))
         step('cheburcheck.ru', rkn_status)
+        if cfg.rkn_token:
+            def scan_status():
+                req = scan._req(rkn.API + '/credits', cfg.rkn_token)
+                with urllib.request.urlopen(req, timeout=20) as r:
+                    r.read()
+                items = scan.load(cfg).get('items') or {}
+                last = max((x.get('time', '') for x in items.values()), default='')
+                return (f'токен принят; проверка адреса раз в {cfg.rkn_probe_interval // 60} мин'
+                        + (f', проверено адресов: {len(items)}, последний — {last} UTC' if items else
+                           ', проверок ещё не было'))
+            step('сканеры cheburcheck (token)', scan_status)
 
     if cfg.bot:
         print('Бот мониторинга ([bot])')
@@ -447,6 +460,18 @@ def main(argv):
     elif cmd == 'rkn':
         links.refresh(cfg, clients)               # домены хостов — из свежего списка
         print('\n'.join(rkn.telegram_section(rkn.run(cfg, clients))))
+    elif cmd == 'scan':
+        if not cfg.rkn_token:
+            print('Нужен [rkn] token в config.toml')
+            return 2
+        if len(argv) < 3:
+            print('Использование: rwmon scan <IP или домен>')
+            return 2
+        s = scan.summarize(scan.probe(argv[2], cfg.rkn_token))
+        print(f'{argv[2]}: ответили {s["answered"]} из {s["online"]}, открывают {s["ok"]}, '
+              f'не уверены {s["uncertain"]}, блокируют {s["bad"]}')
+        if s['bad']:
+            print('  ' + scan.why(s))
     elif cmd == 'report':
         daily.send(Prometheus(cfg.prometheus_url), clients, cfg, dry_run='--dry-run' in argv)
     else:
