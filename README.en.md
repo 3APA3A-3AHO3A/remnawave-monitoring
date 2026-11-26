@@ -107,7 +107,7 @@ The reason in the line: for a host — the verdict (blocked in Russia, broken en
 | Panel is slow | a panel process (api, scheduler or processor) responds slower than `panel_lag_ms` (200 ms) for 5 minutes | all chats |
 | Panel process restarted | the process uptime was reset. With the bot: if the panel version changed in the last 40 minutes it was an update, and a quiet line "panel updated to …" arrives; same version means a crash, and the alert comes with sound | all chats |
 | Panel uses too much memory | a panel process uses more than `panel_memory_mb` (1024 MB) for 15 minutes | all chats |
-| Russian blocklist: scanners see a block | `[rkn] token`: cheburcheck scanners inside Russian operators' networks see the address blocked (at least two of them). The message gives the kind: TSPU, by SNI, DNS spoofing, CDN; which ISPs — in the report and on the dashboard | all chats |
+| Russian blocklist: scanners see a block | `[rkn] token`: cheburcheck scanners inside Russian operators' networks see the address blocked (at least two of them). The message gives the kind: TSPU, by SNI, DNS spoofing; which ISPs — in the report and on the dashboard | all chats |
 | Russian blocklist: address listed | `[rkn]`: a node IP or a service domain is in the RKN registry, a blocked subnet or a CDN (per cheburcheck.ru). The message says what was found | all chats |
 | Probe from Russia is silent | a probe has not sent results for 10 minutes: the host verdict is computed without it (without all probes — from the monitoring server only) | all chats |
 | Website down / from Russia | a page from `[[site]]` does not respond from the monitoring server or from the probes in Russia | all chats |
@@ -488,7 +488,7 @@ exclude = ["USA 1"]         # skip: IPs, domains or node names (known things you
 - Only IPs and domains are sent to cheburcheck.ru — no keys, subscription links or tokens. The service states a limit of 30 checks a minute; the monitoring makes at most 15.
 - Check now: `docker compose exec reporter python -m rwmon rkn`.
 
-**Scanners inside Russian operators' networks.** The lists say whether an address is in the registry; cheburcheck scanners say whether it actually opens: each one sits in one ISP's network (MTS, Rostelecom, Ufanet…) and returns a verdict: opens, TSPU block, SNI block, DNS spoofing, CDN block. An API token is required; cheburcheck.ru issues it on request:
+**Scanners inside Russian operators' networks.** The lists say whether an address is in the registry; cheburcheck scanners say whether it actually opens: each one sits in one ISP's network (MTS, Rostelecom, Ufanet…) and returns a verdict: opens, TSPU block, SNI block, DNS spoofing. The "CDN block (16–20)" verdict is not a block of the address: the address itself opens at that ISP, but connections to foreign CDNs are cut after the first 16–20 KB. It raises no alert; the dashboard and the report show it as a note, "CDN 16–20 KB at N". An API token is required; cheburcheck.ru issues it on request:
 
 ```toml
 [rkn]

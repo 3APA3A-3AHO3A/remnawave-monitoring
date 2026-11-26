@@ -4,6 +4,10 @@
 на деле: каждый стоит в сети одного провайдера (МТС, Ростелеком, Уфанет…) и отдаёт вердикт —
 ok, tspu_block (режет ТСПУ), sni_block (режут по имени сайта), dns_spoofing, cdn_block.
 
+cdn_block («CDN Блок 16–20») — не блокировка адреса: сам адрес у провайдера открывается,
+а режутся (после первых 16–20 КБ) соединения с зарубежными CDN. Это свойство сети
+провайдера — его показываем справкой («CDN 16–20 КБ у N»), тревогой не считаем.
+
 Проверка сканерами нужна API-токен ([rkn] token), кредитов она не тратит, но частота
 запросов ограничена. Поэтому адреса идут по одному, по кругу, раз в probe_interval_minutes:
 каждый раз берём тот, что проверяли давнее всех. Ответ 429 (слишком часто) — пауза
@@ -24,7 +28,8 @@ import urllib.request
 from . import rkn
 from .util import esc, log, now, read_json, write_json
 
-BAD = {'tspu_block': 'ТСПУ', 'sni_block': 'по SNI', 'dns_spoofing': 'подмена DNS', 'cdn_block': 'CDN'}
+BAD = {'tspu_block': 'ТСПУ', 'sni_block': 'по SNI', 'dns_spoofing': 'подмена DNS'}
+NOTE = {'cdn_block': 'CDN 16–20 КБ'}   # справка, не блокировка (см. выше)
 MIN_BAD = 2                 # столько сканеров должны видеть блокировку
 STREAM_TIMEOUT = 150        # сколько ждём событие done, секунд
 BACKOFF_MAX = 6 * 3600
@@ -45,7 +50,27 @@ def path(cfg):
 
 
 def load(cfg):
-    return read_json(path(cfg), {}) or {}
+    data = read_json(path(cfg), {}) or {}
+    for x in (data.get('items') or {}).values():
+        normalize(x)
+    return data
+
+
+def normalize(x):
+    """Итог по сохранённому разбору «у кого какой вердикт»: блокировка — только виды из BAD.
+    Нужен для измерений, сохранённых, когда cdn_block ещё считался блокировкой."""
+    by = x.get('by') or {}
+    who = set()
+    for v in BAD:
+        who.update(by.get(v) or [])
+    cdn = set(by.get('cdn_block') or [])
+    if x.get('v') != 2:              # раньше «только cdn_block» не шёл в «открывают»
+        x['ok'] = x.get('ok', 0) + len(cdn - who)
+        x['v'] = 2
+    x['bad'] = len(who)
+    x['blocked'] = x['bad'] >= MIN_BAD
+    x['cdn'] = len(cdn)
+    return x
 
 
 def _req(url, token=None, accept='application/json'):
@@ -129,18 +154,21 @@ def summarize(raw):
     by = {}
     ok = uncertain = 0
     for r in res:
-        bad = [v for v in r['verdicts'] if v in BAD]
+        marks = [v for v in r['verdicts'] if v in BAD or v in NOTE]
         who = r['provider'] + (f' ({r["region"]})' if r['region'] else '')
-        for v in bad:
+        for v in marks:
             by.setdefault(v, []).append(who)
-        if not bad:
-            if 'ok' in r['verdicts'] or 'whitelist' in r['verdicts']:
+        if not any(v in BAD for v in r['verdicts']):
+            # cdn_block: сам адрес открывается (режутся зарубежные CDN) — считаем «открывает»
+            if any(v in ('ok', 'whitelist', 'cdn_block') for v in r['verdicts']):
                 ok += 1
             else:
                 uncertain += 1
     bad_n = sum(1 for r in res if any(v in BAD for v in r['verdicts']))
+    cdn_n = sum(1 for r in res if 'cdn_block' in r['verdicts'])
     return {'answered': len(res), 'online': raw.get('online', 0), 'ok': ok, 'uncertain': uncertain,
-            'bad': bad_n, 'by': {k: sorted(set(v)) for k, v in by.items()}, 'blocked': bad_n >= MIN_BAD}
+            'bad': bad_n, 'cdn': cdn_n, 'by': {k: sorted(set(v)) for k, v in by.items()},
+            'blocked': bad_n >= MIN_BAD, 'v': 2}
 
 
 def why(item):
@@ -151,6 +179,15 @@ def why(item):
         if who:
             parts.append(f'{BAD[v]}: ' + ', '.join(who[:4]) + (f' и ещё {len(who) - 4}' if len(who) > 4 else ''))
     return '; '.join(parts)
+
+
+def note(item):
+    """«CDN 16–20 КБ у 8: …» — справка к таблице; не блокировка адреса."""
+    who = (item.get('by') or {}).get('cdn_block') or []
+    if not who:
+        return ''
+    return (f'{NOTE["cdn_block"]} у {len(who)} (не блокировка: у провайдера режутся зарубежные CDN): '
+            + ', '.join(who[:4]) + (f' и ещё {len(who) - 4}' if len(who) > 4 else ''))
 
 
 def kinds(item):
@@ -226,7 +263,8 @@ def step(cfg, clients, data, probe_fn=None):
                               time=now().strftime('%Y-%m-%d %H:%M'))
     log('scan', ('вне очереди (не открывается из РФ) ' if t.get('urgent') else '')
                 + f'{t["target"]}: ответили {s["answered"]} из {s["online"]}, ok {s["ok"]}'
-                + (f', блокировка: {why(s)}' if s['bad'] else ''))
+                + (f', блокировка: {why(s)}' if s['bad'] else '')
+                + (f', {NOTE["cdn_block"]} у {s["cdn"]}' if s['cdn'] else ''))
     return interval
 
 
@@ -267,7 +305,8 @@ def lines(data, out):
         labels = {'target': target, 'kind': x.get('kind', ''), 'name': name,
                   'why': kinds(x) if x.get('blocked') else ''}
         out.add('rwmon_rkn_scan_blocked', labels, 1 if x.get('blocked') else 0)
-        out.add('rwmon_rkn_scan_info', {'target': target, 'name': name, 'who': why(x)}, 1)
+        out.add('rwmon_rkn_scan_info', {'target': target, 'name': name,
+                                        'who': '; '.join(p for p in (why(x), note(x)) if p)}, 1)
         out.add('rwmon_rkn_scan_bad', {'target': target, 'name': name}, x.get('bad', 0))
         out.add('rwmon_rkn_scan_ok', {'target': target, 'name': name}, x.get('ok', 0))
         out.add('rwmon_rkn_scan_answered', {'target': target, 'name': name}, x.get('answered', 0))

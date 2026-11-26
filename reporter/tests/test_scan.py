@@ -198,3 +198,46 @@ def test_state_lines_collect_urgent():
     nl = {('xray', 'H'): 1, ('xray', 'G'): 1}
     exporter.state_lines(hosts, fresh, nl, set(), lines, urgent)
     assert urgent == {'1.1.1.1': 'H'}
+
+
+def test_cdn_block_is_note_not_block():
+    """«CDN Блок 16–20»: сам адрес открывается, у провайдера режутся зарубежные CDN — справка."""
+    r = {'online': 5, 'results': [
+        {'provider': 'Beeline', 'region': 'Ярославская область', 'verdicts': ['cdn_block']},
+        {'provider': 'MTS', 'region': '', 'verdicts': ['cdn_block']},
+        {'provider': 'Dom.ru', 'region': '', 'verdicts': ['cdn_block', 'ok']},
+        {'provider': 'Rostelecom', 'region': '', 'verdicts': ['ok']},
+        {'provider': 'Ufanet', 'region': '', 'verdicts': ['uncertain']}]}
+    s = scan.summarize(r)
+    assert (s['bad'], s['blocked'], s['cdn'], s['ok'], s['uncertain']) == (0, False, 3, 4, 1)
+    assert scan.why(s) == '' and scan.kinds(s) == ''
+    assert scan.note(s).startswith('CDN 16–20 КБ у 3 (не блокировка')
+    # вместе с настоящей блокировкой — тревога только по ней
+    r['results'] += [{'provider': 'A', 'region': '', 'verdicts': ['tspu_block', 'cdn_block']},
+                     {'provider': 'B', 'region': '', 'verdicts': ['tspu_block']}]
+    s = scan.summarize(r)
+    assert (s['bad'], s['blocked'], s['cdn']) == (2, True, 4) and scan.kinds(s) == 'ТСПУ'
+
+
+def test_saved_cdn_block_recounted_once(tmp_path):
+    """Измерение, сохранённое, когда cdn_block был блокировкой, — после загрузки не тревога,
+    и «открывают» пересчитано ровно один раз."""
+    import json
+    import os
+    cfg = SimpleNamespace(data_dir=str(tmp_path))
+    old = {'items': {'cdn.x': {'name': 'cdn.x', 'kind': 'domain', 'answered': 13, 'ok': 4, 'bad': 9,
+                               'blocked': True, 'by': {'cdn_block': [f'P{i}' for i in range(9)]}}}}
+    p = scan.path(cfg)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, 'w') as f:
+        json.dump(old, f)
+    x = scan.load(cfg)['items']['cdn.x']
+    assert (x['blocked'], x['bad'], x['cdn'], x['ok']) == (False, 0, 9, 13)
+    with open(p, 'w') as f:                          # loop сохранил уже пересчитанное
+        json.dump({'items': {'cdn.x': x}}, f)
+    assert scan.load(cfg)['items']['cdn.x']['ok'] == 13
+    out = exporter.Lines()
+    scan.lines({'items': {'cdn.x': x}}, out)
+    text = out.text()
+    assert 'rwmon_rkn_scan_blocked{target="cdn.x",kind="domain",name="cdn.x",why=""} 0' in text
+    assert 'who="CDN 16–20 КБ у 9 (не блокировка' in text
