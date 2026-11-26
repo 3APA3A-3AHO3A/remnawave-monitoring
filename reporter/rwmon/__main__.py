@@ -472,6 +472,8 @@ def main(argv):
               f'не уверены {s["uncertain"]}, блокируют {s["bad"]}')
         if s['bad']:
             print('  ' + scan.why(s))
+        if s['cdn']:
+            print('  ' + scan.note(s))
     elif cmd == 'report':
         daily.send(Prometheus(cfg.prometheus_url), clients, cfg, dry_run='--dry-run' in argv)
     else:
