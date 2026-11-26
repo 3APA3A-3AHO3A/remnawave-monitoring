@@ -19,7 +19,7 @@ import threading
 import time
 import urllib.request
 
-from . import bot, config, daily, egress, exporter, geocheck, links, rkn
+from . import bot, config, daily, egress, exporter, feed, geocheck, links, render, rkn
 from .clients import Prometheus, Remnawave, Telegram
 from .util import log, now, read_json, write_json
 
@@ -118,7 +118,6 @@ def check(cfg):
             print(f'  ✗ {title}: {e}')
 
     prom = Prometheus(cfg.prometheus_url)
-    ru_found = set()
     for p in cfg.panels:
         rw = Remnawave(p)
         print(f'{p.title} ({p.id}), {p.api_url}')
@@ -130,19 +129,40 @@ def check(cfg):
         step('пользователи (System → Get Stats)',
              lambda: f'всего {rw.stats().get("users", {}).get("totalUsers", "?")}')
         step(f'хосты для проверок (пользователь «{p.monitor_user}»)',
-             lambda: _hosts(rw, p, cfg.route_checks, bool(cfg.ru_via), ru_found))
+             lambda: _hosts(rw, p, cfg.route_checks, True))
         step('Telegram-бот', lambda: '@' + Telegram(p.telegram).get_me().get('username', '?'))
 
-    if cfg.ru_via:
-        def ru_via():
-            missing = [v for v in cfg.ru_via if v not in ru_found]
-            if len(missing) == len(cfg.ru_via):
-                raise RuntimeError('ни один хост из [ru] via не найден среди хостов с тегом проверок: '
-                                   + ', '.join(cfg.ru_via))
-            return ('через ' + ', '.join(v for v in cfg.ru_via if v in ru_found)
-                    + (f'; не найдены: {", ".join(missing)}' if missing else ''))
-        print('Проверка из РФ ([ru])')
-        step('хосты-посредники', ru_via)
+    if cfg.ru_legacy:
+        print('Старый блок [ru]')
+        def legacy():
+            raise RuntimeError('с версии 3.0 из РФ проверяют пробы ([[probe]], папка probe/), '
+                               'блок [ru] больше не нужен — удалите его из config.toml')
+        step('[ru] via', legacy)
+
+    if cfg.probes:
+        print(f'Пробы из РФ ([[probe]], порт {cfg.ru_port})')
+
+        def feed_cert():
+            crt, _ = feed.cert_paths(cfg)
+            if not os.path.exists(crt):
+                raise RuntimeError('сертификата ещё нет — reporter создаёт его при запуске: ./apply.sh')
+            return f'ключ сертификата {feed.pin(crt)} (его видит проба при установке)'
+        step('сертификат', feed_cert)
+
+        def probe_state(name):
+            def fn():
+                rows = {m.get('probe'): v for m, v in prom.query('rwmon_ru_probe_age_seconds')}
+                hosts = {m.get('probe'): v for m, v in prom.query('rwmon_ru_probe_hosts')}
+                if name not in rows:
+                    raise RuntimeError('ещё не присылала результаты — проба установлена? '
+                                       f'Порт {cfg.ru_port} на этом сервере открыт для её IP?')
+                age = rows[name]
+                if age > feed.FRESH:
+                    raise RuntimeError(f'молчит уже {age / 60:.0f} мин')
+                return f'проверяет хостов: {hosts.get(name, 0):.0f}, результаты {age:.0f} с назад'
+            return fn
+        for pr in cfg.probes:
+            step(f'проба «{pr.name}»', probe_state(pr.name))
 
     def reporter_metrics():
         states = prom.targets('reporter')
@@ -167,8 +187,8 @@ def check(cfg):
         step('базы DB-IP Lite', geoip)
 
     print('Сервер')
-    n = 1 + len(cfg.route_checks) + (1 if cfg.ru_via else 0)
-    step(f'порты проверок 21000–{20999 + 1000 * n}', lambda: ports_check(count=n))
+    ranges = port_ranges(cfg)
+    step('порты проверок ' + ', '.join(f'{a}–{b}' for a, b in ranges), lambda: ports_check(ranges=ranges))
 
     if cfg.rkn_enabled:
         print('Блокировки РФ ([rkn])')
@@ -200,10 +220,9 @@ def check(cfg):
     return 0 if ok else 1
 
 
-def port_ranges(count):
-    """Порты Xray проверок: «Подключение» — 21000–21999, каждая проверка маршрута — следующая тысяча
-    (см. render.checkers)."""
-    return [(21000 + 1000 * k, 21999 + 1000 * k) for k in range(count)]
+def port_ranges(cfg):
+    """Порты Xray проверок: по тысяче на проверку, с первого порта из render.checkers."""
+    return [(x, x + 999) for _, _, _, x in render.checkers(cfg)]
 
 
 def _parse_ports(text):
@@ -217,7 +236,7 @@ def _parse_ports(text):
     return out
 
 
-def ports_check(proc='/proc/sys/net/ipv4', count=3):
+def ports_check(proc='/proc/sys/net/ipv4', ranges=((21000, 21999), (22000, 22999), (23000, 23999))):
     """Проверкам нужны порты 21000+, 22000+… на 127.0.0.1 — по тысяче на проверку. Если система раздаёт
     эти же порты исходящим соединениям, проверка однажды не сможет запуститься
     («address already in use») и молча перестанет проверять новые хосты."""
@@ -228,7 +247,7 @@ def ports_check(proc='/proc/sys/net/ipv4', count=3):
             reserved = _parse_ports(f.read().strip())
     except OSError:
         reserved = set()
-    ranges = port_ranges(count)
+    ranges = sorted(ranges)
     clash = [f'{a}–{b}' for a, b in ranges
              if a <= high and b >= low and not set(range(a, b + 1)) <= reserved]
     if clash:
@@ -237,7 +256,7 @@ def ports_check(proc='/proc/sys/net/ipv4', count=3):
             f'{", ".join(clash)}. Закрепите их: echo "net.ipv4.ip_local_reserved_ports = '
             f'{",".join(f"{a}-{b}" for a, b in ranges)}" | sudo tee /etc/sysctl.d/90-rwmon.conf '
             '&& sudo sysctl -p /etc/sysctl.d/90-rwmon.conf')
-    if low > ranges[-1][1] or high < 21000:
+    if low > ranges[-1][1] or high < ranges[0][0]:
         return 'свободны'
     return 'закреплены за проверками'
 
@@ -252,7 +271,7 @@ def _hosts(rw, p, route_checks=(), bypass=False, found=None):
         found.update(e['host'] for e in entries)
     direct = [e['host'] for e in entries if e.get('direct')]
     if direct:
-        parts.append(f'сервер в обход входа: {", ".join(direct)}')
+        parts.append(f'вход не сама нода (проверяются и через вход, и на ноду): {", ".join(direct)}')
     for c in route_checks:
         check, title = c.id, c.title
         skipped = [e['host'] for e in entries if not e['lite'] and check in (e.get('skip') or [])]
@@ -398,13 +417,16 @@ def main(argv):
         return check(cfg)
     elif cmd == 'links':
         per_panel, checks = links.refresh(cfg, clients)
-        by_name = {c['name']: c for c in checks}
         for p, entries in per_panel:
             print(f'{p.title}:')
             for h in (h for h in links.HOSTS if h['panel'] == p.id):
                 notes = []
+                if cfg.probes and not h.get('ru'):
+                    notes.append('из РФ не проверяется — ведёт на сервер пробы')
+                if h.get('entry'):
+                    notes.append('через вход и на ноду')
                 if h['lite']:
-                    notes.append('только «Подключение»')
+                    notes.append('без проверок маршрутов')
                 else:
                     off = [c.title for c in cfg.route_checks if c.id not in h['checks']]
                     if off:

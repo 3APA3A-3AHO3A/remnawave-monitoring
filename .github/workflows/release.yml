@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  packages: write     # образ проверки для проб из РФ — ghcr.io
 
 jobs:
   release:
@@ -25,7 +26,7 @@ jobs:
           {
             echo
             echo '---'
-            echo '**Обновление:** `cd /opt/remnawave/monitoring && git pull && ./apply.sh`, затем `docker compose exec reporter python -m rwmon check`. Пробы из РФ: `cd /opt/rwmon-probe/probe && git pull && docker compose up -d`.'
+            echo '**Обновление:** `cd /opt/remnawave/monitoring && git pull && ./apply.sh`, затем `docker compose exec reporter python -m rwmon check`. Пробы из РФ: `cd /opt/rwmon-probe/probe && git pull && ./install.sh <IP мониторинга>`.'
           } >> notes.md
           cat notes.md
 
@@ -39,3 +40,22 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md
           fi
+
+  # Образ xray-checker с патчами для проб из РФ (probe/docker-compose.yml): проба скачивает
+  # готовый, а не собирает Go у себя. На сервере мониторинга образ по-прежнему собирается сам.
+  checker-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Собрать и опубликовать ghcr.io/…/rwmon-xray-checker
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          IMAGE="ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr 'A-Z' 'a-z')/rwmon-xray-checker"
+          V="${GITHUB_REF_NAME#v}"
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker build --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.description=xray-checker с патчами rwmon (пробы из РФ)" \
+            -t "$IMAGE:$V" -t "$IMAGE:latest" checker
+          docker push "$IMAGE:$V"
+          docker push "$IMAGE:latest"

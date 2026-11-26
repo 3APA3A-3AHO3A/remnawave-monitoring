@@ -281,17 +281,18 @@ class Bot:
         """Сколько за сутки не проходила проверка хоста — если это проверка хоста."""
         if not lb.get('name'):
             return []
-        checks = [lb['check']] if lb.get('check') else ['xray']
-        out = []
-        for c in checks:
-            try:
-                r = self.prom.query(f'sum_over_time((xray_proxy_status{{name="{lb["name"]}",check="{c}"}}'
-                                    f' == bool 0)[24h:1m])')
-            except Exception:
-                continue
-            if r:
-                out.append(('Не проходила за 24 ч', F.duration(r[0][1] * 60)))
-        return out
+        name = lb['name'].replace('\\', '\\\\').replace('"', '\\"')
+        if lb.get('check'):              # проверка маршрута (WARP, Psiphon…)
+            expr = f'sum_over_time((xray_proxy_status{{name="{name}",check="{lb["check"]}"}} == bool 0)[24h:1m])'
+            title = 'Не проходила за 24 ч'
+        else:                            # итог по хосту
+            expr = f'sum_over_time((max by (name) (rwmon_host_state{{name="{name}"}}) > bool 0)[24h:1m])'
+            title = 'Не работал за 24 ч'
+        try:
+            r = self.prom.query(expr)
+        except Exception:
+            return []
+        return [(title, F.duration(r[0][1] * 60))] if r else []
 
     # ── /status ──
     def status_body(self):
@@ -312,9 +313,15 @@ class Bot:
         for p in self.cfg.panels:
             if p.id in total:
                 rows.append((f'{p.title} · ноды', up.get(p.id, 0), total[p.id]))
+        good, known = by('count(rwmon_host_state == 0)', ''), by('count(rwmon_host_state)', '')
+        if known:
+            rows.append(('Хосты работают', good.get('', 0), known['']))
+        ru_up, ru_all = by('count(rwmon_ru_probe_up == 1)', ''), by('count(rwmon_ru_probe_up)', '')
+        if ru_all:
+            rows.append(('Пробы из РФ на связи', ru_up.get('', 0), ru_all['']))
         names = check_names(self.cfg)
-        ok = by('count by (check) (xray_proxy_status == 1)', 'check')
-        allc = by('count by (check) (xray_proxy_status)', 'check')
+        ok = by('count by (check) (xray_proxy_status{name!="rwmon-empty"} == 1)', 'check')
+        allc = by('count by (check) (xray_proxy_status{name!="rwmon-empty"})', 'check')
         for c, title in names.items():
             if c in allc:
                 rows.append((f'Хосты · {title}', ok.get(c, 0), allc[c]))
