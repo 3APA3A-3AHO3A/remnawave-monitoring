@@ -1006,12 +1006,24 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "Проба"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 75
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "связь"
             },
             "properties": [
               {
                 "id": "custom.width",
-                "value": 80
+                "value": 75
               },
               {
                 "id": "custom.align",
@@ -1071,7 +1083,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 105
+                "value": 95
               },
               {
                 "id": "decimals",

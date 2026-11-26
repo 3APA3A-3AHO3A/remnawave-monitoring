@@ -325,11 +325,12 @@ def build(checks=None, servers=False, probes=(), scanners=False):
             'renameByName': {'probe': 'Проба', 'Value #A': 'связь', 'Value #B': 'хостов',
                              'Value #C': 'не открылось', 'Value #D': 'данные'}}},
     ], [
-        by_name('связь', custom__width=80, custom__align='center', custom__cellOptions={'type': 'color-text'},
+        by_name('Проба', custom__width=75),
+        by_name('связь', custom__width=75, custom__align='center', custom__cellOptions={'type': 'color-text'},
                 mappings=[{'type': 'value', 'options': {'1': {'text': 'OK', 'color': GREEN},
                                                         '0': {'text': 'молчит', 'color': RED}}}]),
         by_name('хостов', custom__width=70, decimals=0, custom__align='right'),
-        by_name('не открылось', custom__width=105, decimals=0, custom__align='right',
+        by_name('не открылось', custom__width=95, decimals=0, custom__align='right',
                 custom__cellOptions={'type': 'color-text'},
                 thresholds={'mode': 'absolute', 'steps': red_if_positive()}),
         by_name('данные', custom__width=80, unit='s', decimals=0, custom__align='right',
@@ -460,11 +461,13 @@ def build(checks=None, servers=False, probes=(), scanners=False):
                                       'Value #E': 'блокируют', 'Value #F': 'ответили',
                                       'Value #G': 'проверено', 'who': 'у кого блокируют'}}}]
         num = dict(custom__width=95, custom__align='center', noValue='—')
-        scan_o = [by_name('сканеры', custom__width=110, custom__align='center', noValue='ещё нет',
+        scan_o = [by_name('сканеры', custom__width=110, custom__align='center',
                           custom__cellOptions={'type': 'color-text'},
                           mappings=[{'type': 'value', 'options': {
                               '1': {'text': 'блокируют', 'color': RED, 'index': 0},
-                              '0': {'text': 'открывают', 'color': GREEN, 'index': 1}}}]),
+                              '0': {'text': 'открывают', 'color': GREEN, 'index': 1}}},
+                              {'type': 'special', 'options': {'match': 'null+nan', 'result': {
+                                  'text': 'ещё нет', 'color': GREY, 'index': 2}}}]),
                   by_name('открывают', **num),
                   by_name('блокируют', **num, custom__cellOptions={'type': 'color-text'},
                           thresholds={'mode': 'absolute', 'steps': [{'color': 'text', 'value': None},
