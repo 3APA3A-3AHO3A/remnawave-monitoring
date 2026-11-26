@@ -27,7 +27,7 @@ import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import egress, feed, links, rkn
+from . import egress, feed, links, rkn, scan
 from .clients import DNS_RETRY_DELAY, ApiError, Prometheus, Remnawave, is_dns_error
 from .util import log, read_json, resolve_ip
 
@@ -59,6 +59,12 @@ HELP = {
     'rwmon_geocheck_timestamp_seconds': ('gauge', 'Когда был последний GeoCheck'),
     'rwmon_rkn_blocked': ('gauge', 'Блокировки РФ (cheburcheck): IP ноды или домен в списках (1) или нет (0)'),
     'rwmon_rkn_timestamp_seconds': ('gauge', 'Когда была последняя проверка блокировок РФ'),
+    'rwmon_rkn_scan_blocked': ('gauge', 'Сканеры cheburcheck в сетях РФ: адрес блокируют (1) или нет (0)'),
+    'rwmon_rkn_scan_bad': ('gauge', 'Сканеры cheburcheck: сколько видят блокировку адреса'),
+    'rwmon_rkn_scan_info': ('gauge', 'Сканеры cheburcheck: у каких провайдеров блокировка (who)'),
+    'rwmon_rkn_scan_ok': ('gauge', 'Сканеры cheburcheck: сколько открывают адрес'),
+    'rwmon_rkn_scan_answered': ('gauge', 'Сканеры cheburcheck: сколько ответили'),
+    'rwmon_rkn_scan_timestamp_seconds': ('gauge', 'Когда адрес последний раз проверяли сканерами'),
     'rwmon_site_up': ('gauge', 'Сайт открывается (1) или нет (0)'),
     'rwmon_site_status_code': ('gauge', 'HTTP-код ответа сайта'),
     'rwmon_site_response_seconds': ('gauge', 'Время ответа сайта'),
@@ -658,6 +664,8 @@ class Exporter:
             _warn(self.state, 'geocheck', f'GeoCheck для Grafana: {e!r}')
         if self.cfg.rkn_enabled:
             rkn_lines(rkn.load_last(self.cfg), lines)
+            if self.cfg.rkn_token:
+                scan.lines(scan.load(self.cfg), lines)
         self.text = lines.text()
 
     def _geocheck(self):

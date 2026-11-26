@@ -165,6 +165,8 @@ class Config:
     rkn_interval: int = 6 * 3600          # секунд между проверками
     rkn_extra: list = field(default_factory=list)  # ещё домены/IP сверх найденных автоматически
     rkn_exclude: list = field(default_factory=list)  # что не проверять: IP, домены или названия нод
+    rkn_token: str = ''                   # API-токен cheburcheck: сканеры в сетях операторов РФ
+    rkn_probe_interval: int = 30 * 60     # секунд между проверками сканерами (по одному адресу)
     # [node_exporter] — порт node_exporter на нодах; 0 — не собирать (графики «Серверы нод»)
     node_exporter_port: int = 0
     bot: object = None              # Bot или None — тогда алерты шлёт сама Grafana, без кнопок
@@ -448,8 +450,15 @@ def _rkn(r):
             raise ConfigError(f'config.toml: [rkn] {key} — список доменов или IP'
                               + (' (или названий нод)' if key == 'exclude' else ''))
         lists[key] = [x.strip() for x in v]
+    token = r.get('token', '')
+    if not isinstance(token, str):
+        raise ConfigError('config.toml: [rkn] token — строка (API-токен cheburcheck.ru)')
+    minutes = r.get('probe_interval_minutes', 30)
+    if not isinstance(minutes, (int, float)) or isinstance(minutes, bool) or not 5 <= minutes <= 720:
+        raise ConfigError('config.toml: [rkn] probe_interval_minutes — число минут от 5 до 720')
     return {'rkn_enabled': bool(r.get('enabled', True)), 'rkn_interval': int(hours * 3600),
-            'rkn_extra': lists['extra'], 'rkn_exclude': lists['exclude']}
+            'rkn_extra': lists['extra'], 'rkn_exclude': lists['exclude'],
+            'rkn_token': token.strip(), 'rkn_probe_interval': int(minutes * 60)}
 
 
 def _node_exporter(n):

@@ -42,7 +42,7 @@ Monitoring for [Remnawave](https://docs.rw) nodes: Grafana dashboards, alerts an
 - **Multiple panels** — each with its own chat and topic. Identical hosts in different panels are checked once.
 - **Check from Russia** — probes on servers in Russia connect to every host like a client app does: you see whether the host works for clients in Russia. The monitoring server checks the same host through its entry and directly on the node — so it is clear where it broke. Details — [Check from Russia](#check-from-russia).
 - **Node servers** — optional: disk, swap, the connection table and real CPU usage from [node_exporter](https://github.com/prometheus/node_exporter) on the nodes. Details — [Node servers](#node-servers).
-- **Russian blocklists** — every few hours all node IPs and the service's domains are checked against Russian blocklists via [cheburcheck.ru](https://cheburcheck.ru): the RKN registry, blocked subnets and CDNs. Details — [Russian blocklists](#russian-blocklists).
+- **Russian blocklists** — every few hours all node IPs and the service's domains are checked against Russian blocklists via [cheburcheck.ru](https://cheburcheck.ru): the RKN registry, blocked subnets and CDNs. With an API token, also with cheburcheck scanners inside Russian operators' networks: you see which ISPs block an address with TSPU, by SNI or by DNS spoofing. Details — [Russian blocklists](#russian-blocklists).
 - **Websites and an external watchdog** — checks for your sales site and subscription page, certificate expiry, and a Healthchecks.io ping in case the monitoring server itself goes down.
 
 ## How it works
@@ -107,6 +107,7 @@ The reason in the line: for a host — the verdict (blocked in Russia, broken en
 | Panel is slow | a panel process (api, scheduler or processor) responds slower than `panel_lag_ms` (200 ms) for 5 minutes | all chats |
 | Panel process restarted | the process uptime was reset — a panel update or a crash | all chats |
 | Panel uses too much memory | a panel process uses more than `panel_memory_mb` (1024 MB) for 15 minutes | all chats |
+| Russian blocklist: scanners see a block | `[rkn] token`: cheburcheck scanners inside Russian operators' networks see the address blocked (at least two of them). The message gives the kind: TSPU, by SNI, DNS spoofing, CDN; which ISPs — in the report and on the dashboard | all chats |
 | Russian blocklist: address listed | `[rkn]`: a node IP or a service domain is in the RKN registry, a blocked subnet or a CDN (per cheburcheck.ru). The message says what was found | all chats |
 | Probe from Russia is silent | a probe has not sent results for 10 minutes: the host verdict is computed without it (without all probes — from the monitoring server only) | all chats |
 | Website down / from Russia | a page from `[[site]]` does not respond from the monitoring server or from the probes in Russia | all chats |
@@ -483,8 +484,21 @@ exclude = ["USA 1"]         # skip: IPs, domains or node names (known things you
 - A domain that merely sits behind a blocked CDN (e.g. Cloudflare) is not an alert: with Reality the domain is only in SNI and clients connect to the node IP. Such domains get one line in the report. A node IP inside a blocked CDN network is an alert — clients connect to exactly that IP.
 - On a 429 response the monitoring waits and retries; requests are 4 seconds apart.
 - Only IPs and domains are sent to cheburcheck.ru — no keys, subscription links or tokens. The service states a limit of 30 checks a minute; the monitoring makes at most 15.
-- cheburcheck scanners (checks from inside Russian operators' networks, the "TSPU block" verdict) need an API token issued on request on the website; not connected yet.
 - Check now: `docker compose exec reporter python -m rwmon rkn`.
+
+**Scanners inside Russian operators' networks.** The lists say whether an address is in the registry; cheburcheck scanners say whether it actually opens: each one sits in one ISP's network (MTS, Rostelecom, Ufanet…) and returns a verdict: opens, TSPU block, SNI block, DNS spoofing, CDN block. An API token is required; cheburcheck.ru issues it on request:
+
+```toml
+[rkn]
+token = "…"                  # cheburcheck API token; without it, lists only
+probe_interval_minutes = 30  # how often the next address is checked, minutes; 5 to 720
+```
+
+- Same addresses as for the lists. They are checked one at a time, round-robin: each time the one checked longest ago. At 30 minutes a round of 40 addresses takes less than a day.
+- Checks spend no credits, but the request rate is limited. On a 429 the pause doubles (up to 6 hours) until the service answers again; on a rejected token the monitoring logs it and waits 6 hours.
+- A block counts when at least two scanners see it: a single verdict can be wrong. Then the "Russian blocklist: scanners see a block" alert fires with the kind of block; which ISPs — in the daily report ("📡 Сканеры в сетях РФ") and in the "у кого блокируют" column of the "Блокировки РКН" table on the dashboard.
+- The token is kept only in `config.toml` and goes only to cheburcheck.ru, in a request header.
+- Check an address now: `docker compose exec reporter python -m rwmon scan <IP or domain>`; whether the token is accepted — in `rwmon check`.
 
 ### Node servers
 
