@@ -83,15 +83,71 @@ def rkn_blocked(rkn_data, muted=lambda item: False):
 
 # ── сводка в Telegram (rich) ────────────────────────────────
 
+OVERLOAD_MIN = 15       # перегрузка короче — не повод для «внимания»
+CERT_WARN_DAYS = 30
+
+
+def _node_label(d, key, cfg):
+    m = d['info'].get(key) or {}
+    name = m.get('node_name') or key[1]
+    return f'{name} ({m.get("panel_title", key[0])})' if cfg.multi else name
+
+
+def attention(d, geo_run, rkn_data, scan_data, cfg, rkn_muted=lambda item: False):
+    """Что требует внимания — короткие строки (HTML), самое важное первым."""
+    from .render import GEODATA_STALE_DAYS
+    out = []
+    bad_sites = _sites_bad(d)
+    if bad_sites:
+        out.append('не открываются сайты: ' + esc(', '.join(bad_sites)))
+    if cfg.rkn_enabled and rkn_data:
+        live, _, _ = rkn_blocked(rkn_data, rkn_muted)
+        if live:
+            out.append('в списках блокировок: ' + esc(', '.join(x['name'] for x in live)))
+    blocked = [x for x in ((scan_data or {}).get('items') or {}).values() if x.get('blocked')]
+    if blocked:
+        out.append('сканеры в сетях РФ видят блокировку: ' + esc(', '.join(sorted(x['name'] for x in blocked))))
+    for key, mins in sorted((d.get('overload') or {}).items(), key=lambda kv: -kv[1]):
+        if mins >= OVERLOAD_MIN and key in d['info']:
+            out.append(f'нода {esc(_node_label(d, key, cfg))} перегружалась {F.duration(mins * 60)} за сутки')
+    old = [(k, v) for k, v in (d.get('geo_age') or {}).items() if v > GEODATA_STALE_DAYS and k in d['info']]
+    if old:
+        out.append('geo-базы не обновляются: ' + esc(', '.join(f'{_node_label(d, k, cfg)} — {int(v)} дн.'
+                                                                for k, v in sorted(old))))
+    reboot = sorted(_node_label(d, k, cfg) for k, v in (d.get('reboot') or {}).items() if v and k in d['info'])
+    if reboot:
+        out.append('нужна перезагрузка после обновлений: ' + esc(', '.join(reboot)))
+    cert = _cert_min(d)
+    if cert is not None and cert < CERT_WARN_DAYS:
+        out.append(f'сертификат сайта истекает через {cert} дн.')
+    geo = _geo_counts(geo_run)
+    if geo and geo['new_bad']:
+        out.append(f'GeoCheck: новых проблем {geo["new_bad"]}')
+    return out
+
+
+def _work_line(windows):
+    if not windows:
+        return ''
+    spans = ', '.join(f'{F.tg_time(a)}–{F.tg_time(b)}' for a, b in windows)
+    return f'<p>🛠 Работы: {spans} — сбои в это время из-за работ</p>'
+
 def _num(n):
     return '—' if n is None else str(int(n))
 
 
-def summary_rich(d, extras, geo_run, rkn_data, cfg, rkn_muted=lambda item: False):
+def summary_rich(d, extras, geo_run, rkn_data, cfg, rkn_muted=lambda item: False, scan_data=None, work=()):
     out = [f'<h3>📊 Сводка за {now():%d.%m}</h3>']
     if not d['info']:
         out.append('<p>❗️ <b>Нет данных о нодах в Prometheus</b> — проверьте: '
                    '<code>docker compose exec reporter python -m rwmon check</code></p>')
+    att = attention(d, geo_run, rkn_data, scan_data, cfg, rkn_muted)
+    problems, short = problem_lines(d, cfg)
+    if att:
+        out.append(f'<p>⚠️ <b>Требует внимания: {len(att)}</b></p><ul>'
+                   + ''.join(f'<li>{x}</li>' for x in att) + '</ul>')
+    elif not problems:
+        out.append('<p>✅ <b>Всё в порядке</b></p>')
     rows = ''.join(
         f'<tr><td>{esc(p.title)}</td><td align="right">{u["online"]}</td><td align="right">{u["day"]}</td>'
         f'<td align="right">↓{gb(sum(n["down"] for n in ns))}</td>'
@@ -100,13 +156,13 @@ def summary_rich(d, extras, geo_run, rkn_data, cfg, rkn_muted=lambda item: False
     out.append('<table bordered compact><tr><th>Панель</th><th>онлайн</th><th>за сутки</th>'
                f'<th>к клиентам</th><th>от клиентов</th></tr>{rows}</table>')
 
-    problems, short = problem_lines(d, cfg)
     if problems:
         top = _longest(d, cfg)
         out.append(f'<p>⚠️ <b>Сбои: {len(problems)}</b>'
                    + (f' · дольше всего {esc(top[0])} — {F.duration(top[1] * 60)}' if top else '') + '</p>')
     else:
         out.append('<p>✅ Сбоев за сутки не было' + (f' (коротких: {short})' if short else '') + '</p>')
+    out.append(_work_line(work))
 
     bad_sites, cert = _sites_bad(d), _cert_min(d)
     if d.get('site_up'):
@@ -149,13 +205,17 @@ def summary_rich(d, extras, geo_run, rkn_data, cfg, rkn_muted=lambda item: False
             items += f'<li>и ещё {short} коротких (до {cfg.short_minutes} мин) — перезапуски и минутные обрывы</li>'
         out.append(f'<details><summary>Сбои за сутки ({len(problems)})</summary><ul>{items}</ul></details>')
 
-    extra = geocheck.telegram_section(geo_run) if geo_run else []
+    # «как и вчера» — то, что не меняется изо дня в день: в файле отчёта, в сводке не повторяем
+    extra = [x for x in (geocheck.telegram_section(geo_run) if geo_run else []) if 'Как и вчера' not in x]
     if cfg.rkn_enabled and rkn_data:
         live, hushed, items = rkn_blocked(rkn_data, rkn_muted)
         for x in live:
             extra.append(f'🚫 {esc(x["name"])} <code>{esc(x["target"])}</code> — {esc(x.get("why", ""))}')
         for x in hushed:
             extra.append(f'🔕 {esc(x["name"])} — в списках, заглушено')
+    if scan_data:
+        from . import scan
+        extra += [x for x in scan.telegram_section(scan_data) if x]
     if extra:
         out.append('<details><summary>GeoCheck и блокировки</summary><p>'
                    + '<br>'.join(line for line in extra if line) + '</p></details>')

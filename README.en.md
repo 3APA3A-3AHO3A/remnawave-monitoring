@@ -105,7 +105,7 @@ The reason in the line: for a host — the verdict (blocked in Russia, broken en
 | Outbound not responding | clients send requests to an outbound (e.g. `psiphon-out`) but almost no responses come back. **Disabled** (paused in Grafana): the outbounds sit behind balancers with a fallback, and uploading a file looks the same as a failure. A real chain failure is caught by the route checks | — |
 | Panel API unreachable | the panel does not respond, wrong address or token | all chats |
 | Panel is slow | a panel process (api, scheduler or processor) responds slower than `panel_lag_ms` (200 ms) for 5 minutes | all chats |
-| Panel process restarted | the process uptime was reset — a panel update or a crash | all chats |
+| Panel process restarted | the process uptime was reset. With the bot: if the panel version changed in the last 40 minutes it was an update, and a quiet line "panel updated to …" arrives; same version means a crash, and the alert comes with sound | all chats |
 | Panel uses too much memory | a panel process uses more than `panel_memory_mb` (1024 MB) for 15 minutes | all chats |
 | Russian blocklist: scanners see a block | `[rkn] token`: cheburcheck scanners inside Russian operators' networks see the address blocked (at least two of them). The message gives the kind: TSPU, by SNI, DNS spoofing, CDN; which ISPs — in the report and on the dashboard | all chats |
 | Russian blocklist: address listed | `[rkn]`: a node IP or a service domain is in the RKN registry, a blocked subnet or a CDN (per cheburcheck.ru). The message says what was found | all chats |
@@ -113,6 +113,7 @@ The reason in the line: for a host — the verdict (blocked in Russia, broken en
 | Website down / from Russia | a page from `[[site]]` does not respond from the monitoring server or from the probes in Russia | all chats |
 | Certificate expires soon | the site has less than 14 days left | all chats |
 | Node overloaded | load above 0.9 per core or more than 90% memory used for 15 minutes | all chats |
+| Geo databases not updating | `[node_exporter]`: geoip.dat or geosite.dat on a node is older than 2 days (the age is written by the `rwmon-geodata` cron from [fixerror-node](https://github.com/3APA3A-3AHO3A/fixerror-node)). The core stopped updating them: the geodata block is gone from the profile or the node can't reach GitHub | all chats |
 | Hosts are not checked | the host exists in the panel but the checker does not see it (e.g. xray-checker failed to load the list) | all chats |
 | reporter / host checks not working | the monitoring itself is broken | all chats |
 
@@ -132,6 +133,7 @@ Commands (only for `admins`):
 |---|---|
 | `/status` | nodes per panel, hosts per check, websites, blocklists, how many alerts are firing; "What is firing" lists them, muted ones marked |
 | `/mutes` | what is muted, until when and by whom; restore one by one or all |
+| `/work` | maintenance mode for an hour: alerts arrive without sound and marked "maintenance", and the daily report marks that time so restarts don't read as failures; buttons "+1 hour" and "End maintenance" |
 | `/settings` | turn alert groups on or off (nodes and hosts, probes from Russia, blocklists, panels, websites and certificates, the monitoring itself) and the daily report; how often to remind while it is still broken (30 min – 6 h); quiet hours — messages arrive without sound |
 
 Messages are Telegram rich messages (tables, collapsible blocks, time in the reader's time zone). If the client or Telegram rejects them, the same goes out as a regular message with buttons. Mutes and settings are stored by reporter (`bot.json` in its volume) and survive restarts; Grafana still sees every alert as is.
@@ -177,7 +179,7 @@ At the configured time the daily report goes to all chats:
 - failures of the day: one server in two panels — one line, failures shorter than `short_minutes` (2 min) — one line "and N more short ones"; for a host — the verdict: did not open from Russia, broken entry, node did not respond; a probe from Russia silent for more than 5 minutes — a separate line;
 - per panel: users, new and expired during the day, peak clients and traffic per node.
 
-With the bot (`[bot]`) the report is short: a table of panels (online, last 24 h, traffic to clients ↓ and from clients ↑), failures in one line with the longest one, websites and the nearest certificate, GeoCheck and blocklists. Details are in collapsible blocks: nodes of each panel (clients now / peak, ↓, ↑, outbounds), failures as a list, GeoCheck and blocklists. A blocklist hit muted in the bot is not counted. The report can be turned off in `/settings`.
+With the bot (`[bot]`) the report opens with a verdict: "✅ All good" or "⚠️ Needs attention" with a list — websites down, an address listed or blocked by scanners, a node overloaded for more than 15 minutes in a day, geo databases not updating, a reboot needed after updates, a certificate with less than 30 days, new GeoCheck problems. Maintenance windows get their own line. Then, briefly: a table of panels (online, last 24 h, traffic to clients ↓ and from clients ↑), failures in one line with the longest one, websites and the nearest certificate, GeoCheck and blocklists. Details are in collapsible blocks: nodes of each panel (clients now / peak, ↓, ↑, outbounds), failures as a list, GeoCheck and blocklists. A blocklist hit muted in the bot is not counted. The report can be turned off in `/settings`.
 
 One HTML report for the day is attached: cards with the key numbers, a timeline of failures, nodes of each panel with client traffic in both directions, outbounds and server network (received / sent), GeoCheck (country per service, changes, unavailable services, the full table and per-node breakdown — collapsed), websites with certificates and blocklists. The report follows the light or dark theme.
 

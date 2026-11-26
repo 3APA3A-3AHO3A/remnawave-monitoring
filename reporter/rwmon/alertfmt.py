@@ -13,7 +13,7 @@ SERVICE_LABELS = {'alertname', 'grafana_folder', 'severity', 'scope', 'repeat'}
 # группы правил для /settings: (ключ, подпись, как узнать правило по uid)
 CATEGORIES = [
     ('nodes', 'Ноды и хосты', ('-down', '-bypass', '-direct', '-egress', 'clients-dropped',
-                               'outbound-no-response', 'node-overload')),
+                               'outbound-no-response', 'node-overload', 'geodata-stale')),
     ('ru', 'Пробы из РФ', ('probe-down', 'site-down-ru')),
     ('rkn', 'Блокировки РКН', ('rkn-blocked', 'rkn-scan')),
     ('panels', 'Панели', ('panel-metrics', 'panel-slow', 'panel-restart', 'panel-memory',
@@ -162,6 +162,7 @@ def plain(body):
 # ── сообщение об алертах ────────────────────────────────────
 
 MAX_ITEMS = 25
+MASS = 3            # столько сбоев одного вида в сообщении — показываем число в заголовке
 
 
 def _items(alerts, multi, resolved):
@@ -200,7 +201,9 @@ def alert_body(firing, resolved, multi):
     if firing:
         a = firing[0]
         title = (a.get('annotations') or {}).get('summary') or a['labels'].get('alertname', '')
-        parts.append(f'<h4>🔴 {"Всё ещё: " if resolved else ""}{esc(title)}</h4>' + _items(firing, multi, False))
+        # много сразу — это общий сбой (выход, сеть), а не N отдельных: число в заголовке
+        count = f' — {len(firing)}' if len(firing) >= MASS else ''
+        parts.append(f'<h4>🔴 {"Всё ещё: " if resolved else ""}{esc(title)}{count}</h4>' + _items(firing, multi, False))
     return ''.join(parts)
 
 

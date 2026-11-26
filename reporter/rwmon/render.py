@@ -80,7 +80,10 @@ def probe_jobs(cfg):
 # Метрики node_exporter, которые нужны графикам «Серверы нод»; остальное не храним
 NODE_METRICS = ('node_cpu_seconds_total|node_memory_(MemTotal|MemAvailable|SwapTotal|SwapFree)_bytes|'
                 'node_filesystem_(size|avail)_bytes|node_nf_conntrack_entries(_limit)?|node_boot_time_seconds|'
-                'node_network_(receive|transmit)_bytes_total|node_disk_(read|written)_bytes_total')
+                'node_network_(receive|transmit)_bytes_total|node_disk_(read|written)_bytes_total|'
+                # «нужна перезагрузка» (сборщик apt пакета) и возраст geo-баз (cron rwmon-geodata на ноде)
+                'node_reboot_required|rwmon_geodata_mtime_seconds')
+GEODATA_STALE_DAYS = 2
 
 
 def node_job(cfg):
@@ -398,6 +401,16 @@ def rules(cfg):
               # CPU — процент на ядро, память — тот же процент со знаком минус
               reason='{{ $s := printf "%.0f" $values.B.Value }}{{ if lt $values.B.Value 0.0 }}'
                      'занято {{ slice $s 1 }}% памяти{{ else }}нагрузка CPU {{ $s }}% на ядро{{ end }}'),
+        *([_rule('rwmon-geodata-stale', 'Geo-базы не обновляются', f'''
+(
+  (time() - min by (panel, node_uuid) (rwmon_geodata_mtime_seconds > 0)) / 86400 > {GEODATA_STALE_DAYS}
+) {NAMES}''', '30m', 'Geo-базы на ноде не обновляются', 'Geo-базы на ноде снова свежие',
+                 f'geoip.dat или geosite.dat на ноде старше {GEODATA_STALE_DAYS} суток. Базы обновляет ядро Xray '
+                 'по блоку geodata в конфиг-профиле панели: проверьте, что блок на месте и что нода видит '
+                 'GitHub (docker logs remnanode | grep -i geodata).',
+                 'all', severity='warning', window=3600, any_value=True,
+                 reason='{{ printf "%.0f" $values.B.Value }} дн. без обновления')]
+          if cfg.node_exporter_port else []),
         *([_rule('rwmon-probe-down', 'Проба из РФ молчит',
                  '(max by (probe) (rwmon_ru_probe_up) == 0) * 0 + 1', '10m',
                  'Проба из РФ не присылает результаты', 'Проба из РФ снова работает',
