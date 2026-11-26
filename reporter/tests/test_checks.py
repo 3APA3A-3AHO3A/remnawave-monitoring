@@ -202,12 +202,14 @@ class SelectTest(unittest.TestCase):
 class RenderChecksTest(unittest.TestCase):
     def test_checkers_and_ports(self):
         cfg = make_cfg(check=CHECKS)
-        self.assertEqual(render.checkers(cfg), [('xray', 'Подключение', 2112, 21000), ('warp', 'WARP', 2113, 22000),
+        self.assertEqual(render.checkers(cfg), [('xray', 'На ноду', 2112, 21000), ('entry', 'Через вход', 2121, 30000),
+                                                 ('warp', 'WARP', 2113, 22000),
                                                  ('psiphon', 'Psiphon', 2114, 23000),
                                                  ('usa', 'Каскад в США', 2115, 24000)])
-        self.assertEqual(port_ranges(4)[-1], (24000, 24999))
+        self.assertEqual(port_ranges(cfg), [(21000, 21999), (30000, 30999), (22000, 22999), (23000, 23999),
+                                            (24000, 24999)])
         targets = render.prometheus(cfg)['scrape_configs'][1]['static_configs']
-        self.assertEqual([t['labels']['check'] for t in targets], ['xray', 'warp', 'psiphon', 'usa'])
+        self.assertEqual([t['labels']['check'] for t in targets], ['xray', 'entry', 'warp', 'psiphon', 'usa'])
 
     def test_rules(self):
         cfg = make_cfg(check=CHECKS + [{'id': 'direct', 'url': 'https://a.b', 'egress': 'node'}])
@@ -231,14 +233,16 @@ class RenderChecksTest(unittest.TestCase):
             render.SRC = os.path.join(os.path.dirname(__file__), '..', '..')
             render.render(cfg)
             self.assertEqual(sorted(os.listdir(os.path.join(out, 'checkers'))),
-                             ['psiphon.env', 'usa.env', 'warp.env', 'xray.env'])
+                             ['entry.env', 'psiphon.env', 'usa.env', 'warp.env', 'xray.env'])
+            self.assertIn("SUBSCRIPTION_URL='file:///links/monitor-entry.txt'",
+                          read(os.path.join(out, 'checkers', 'entry.env')))
             env = read(os.path.join(out, 'checkers', 'usa.env'))
             self.assertIn("XRAY_START_PORT='24000'", env)
             self.assertIn("SUBSCRIPTION_URL='file:///links/monitor-usa.txt'", env)
             dash = read(os.path.join(out, 'grafana', 'dashboards', 'files', 'remnawave-overview.json'), True)
             text = json.dumps(dash, ensure_ascii=False)
             self.assertIn('Каскад в США', text)
-            self.assertIn('Value #Kusa', text)
+            self.assertIn('Каскад в США не работает', text)      # «Сейчас не работает» знает проверку
             prov = read(os.path.join(out, 'grafana', 'dashboards', 'dashboards.yml'), True)
             self.assertEqual(prov['providers'][0]['options']['path'], '/etc/rwmon/grafana/dashboards/files')
 

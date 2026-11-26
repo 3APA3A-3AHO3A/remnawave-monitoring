@@ -71,7 +71,7 @@ class Panel:
 
 # Метки rwmon_host и правил, с которыми не должен совпасть id проверки маршрута:
 # id становится меткой rwmon_host (warp="1"), именем файла и контейнерного процесса.
-RESERVED_IDS = {'xray', 'ru', 'ruclient', 'ru_via', 'panel', 'panel_title', 'host', 'name', 'lite', 'address', 'owner', 'primary',
+RESERVED_IDS = {'xray', 'entry', 'ru', 'ruclient', 'ru_via', 'probe', 'state', 'panel', 'panel_title', 'host', 'name', 'lite', 'address', 'owner', 'primary',
                 'exit', 'via', 'check', 'job', 'instance', 'ip', 'node', 'node_uuid', 'node_name',
                 'protocol', 'stable_id', 'severity', 'scope', 'repeat', 'reason'}
 MAX_ROUTE_CHECKS = 8          # порты метрик 2113–2120, порты Xray 22000–29999
@@ -113,11 +113,21 @@ class Site:
 
 @dataclass
 class Probe:
-    """Blackbox exporter на ноде в РФ: проверяет, открываются ли ноды и сайты оттуда."""
+    """Проба на сервере в РФ (папка probe/): проверка хостов как клиент из России
+    (xray-checker) и blackbox exporter для сайтов."""
     name: str
     url: str                   # https://IP:9115
     user: str = ''
     password: str = ''
+
+    @property
+    def host(self):
+        """Адрес сервера пробы из url: хосты, которые ведут на него самого, из РФ
+        не проверяются (их проверяет сервер мониторинга)."""
+        hostport = self.url.partition('://')[2]
+        if hostport.startswith('['):
+            return hostport[1:].partition(']')[0]
+        return hostport.rpartition(':')[0] if ':' in hostport else hostport
 
 
 @dataclass
@@ -147,10 +157,9 @@ class Config:
     healthcheck_url: str = ''
     sites: list = field(default_factory=list)
     probes: list = field(default_factory=list)
-    # [ru] via — хосты в РФ, через которые хосты проверяются ещё и «из РФ», как их видят
-    # клиенты из России (названия хостов с тегом host_tag; первый подходящий)
-    ru_via: list = field(default_factory=list)
-    ru_hosts: list = field(default_factory=list)   # [ru] hosts — какие хосты так проверять; пусто — все
+    # порт на сервере мониторинга, куда пробы из РФ приходят за списком хостов и с результатами
+    ru_port: int = 9116
+    ru_legacy: bool = False         # в config.toml остался [ru] от версий 2.x — он больше не нужен
     # [rkn] — IP нод и домены по спискам блокировок РФ через cheburcheck.ru
     rkn_enabled: bool = False
     rkn_interval: int = 6 * 3600          # секунд между проверками
@@ -312,8 +321,8 @@ def parse(data, env=os.environ):
         healthcheck_url=str((data.get('healthcheck') or {}).get('ping_url', '')).strip(),
         sites=_sites(data.get('site') or []),
         probes=_probes(data.get('probe') or []),
-        ru_via=_ru_via(data.get('ru') or {}),
-        ru_hosts=_ru_via(data.get('ru') or {}, 'hosts', required=False),
+        ru_port=num(chk, 'ru_port', 9116, 'checks', minimum=1),
+        ru_legacy='ru' in data,
         **_rkn(data.get('rkn') or {}),
         node_exporter_port=_node_exporter(data.get('node_exporter') or {}),
         bot=_bot(data.get('bot')),
@@ -424,18 +433,6 @@ def _probes(items):
         names.add(name)
         out.append(Probe(name=name, url=url, user=str(s.get('user', '')), password=str(s.get('password', ''))))
     return out
-
-
-def _ru_via(ru, key='via', required=True):
-    via = ru.get(key, [])
-    if isinstance(via, str):
-        via = [via]
-    if not isinstance(via, list) or not all(isinstance(v, str) and v.strip() for v in via):
-        raise ConfigError(f'config.toml: [ru] {key} — список названий хостов, например '
-                          '["🇷🇺 Москва 1", "🇷🇺 Москва 2"]')
-    if required and ru and not via:
-        raise ConfigError('config.toml: в [ru] нужен via — хосты в РФ, через которые проверять')
-    return [v.strip() for v in via]
 
 
 def _rkn(r):

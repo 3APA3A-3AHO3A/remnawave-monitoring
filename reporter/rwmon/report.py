@@ -43,7 +43,7 @@ def users(d, extras, pid):
 def _longest(d, cfg):
     """Самый долгий сбой за сутки: (название, минуты) или None. Один сервер в двух панелях — одной строкой."""
     hosts, best = {}, None
-    for pid, host, name, check, mins in d['checks']:
+    for pid, host, name, check, mins in list(d['checks']) + list(d.get('states') or []):
         h = hosts.setdefault((name or f'{pid}:{host}', check), {'hosts': [], 'mins': mins})
         h['hosts'].append((pid, host))
     for h in hosts.values():
@@ -204,6 +204,15 @@ def timeline(prom, d, cfg, end=None):
             if hosts:
                 rows.append((f'{merged_name(hosts, cfg)} · {names.get(m["check"], m["check"])}',
                              _segments(vals, end)))
+    hosts_bad = {}                       # итог по хосту: отрезки, когда хост не работал
+    for pid, host, name, code, mins in d.get('states') or []:
+        hosts_bad.setdefault(name, set()).add((pid, host))
+    if hosts_bad:
+        for m, vals in series('max by (name) (rwmon_host_state) == bool 0'):
+            hosts = hosts_bad.get(m.get('name'))
+            segs = _segments(vals, end)
+            if hosts and segs and sum(b - a for a, b in segs) > cfg.short_minutes * 60:
+                rows.append((f'{merged_name(sorted(hosts), cfg)} · хост не работал', segs))
     if any(v >= 1 for v in d['offline'].values()):
         for m, vals in series('rwmon_node_connected'):
             info = d['info'].get((m.get('panel'), m.get('node_uuid')))

@@ -111,7 +111,7 @@ class RknTest(unittest.TestCase):
         rules = json.dumps(render.rules(cfg), ensure_ascii=False)
         self.assertIn('rwmon-rkn-blocked', rules)
         self.assertNotIn('rwmon-rkn-blocked', json.dumps(render.rules(make_cfg()), ensure_ascii=False))
-        self.assertEqual(daily.check_names(cfg)['xray'], 'Подключение')
+        self.assertEqual(daily.check_names(cfg)['xray'], 'На ноду')
 
     def test_retry_429(self):
         import urllib.error

@@ -22,8 +22,9 @@ def data():
         'down': {k1: 205e9, k2: 168e9}, 'up': {k1: 8.9e9, k2: 7e9},
         'net_rx': {k1: 241e9}, 'net_tx': {k1: 236e9},
         'outbound': {k1: {'WARP': 33.6e9, 'psiphon-out': 332e6}},
-        'offline': {}, 'panel_down': {}, 'probe_blocked': [], 'probe_mass': 0,
-        'checks': [('main', 'LTE 3', 'lte3', 'xray', 807.0), ('main', 'Игровой', 'g', 'warp', 1.0)],
+        'offline': {}, 'panel_down': {}, 'probe_silent': {},
+        'states': [('main', 'LTE 3', 'lte3', 1, 807.0)],
+        'checks': [('main', 'Игровой', 'g', 'warp', 1.0)],
         'status': {('main', 'ACTIVE'): 238, ('main', 'EXPIRED'): 178},
         'online': {('main', 'onlineNow'): 133, ('main', 'lastDay'): 212, ('reserve', 'onlineNow'): 201},
         'total': {('main',): 576},
@@ -53,9 +54,9 @@ GEO = {'date': 'x', 'finished': '2026-11-24T14:32:00', 'results': {
 
 class Prom:
     def query_range(self, expr, start, end, step):
-        if 'xray_proxy_status' in expr:
+        if 'rwmon_host_state' in expr:          # «== bool 0»: 1 — работал, 0 — нет
             vals = [(start + i * step, 0.0 if 100 <= i < 300 else 1.0) for i in range(720)]
-            return [({'name': 'lte3', 'check': 'xray'}, vals)]
+            return [({'name': 'lte3'}, vals)]
         return []
 
 
@@ -90,7 +91,7 @@ class ReportTest(unittest.TestCase):
         rows, start, end = report.timeline(Prom(), data(), self.cfg, end=1_000_000)
         self.assertEqual(len(rows), 1)                        # Игровой 1 мин — не показываем
         label, segs = rows[0]
-        self.assertEqual(label, 'LTE 3 · Основная · Подключение')
+        self.assertEqual(label, 'LTE 3 · Основная · хост не работал')
         self.assertEqual(len(segs), 1)
         self.assertAlmostEqual(segs[0][1] - segs[0][0], 200 * report.STEP)
 
@@ -98,7 +99,8 @@ class ReportTest(unittest.TestCase):
         tl = report.timeline(Prom(), data(), self.cfg, end=1_000_000)
         html = report.full_html(data(), {}, GEO, RKN, self.cfg, tl,
                                 rkn_muted=lambda x: x['target'] == '184.174.96.32')
-        for text in ('Мониторинг ·', 'онлайн сейчас', '373.0 ГБ / 15.9 ГБ', 'трафик ↓ / ↑', 'LTE 3 · Основная · Подключение',
+        for text in ('Мониторинг ·', 'онлайн сейчас', '373.0 ГБ / 15.9 ГБ', 'трафик ↓ / ↑', 'LTE 3 · Основная · хост не работал',
+                     'не открывался из РФ (вход и нода работали)',
                      'class="seg"', 'Ноды · Основная', 'сеть сервера ↓ / ↑', '241.0 ГБ / 236.0 ГБ',
                      'psiphon-out', 'GeoCheck — как сервисы видят ноды', 'YouTube: PL → UA',
                      'Google видит RU', 'не выполнился', 'Все сервисы по всем нодам', 'Netflix',

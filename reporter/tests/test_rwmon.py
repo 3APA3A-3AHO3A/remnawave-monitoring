@@ -384,8 +384,9 @@ class LinksTest(unittest.TestCase):
             self.assertEqual([c['remarks'] for c in full], ['A'])
             self.assertEqual([c['remarks'] for c in xray], ['A', 'H'])
             self.assertEqual(xray[1]['outbounds'][0]['streamSettings']['tlsSettings']['alpn'], ['h3'])
-            with open(os.path.join(d, 'probe-tcp.json'), encoding='utf-8') as f:
-                self.assertEqual(json.load(f), [{'targets': ['1.1.1.1:443'], 'labels': {}}])   # UDP не берём
+            self.assertFalse(os.path.exists(os.path.join(d, 'probe-tcp.json')))   # TCP-пробы убраны в 3.0
+            with open(os.path.join(d, 'monitor-entry.txt'), encoding='utf-8') as f:
+                self.assertEqual([c['remarks'] for c in json.load(f)], [links.EMPTY_NAME])  # входов нет — заглушка
             # панель ответила — кэш обновлён, при следующем сбое хосты возьмутся из него
             per_panel, _ = links.refresh(cfg, {'main': Fake(False), 'reserve': Fake(False)})
             self.assertEqual([len(e) for _, e in per_panel], [2, 0])
@@ -435,6 +436,8 @@ class MiscTest(unittest.TestCase):
                        probe=[{'name': 'ru-msk', 'url': 'https://10.0.0.1:9115/', 'user': 'u', 'password': 'p'}])
         self.assertEqual([s.name for s in cfg.sites], ['fixerrorvpn.com', 'Панель'])
         self.assertEqual(cfg.probes[0].url, 'https://10.0.0.1:9115')
+        self.assertEqual(cfg.probes[0].host, '10.0.0.1')
+        self.assertEqual(cfg.ru_port, 9116)
         for bad in ({'site': [{'url': 'fixerrorvpn.com'}]}, {'probe': [{'name': 'RU MSK', 'url': 'https://1.1.1.1:9115'}]}):
             with self.assertRaises(config.ConfigError):
                 make_cfg(**bad)
@@ -442,8 +445,7 @@ class MiscTest(unittest.TestCase):
             cfg.links_file = os.path.join(d, 'monitor.txt')
             links.write_probe_targets(cfg, [{'address': '1.2.3.4:443'}, {'address': '1.2.3.4:443'}, {'address': ''},
                                             {'address': '5.6.7.8:20009', 'udp': True}])
-            with open(os.path.join(d, 'probe-tcp.json'), encoding='utf-8') as f:
-                self.assertEqual(json.load(f), [{'targets': ['1.2.3.4:443'], 'labels': {}}])
+            self.assertFalse(os.path.exists(os.path.join(d, 'probe-tcp.json')))
             with open(os.path.join(d, 'probe-http.json'), encoding='utf-8') as f:
                 self.assertEqual(json.load(f)[1], {'targets': ['https://p.x/'],
                                                    'labels': {'site': 'Панель', 'module': 'http_2xx'}})
@@ -645,7 +647,7 @@ class ExporterTest(unittest.TestCase):
         exporter.host_lines([{'panel': 'main', 'panel_title': 'Основная', 'host': 'LTE 1', 'name': 'LTE 1',
                               'lite': True, 'address': '1.2.3.4:443'}], lines)
         self.assertIn('rwmon_host{panel="main",panel_title="Основная",host="LTE 1",name="LTE 1",lite="1",'
-                      'address="1.2.3.4:443",owner="main",primary="1",warp="0",psiphon="0"} 1',
+                      'address="1.2.3.4:443",owner="main",primary="1",warp="0",psiphon="0",entry="0",ru="0"} 1',
                       lines.text())
         # полный хост с тегом-исключением Psiphon; запись старого кэша без 'checks' — обе проверки
         lines = exporter.Lines()
@@ -654,9 +656,9 @@ class ExporterTest(unittest.TestCase):
                              {'panel': 'main', 'panel_title': 'Основная', 'host': 'Old', 'name': 'Old',
                               'lite': False, 'address': '6.6.6.6:443'}], lines)
         self.assertIn('host="Москва 1",name="Москва 1",lite="0",address="5.5.5.5:443",owner="main",primary="1",'
-                      'warp="1",psiphon="0"} 1', lines.text())
+                      'warp="1",psiphon="0",entry="0",ru="0"} 1', lines.text())
         self.assertIn('host="Old",name="Old",lite="0",address="6.6.6.6:443",owner="main",primary="1",'
-                      'warp="1",psiphon="1"} 1', lines.text())
+                      'warp="1",psiphon="1",entry="0",ru="0"} 1', lines.text())
 
     def test_host_exit(self):
         p = make_cfg().panels[0]
@@ -667,11 +669,11 @@ class ExporterTest(unittest.TestCase):
         exporter.host_lines(hosts, lines, [p], {'1.2.3.4': 'Poland 1 · FixErrorVPN'}, {})
         text = lines.text()
         self.assertIn('host="Poland",name="Poland",lite="0",address="1.2.3.4:443",owner="main",primary="1",'
-                      'warp="1",psiphon="1",exit="Poland 1 · FixErrorVPN"} 1', text)
+                      'warp="1",psiphon="1",entry="0",ru="0",exit="Poland 1 · FixErrorVPN"} 1', text)
         self.assertIn('host="LTE 3",name="LTE 3",lite="0",address="9.9.9.9:20009",owner="main",primary="1",'
-                      'warp="1",psiphon="1",exit="CDN 1"} 1', text)
+                      'warp="1",psiphon="1",entry="0",ru="0",exit="CDN 1"} 1', text)
         self.assertIn('host="Other",name="Other",lite="0",address="8.8.8.8:443",owner="main",primary="1",'
-                      'warp="1",psiphon="1"} 1', text)
+                      'warp="1",psiphon="1",entry="0",ru="0"} 1', text)
 
     def test_collect_node_ips(self):
         p = make_cfg().panels[0]
@@ -772,10 +774,11 @@ class DailyTest(unittest.TestCase):
              'offline': {('main', 'n1'): 1.0},
              'panel_down': {('main',): 4.0, ('reserve',): 12.0},
              'checks': [('main', '🇨🇦 Канада', 'ca', 'warp', 40.0), ('reserve', '🇨🇦 Канада', 'ca', 'warp', 40.0),
-                        ('main', '🇸🇪 Швеция 3', 'se', 'xray', 99.0), ('reserve', '🇸🇪 Швеция 2', 'se', 'xray', 99.0),
                         ('main', '🇵🇱 Польша', 'pl', 'psiphon', 2.0)],
-             'probe_blocked': [('main', '🇨🇦 Канада', '1.2.3.4:443', 1.0), ('reserve', '🇨🇦 Канада', '1.2.3.4:443', 1.0)],
-             'probe_mass': 3.0, 'sites_down': {('Сайт',): 7.0}, 'sites_ru_down': {}}
+             'states': [('main', '🇸🇪 Швеция 3', 'se', 3, 99.0), ('reserve', '🇸🇪 Швеция 2', 'se', 3, 99.0),
+                        ('main', '🇨🇦 Канада', 'ca', 1, 1.0), ('reserve', '🇨🇦 Канада', 'ca', 1, 1.0)],
+             'probe_silent': {('msk-1',): 30.0, ('msk-2',): 2.0},
+             'sites_down': {('Сайт',): 7.0}, 'sites_ru_down': {}}
         d.update(over)
         return d
 
@@ -783,17 +786,18 @@ class DailyTest(unittest.TestCase):
         lines, short = daily.problem_lines(self.data(), make_cfg())
         text = '\n'.join(lines)
         self.assertIn('🇨🇦 Канада · Основная + Резерв · WARP — не проходила проверка, 40 мин', text)
-        self.assertIn('🇸🇪 Швеция 2 · Резерв / 🇸🇪 Швеция 3 · Основная · Подключение', text)
+        self.assertIn('🇸🇪 Швеция 2 · Резерв / 🇸🇪 Швеция 3 · Основная — нода не отвечала, 1 ч 39 мин', text)
         self.assertIn('Резерв — API панели был недоступен, 12 мин', text)
         self.assertNotIn('Основная — API', text)                  # 4 мин — перезагрузка, не сбой
-        self.assertIn('Пробы из РФ разом не достучались', text)
+        self.assertIn('Проба из РФ «msk-1» не присылала результаты — 30 мин', text)
+        self.assertNotIn('msk-2', text)                            # 2 мин — не в счёт
         self.assertIn('🌐 Сайт — не открывался, 7 мин', text)
         self.assertEqual(text.count('Канада'), 1)                  # две панели — одна строка
         self.assertEqual(short, 3)                 # нода 1 мин, Польша 2 мин, Канада из РФ 1 мин
 
     def test_build_text_only_short(self):
-        d = self.data(checks=[], panel_down={}, probe_mass=0, sites_down={}, now={}, peak={}, traffic={},
-                      outbound={}, status={}, online={}, total={}, probe_blocked=[])
+        d = self.data(checks=[], panel_down={}, probe_silent={}, sites_down={}, now={}, peak={}, traffic={},
+                      outbound={}, status={}, online={}, total={}, states=[])
         text = daily.build_text(d, {}, None, make_cfg())
         self.assertIn('Серьёзных сбоев за сутки не было', text)
         self.assertIn('1 коротких (до 2 мин)', text)
@@ -810,9 +814,10 @@ class RenderTest(unittest.TestCase):
                 with open(os.path.join(out, path), encoding='utf-8') as f:
                     return json.load(f) if path.endswith('.yml') else f.read()
             prom = load('prometheus/prometheus.yml')
-            self.assertEqual(prom['scrape_configs'][1]['static_configs'][1]['labels'], {'check': 'warp'})
+            self.assertEqual(prom['scrape_configs'][1]['static_configs'][1]['labels'], {'check': 'entry'})
+            self.assertEqual(prom['scrape_configs'][1]['static_configs'][2]['labels'], {'check': 'warp'})
             rules = load('grafana/alerting/rules.yml')['groups'][0]['rules']
-            self.assertEqual(len({r['uid'] for r in rules}), 21)
+            self.assertEqual(len({r["uid"] for r in rules}), 19)
             self.assertIn('rwmon_panel_process_lag_ms[5m]) > 200', json.dumps(rules))
             self.assertIn('psiphon-out|WARP', json.dumps(rules))
             byuid = {r['uid']: r for r in rules}
@@ -829,7 +834,6 @@ class RenderTest(unittest.TestCase):
                                 for r in routes))
             # общий хост двух панелей — один алерт: проверки берут только строку primary="1"
             self.assertIn('rwmon_host{primary="1"}', byuid['rwmon-xray-down']['data'][0]['model']['expr'])
-            self.assertIn('rwmon_host{primary="1"} * on (address)', byuid['rwmon-probe-blocked']['data'][0]['model']['expr'])
             cps = load('grafana/alerting/contact-points.yml')['contactPoints']
             self.assertEqual([c['receivers'][0]['settings']['chatid'] for c in cps], ['-100', '-200'])
             tpl = load('grafana/alerting/templates.yml')['templates'][0]['template']

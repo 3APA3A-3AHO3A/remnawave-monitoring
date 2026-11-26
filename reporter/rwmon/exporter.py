@@ -27,7 +27,7 @@ import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import egress, links, rkn
+from . import egress, feed, links, rkn
 from .clients import DNS_RETRY_DELAY, ApiError, Prometheus, Remnawave, is_dns_error
 from .util import log, read_json, resolve_ip
 
@@ -67,6 +67,14 @@ HELP = {
     'rwmon_panel_hosts': ('gauge', 'Сколько хостов панели проверяется'),
     'rwmon_host': ('gauge', 'Хост панели и имя его проверки (name) в xray-checker'),
     'rwmon_exit_info': ('gauge', 'Страна и сеть IP выхода проверок (DB-IP Lite)'),
+    'rwmon_host_state': ('gauge', 'Итог по хосту: 0 работает, 1 не открывается из РФ, 2 не работает вход, '
+                                  '3 нода не отвечает, 4 не работает из РФ, а вход из-за границы не проверить'),
+    'rwmon_ru_probe_up': ('gauge', 'Проба из РФ присылает результаты (1) или давно молчит (0)'),
+    'rwmon_ru_probe_age_seconds': ('gauge', 'Сколько секунд назад проба из РФ присылала результаты'),
+    'rwmon_ru_probe_hosts': ('gauge', 'Сколько хостов проба из РФ проверяет'),
+    'rwmon_ru_status': ('gauge', 'Проверка из РФ: хост работает (1) или нет (0), по каждой пробе'),
+    'rwmon_ru_latency_ms': ('gauge', 'Проверка из РФ: время ответа через хост, мс'),
+    'rwmon_ru_error_code': ('gauge', 'Проверка из РФ: причина сбоя числом (как xray_proxy_error_code)'),
     'rwmon_users': ('gauge', 'Пользователи по статусам'),
     'rwmon_users_online': ('gauge', 'Пользователи онлайн: сейчас / за сутки / за неделю'),
     'rwmon_users_total': ('gauge', 'Всего пользователей'),
@@ -488,12 +496,96 @@ def host_lines(hosts, lines, panels=(), node_ips=None, state=None, by_panel=None
         checks = h['checks'] if 'checks' in h else ([] if h['lite'] else list(check_ids))
         for c in check_ids:
             labels[c] = '1' if c in checks else '0'
-        if h.get('ru_via'):           # проверка «Клиент из РФ» через посредника: ruclient="1", ru_via — его адрес
-            labels['ruclient'], labels['ru_via'] = '1', h['ru_via']
+        labels['entry'] = '1' if h.get('entry') else '0'     # есть отдельная проверка «через вход»
+        labels['ru'] = '1' if h.get('ru') else '0'           # проверяется из РФ
         target = host_exit(h, panels, node_ips, state)
         if target:                    # в алерте: «LTE 3 · OVRO → CDN 1 · FixErrorVPN»
             labels['exit'] = target
         lines.add('rwmon_host', labels, 1)
+
+
+# ── итог по хосту ────────────────────────────────────────────
+
+OK, RU_BLOCKED, ENTRY_DOWN, NODE_DOWN, ENTRY_UNSEEN = 0, 1, 2, 3, 4
+
+
+def ru_lines(cfg, store, lines, now=None):
+    """Результаты проб из РФ (feed.py) → метрики. Возвращает {проба: результаты} только
+    свежих проб: у молчащей пробы результатов нет — итог считается без неё."""
+    now = now or time.time()
+    data, _ = store.snapshot()
+    fresh = {}
+    for p in cfg.probes:
+        t, res = data.get(p.name, (0, {}))
+        up = bool(t) and now - t < feed.FRESH
+        lines.add('rwmon_ru_probe_up', {'probe': p.name}, 1 if up else 0)
+        if t:
+            lines.add('rwmon_ru_probe_age_seconds', {'probe': p.name}, round(now - t))
+        if not up:
+            continue
+        fresh[p.name] = res
+        lines.add('rwmon_ru_probe_hosts', {'probe': p.name}, len(res))
+        for name, r in res.items():
+            lb = {'probe': p.name, 'name': name}
+            lines.add('rwmon_ru_status', lb, r.get('status', 0))
+            if 'latency_ms' in r:
+                lines.add('rwmon_ru_latency_ms', lb, r['latency_ms'])
+            if 'error_code' in r:
+                lines.add('rwmon_ru_error_code', lb, r['error_code'])
+    return fresh
+
+
+def host_state(h, ru, node, entry, entry_seen=True):
+    """Итог по хосту. ru — из РФ: 1 открылся хоть с одной пробы, 0 ни с одной, None — нет
+    данных (хост из РФ не проверяется или пробы молчат). node / entry — с сервера мониторинга
+    напрямую на ноду и через вход (у хостов без отдельного входа entry = node).
+    entry_seen — вход хоть раз открывался из-за границы за сутки: у прокладок, до которых
+    из-за границы не достучаться, «вход не отвечает» ничего не говорит."""
+    if ru == 1:
+        return OK
+    if node == 0:
+        return NODE_DOWN
+    if ru == 0:
+        if entry == 0 and h.get('entry'):
+            return ENTRY_DOWN if entry_seen else ENTRY_UNSEEN
+        return RU_BLOCKED
+    # из РФ данных нет — решаем по серверу мониторинга
+    if entry == 0 and h.get('entry') and entry_seen:
+        return ENTRY_DOWN
+    return OK
+
+
+def nl_results(prom, state):
+    """С сервера мониторинга: {(проверка, имя): 0/1} и имена, чей вход за сутки ни разу не открылся."""
+    try:
+        now = {(m.get('check'), m.get('name')): int(v) for m, v in
+               prom.query('max by (check, name) (xray_proxy_status{check=~"xray|entry"})')}
+        never = {m.get('name') for m, v in
+                 prom.query('max by (name) (max_over_time(xray_proxy_status{check="entry"}[24h])) == 0')}
+    except Exception as e:
+        _warn(state, 'nl-results', f'результаты проверок из Prometheus: {e}')
+        return None, set()
+    state.pop('nl-results', None)
+    return now, never
+
+
+def state_lines(hosts, fresh, nl, never, lines):
+    """rwmon_host_state по каждому имени проверки."""
+    done = set()
+    for h in hosts:
+        name = h['name']
+        if name in done:
+            continue
+        done.add(name)
+        ru = None
+        if h.get('ru'):
+            vals = [res[name].get('status', 0) for res in fresh.values() if name in res]
+            ru = (1 if max(vals) >= 1 else 0) if vals else None
+        node = nl.get(('xray', name))
+        entry = nl.get(('entry', name)) if h.get('entry') else node
+        if ru is None and node is None:
+            continue                     # ни одного результата — итог не считаем
+        lines.add('rwmon_host_state', {'name': name}, host_state(h, ru, node, entry, name not in never))
 
 
 SITE_EVERY = 60     # как часто проверять сайты, секунд
@@ -526,6 +618,7 @@ class Exporter:
         self.node_ips = {}            # панель → {IP ноды: название}; при сбое панели остаётся прошлый
         self.node_targets = {}        # панель → {IP ноды: метки} для node_exporter; при сбое — прошлый
         self.prom = Prometheus(cfg.prometheus_url)
+        self.ru = feed.Store()          # результаты проб из РФ (приходят через feed.py)
         self.exit_lookup = egress.Lookup(cfg) if egress.needed(cfg) else None
 
     def poll_once(self):
@@ -552,6 +645,10 @@ class Exporter:
             write_node_targets(self.cfg, self.node_targets)
         host_lines(links.HOSTS, lines, self.cfg.panels, node_ips, self.state, by_panel=self.node_ips,
                    check_ids=[c.id for c in self.cfg.route_checks])
+        fresh = ru_lines(self.cfg, self.ru, lines)
+        nl, never = nl_results(self.prom, self.state)
+        if nl is not None:
+            state_lines(links.HOSTS, fresh, nl, never, lines)
         site_lines(list(self.sites.values()), lines)
         if self.exit_lookup is not None:
             exit_lines(self.prom, self.exit_lookup, lines, self.state)
@@ -631,6 +728,7 @@ class Exporter:
         threading.Thread(target=server.serve_forever, daemon=True).start()
         if self.cfg.sites:
             threading.Thread(target=self.site_loop, daemon=True).start()
+        feed.start(self.cfg, self.ru)
         threading.Thread(target=self.loop, daemon=True).start()
         log('metrics', f'метрики панелей: http://127.0.0.1:{self.cfg.reporter_port}/metrics, '
                        f'опрос раз в {self.cfg.poll_interval} с')

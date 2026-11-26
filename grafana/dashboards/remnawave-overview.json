@@ -119,7 +119,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 3,
         "x": 0,
         "y": 0
       },
@@ -188,7 +188,7 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 4,
+        "x": 3,
         "y": 0
       },
       "targets": [
@@ -225,14 +225,14 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "justifyMode": "center",
+        "justifyMode": "auto",
         "textMode": "value_and_name",
-        "orientation": "vertical",
+        "orientation": "horizontal",
         "wideLayout": true,
         "showPercentChange": false,
         "text": {
           "titleSize": 12,
-          "valueSize": 30
+          "valueSize": 18
         }
       },
       "fieldConfig": {
@@ -284,7 +284,7 @@
       "id": 3,
       "type": "stat",
       "title": "Хосты",
-      "description": "Хосты с тегами MONITORING / MONITORING_LITE. Сбой — не проходит хотя бы одна проверка",
+      "description": "Итог по хостам с тегами проверки: работает — открывается из РФ (а хосты МСК-нод — с сервера мониторинга). Почему не работает — в таблице «Хосты»",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
@@ -292,7 +292,7 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 8,
+        "x": 7,
         "y": 0
       },
       "targets": [
@@ -302,8 +302,8 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "count(count by (panel, host) (rwmon_host{panel_title=~\"$panel\"}))",
-          "legendFormat": "всего",
+          "expr": "count(count by (name) ((rwmon_host{panel_title=~\"$panel\"} * on (name) group_left () max by (name) (rwmon_host_state)) == 0)) or vector(0)",
+          "legendFormat": "работают",
           "range": false,
           "instant": true
         },
@@ -313,8 +313,8 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "count(count by (panel, host) ((rwmon_host{panel_title=~\"$panel\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"xray\"}) == 0) or (rwmon_host{panel_title=~\"$panel\", warp=\"1\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"warp\"}) == 0) or (rwmon_host{panel_title=~\"$panel\", psiphon=\"1\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"psiphon\"}) == 0))) or vector(0)",
-          "legendFormat": "со сбоем",
+          "expr": "count(count by (name) ((rwmon_host{panel_title=~\"$panel\"} * on (name) group_left () max by (name) (rwmon_host_state)) > 0)) or vector(0)",
+          "legendFormat": "не работают",
           "range": false,
           "instant": true
         }
@@ -329,14 +329,14 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "justifyMode": "center",
+        "justifyMode": "auto",
         "textMode": "value_and_name",
-        "orientation": "vertical",
+        "orientation": "horizontal",
         "wideLayout": true,
         "showPercentChange": false,
         "text": {
           "titleSize": 12,
-          "valueSize": 30
+          "valueSize": 18
         }
       },
       "fieldConfig": {
@@ -357,21 +357,6 @@
           }
         },
         "overrides": [
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "A"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "text"
-                }
-              }
-            ]
-          },
           {
             "matcher": {
               "id": "byFrameRefID",
@@ -402,6 +387,110 @@
     {
       "id": 4,
       "type": "stat",
+      "title": "Пробы из РФ",
+      "description": "Серверы в России, которые проверяют хосты как клиент из РФ ([[probe]], папка probe/)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "rwmon-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 11,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "sum(rwmon_ru_probe_up) or vector(0)",
+          "legendFormat": "на связи",
+          "range": false,
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "count(rwmon_ru_probe_up == 0) or vector(0)",
+          "legendFormat": "молчат",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value_and_name",
+        "orientation": "horizontal",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 12,
+          "valueSize": 18
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
       "title": "Сеть нод сейчас",
       "description": "Скорость сетевых интерфейсов всех серверов нод: RX — принято сервером, TX — отправлено",
       "datasource": {
@@ -411,7 +500,7 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 12,
+        "x": 14,
         "y": 0
       },
       "targets": [
@@ -448,14 +537,14 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "justifyMode": "center",
+        "justifyMode": "auto",
         "textMode": "value_and_name",
-        "orientation": "vertical",
+        "orientation": "horizontal",
         "wideLayout": true,
         "showPercentChange": false,
         "text": {
           "titleSize": 12,
-          "valueSize": 30
+          "valueSize": 18
         }
       },
       "fieldConfig": {
@@ -479,7 +568,7 @@
       }
     },
     {
-      "id": 5,
+      "id": 6,
       "type": "stat",
       "title": "Трафик клиентов",
       "description": "Сколько клиенты скачали и отправили через все ноды за выбранный период",
@@ -489,8 +578,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 16,
+        "w": 3,
+        "x": 18,
         "y": 0
       },
       "targets": [
@@ -547,18 +636,18 @@
       }
     },
     {
-      "id": 6,
+      "id": 7,
       "type": "stat",
       "title": "Подписки",
-      "description": "",
+      "description": "Активные подписки и сколько пользователей было онлайн за сутки",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 20,
+        "w": 3,
+        "x": 21,
         "y": 0
       },
       "targets": [
@@ -580,7 +669,7 @@
             "uid": "rwmon-prometheus"
           },
           "expr": "sum(rwmon_users_online{period=\"lastDay\", panel_title=~\"$panel\"})",
-          "legendFormat": "были онлайн за сутки",
+          "legendFormat": "за сутки",
           "range": false,
           "instant": true
         }
@@ -595,14 +684,14 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "justifyMode": "center",
+        "justifyMode": "auto",
         "textMode": "value_and_name",
-        "orientation": "vertical",
+        "orientation": "horizontal",
         "wideLayout": true,
         "showPercentChange": false,
         "text": {
           "titleSize": 12,
-          "valueSize": 30
+          "valueSize": 18
         }
       },
       "fieldConfig": {
@@ -642,10 +731,2077 @@
       }
     },
     {
-      "id": 7,
+      "id": 8,
+      "type": "table",
+      "title": "Сейчас не работает",
+      "description": "Хосты, которые не работают прямо сейчас, и сколько уже (в пределах суток). «Что» — итог: блокировка в РФ (из России не открывается, а вход и нода работают), сломан вход (прокладка, CDN), нода не отвечает. Ниже — проверки маршрутов (WARP, Psiphon), если не проходят.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "rwmon-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 10,
+        "x": 0,
+        "y": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "label_replace(max by (panel_title, host) (rwmon_host{panel_title=~\"$panel\"} * on (name) group_left () (max by (name) (rwmon_host_state) > 0)), \"what\", \"host\", \"\", \"\") or label_replace(max by (panel_title, host) (rwmon_host{panel_title=~\"$panel\", warp=\"1\"} * on (name) group_left () (max by (name) (xray_proxy_status{check=\"warp\"}) == 0)) * 0 + 10, \"what\", \"warp\", \"\", \"\") or label_replace(max by (panel_title, host) (rwmon_host{panel_title=~\"$panel\", psiphon=\"1\"} * on (name) group_left () (max by (name) (xray_proxy_status{check=\"psiphon\"}) == 0)) * 0 + 11, \"what\", \"psiphon\", \"\", \"\")",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "label_replace(max by (panel_title, host) (rwmon_host{panel_title=~\"$panel\"} * on (name) group_left () (((time() - max by (name) (max_over_time(timestamp(rwmon_host_state == 0)[1d:1m]))) or on (name) (max by (name) (rwmon_host_state) * 0 + 86400)) and on (name) (max by (name) (rwmon_host_state) > 0))), \"what\", \"host\", \"\", \"\") or label_replace(max by (panel_title, host) (rwmon_host{panel_title=~\"$panel\", warp=\"1\"} * on (name) group_left () (((time() - max by (name) (max_over_time(timestamp(xray_proxy_status{check=\"warp\"} == 1)[1d:1m]))) or on (name) ((max by (name) (xray_proxy_status{check=\"warp\"}) == 0) * 0 + 86400)) and on (name) (max by (name) (xray_proxy_status{check=\"warp\"}) == 0))), \"what\", \"warp\", \"\", \"\") or label_replace(max by (panel_title, host) (rwmon_host{panel_title=~\"$panel\", psiphon=\"1\"} * on (name) group_left () (((time() - max by (name) (max_over_time(timestamp(xray_proxy_status{check=\"psiphon\"} == 1)[1d:1m]))) or on (name) ((max by (name) (xray_proxy_status{check=\"psiphon\"}) == 0) * 0 + 86400)) and on (name) (max by (name) (xray_proxy_status{check=\"psiphon\"}) == 0))), \"what\", \"psiphon\", \"\", \"\")",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "what": true
+            },
+            "indexByName": {
+              "host": 0,
+              "panel_title": 1,
+              "Value #A": 2,
+              "Value #B": 3
+            },
+            "renameByName": {
+              "panel_title": "Панель",
+              "host": "Хост",
+              "Value #A": "Что",
+              "Value #B": "сколько"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "сколько",
+            "desc": true
+          }
+        ],
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": false,
+            "wrapHeaderText": true,
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "noValue": "Всё работает"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Хост"
+            },
+            "properties": [
+              {
+                "id": "custom.minWidth",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Панель"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 95
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Что"
+            },
+            "properties": [
+              {
+                "id": "custom.minWidth",
+                "value": 150
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "блокировка в РФ?",
+                        "color": "orange"
+                      },
+                      "2": {
+                        "text": "сломан вход",
+                        "color": "red"
+                      },
+                      "3": {
+                        "text": "нода не отвечает",
+                        "color": "dark-red"
+                      },
+                      "4": {
+                        "text": "вход или блокировка",
+                        "color": "orange"
+                      },
+                      "10": {
+                        "text": "WARP не работает",
+                        "color": "orange"
+                      },
+                      "11": {
+                        "text": "Psiphon не работает",
+                        "color": "orange"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "сколько"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dtdurations"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 95
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Пробы из РФ",
+      "description": "Серверы в России, которые проверяют хосты как клиент из РФ. «Хостов» — сколько проверяет (МСК-ноды из РФ не проверяются — их проверяет сервер мониторинга). «Не открылось» — сколько хостов не открылись с этой пробы в последней проверке. «Данные» — сколько секунд назад проба присылала результаты (раз в минуту; дольше 3 минут — молчит).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "rwmon-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 7,
+        "x": 10,
+        "y": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (probe) (rwmon_ru_probe_up)",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (probe) (rwmon_ru_probe_hosts)",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "(count by (probe) (rwmon_ru_status == 0)) or (max by (probe) (rwmon_ru_probe_up) * 0)",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (probe) (rwmon_ru_probe_age_seconds)",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "probe": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #C": 3,
+              "Value #D": 4
+            },
+            "renameByName": {
+              "probe": "Проба",
+              "Value #A": "связь",
+              "Value #B": "хостов",
+              "Value #C": "не открылось",
+              "Value #D": "данные"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Проба",
+            "desc": false
+          }
+        ],
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": false,
+            "wrapHeaderText": true,
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "noValue": "Пробы не подключены — README, «Проверка из РФ»"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "связь"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 62
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "OK",
+                        "color": "green"
+                      },
+                      "0": {
+                        "text": "молчит",
+                        "color": "red"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "хостов"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 62
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "не открылось"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 95
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "данные"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 70
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 120
+                    },
+                    {
+                      "color": "red",
+                      "value": 180
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Панели",
+      "description": "«Без рестарта» — сколько работает самый «молодой» процесс панели (жёлтым — меньше часа). «Задержка» — насколько подтормаживает самый медленный процесс: до 50 мс норма, от 200 мс админка и подписки начинают подвисать. Подробно — блок «Здоровье панелей»",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "rwmon-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 7,
+        "x": 17,
+        "y": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (panel_title) (rwmon_panel_up{panel_title=~\"$panel\"})",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (panel_title, version) (rwmon_panel_info{panel_title=~\"$panel\"})",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "sum by (panel_title) (rwmon_users_total{panel_title=~\"$panel\"})",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "U",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "min by (panel_title) (rwmon_panel_process_uptime_seconds{panel_title=~\"$panel\"})",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "L",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (panel_title) (rwmon_panel_process_lag_ms{panel_title=~\"$panel\"})",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value #B": true
+            },
+            "indexByName": {
+              "panel_title": 0,
+              "Value #A": 1,
+              "version": 2,
+              "Value #D": 3,
+              "Value #U": 4,
+              "Value #L": 5
+            },
+            "renameByName": {
+              "panel_title": "Панель",
+              "Value #A": "API",
+              "version": "версия",
+              "Value #D": "польз.",
+              "Value #U": "без рестарта",
+              "Value #L": "задержка"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [],
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": false,
+            "wrapHeaderText": true,
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "noValue": "—"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Панель"
+            },
+            "properties": [
+              {
+                "id": "custom.minWidth",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "версия"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 62
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "API"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 48
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "OK",
+                        "color": "green"
+                      },
+                      "0": {
+                        "text": "НЕТ",
+                        "color": "red"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "польз."
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 58
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "без рестарта"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dtdurations"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "yellow",
+                      "value": null
+                    },
+                    {
+                      "color": "text",
+                      "value": 3600
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "задержка"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 68
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 50
+                    },
+                    {
+                      "color": "red",
+                      "value": 200
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Сайты",
+      "description": "Сайты из [[site]] в config.toml: проверка с сервера мониторинга и с проб в России, код и время ответа, сколько осталось до конца сертификата",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "rwmon-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (site) (rwmon_site_up)",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (site) (probe_success{kind=\"http\"})",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (site) (rwmon_site_status_code)",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (site) (rwmon_site_response_seconds)",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (site) (rwmon_site_cert_expiry_timestamp_seconds - time())",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "site": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #E": 3,
+              "Value #C": 4,
+              "Value #D": 5
+            },
+            "renameByName": {
+              "site": "Сайт",
+              "Value #A": "открывается",
+              "Value #B": "из РФ",
+              "Value #E": "код",
+              "Value #C": "ответ",
+              "Value #D": "сертификат"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [],
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": false,
+            "wrapHeaderText": true,
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "noValue": "Добавьте [[site]] в config.toml"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Сайт"
+            },
+            "properties": [
+              {
+                "id": "custom.minWidth",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "открывается"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 92
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "OK",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "СБОЙ",
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "·",
+                        "color": "transparent",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "из РФ"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 92
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "OK",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "СБОЙ",
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "·",
+                        "color": "transparent",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "код"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 52
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "text",
+                      "value": 200
+                    },
+                    {
+                      "color": "red",
+                      "value": 400
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ответ"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.width",
+                "value": 68
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "сертификат"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dtdurations"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 95
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 604800
+                    },
+                    {
+                      "color": "text",
+                      "value": 1209600
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Блокировки РКН",
+      "description": "IP нод и домены сервиса по спискам блокировок РФ (cheburcheck.ru, раз в несколько часов; блок [rkn] в config.toml). «В списках» — адрес в реестре РКН, в заблокированной подсети или CDN.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "rwmon-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (name, kind, why) (rwmon_rkn_blocked)",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "Value": 0,
+              "name": 1,
+              "kind": 2,
+              "why": 3
+            },
+            "renameByName": {
+              "Value": "статус",
+              "name": "Что",
+              "kind": "тип",
+              "why": "причина"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "статус",
+            "desc": true
+          }
+        ],
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": false,
+            "wrapHeaderText": true,
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "noValue": "Проверки блокировок нет — блок [rkn] в config.toml"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "статус"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 105
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "в списках",
+                        "color": "red",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "чисто",
+                        "color": "green",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Что"
+            },
+            "properties": [
+              {
+                "id": "custom.minWidth",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "тип"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 70
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "node": {
+                        "text": "нода"
+                      },
+                      "domain": {
+                        "text": "домен"
+                      },
+                      "extra": {
+                        "text": "доп."
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "причина"
+            },
+            "properties": [
+              {
+                "id": "custom.minWidth",
+                "value": 160
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "Хосты",
+      "description": "Строка — хост панели. Итог: работает — открывается из РФ хотя бы с одной пробы (хосты МСК-нод — с сервера мониторинга); блокировка в РФ — из России не открывается, а вход и нода работают; сломан вход — не работает прокладка или CDN, нода жива; нода не отвечает — не открывается даже напрямую. Колонки проб — проверка из России как приложение клиента. NL · вход — с сервера мониторинга по адресу из подписки (только у хостов, где вход не сама нода), NL · нода — напрямую на ноду. Дальше — проверки маршрутов. «·» — эта проверка хосту не нужна. «→ нода» — куда ведёт хост.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "rwmon-prometheus"
+      },
+      "gridPos": {
+        "h": 18,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "targets": [
+        {
+          "refId": "S",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (panel_title, host, name, exit) (rwmon_host{panel_title=~\"$panel\"} * on (name) group_left () (max by (name) (rwmon_host_state)))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "P0",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (panel_title, host, name, exit) (rwmon_host{panel_title=~\"$panel\"} * on (name) group_left () (max by (name) (rwmon_ru_status)))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "N",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (panel_title, host, name, exit) (rwmon_host{panel_title=~\"$panel\", entry=\"1\"} * on (name) group_left () (max by (name) (xray_proxy_status{check=\"entry\"})))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "X",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (panel_title, host, name, exit) (rwmon_host{panel_title=~\"$panel\"} * on (name) group_left () (max by (name) (xray_proxy_status{check=\"xray\"})))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "R0",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (panel_title, host, name, exit) (rwmon_host{panel_title=~\"$panel\", warp=\"1\"} * on (name) group_left () (max by (name) (xray_proxy_status{check=\"warp\"})))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "R1",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (panel_title, host, name, exit) (rwmon_host{panel_title=~\"$panel\", psiphon=\"1\"} * on (name) group_left () (max by (name) (xray_proxy_status{check=\"psiphon\"})))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "L",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (panel_title, host, name, exit) (rwmon_host{panel_title=~\"$panel\"} * on (name) group_left () (min by (name) (rwmon_ru_latency_ms > 0)))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "name": true
+            },
+            "indexByName": {
+              "host": 0,
+              "panel_title": 1,
+              "exit": 2,
+              "Value #S": 3,
+              "Value #P0": 4,
+              "Value #N": 5,
+              "Value #X": 6,
+              "Value #R0": 7,
+              "Value #R1": 8,
+              "Value #L": 9
+            },
+            "renameByName": {
+              "host": "Хост",
+              "panel_title": "Панель",
+              "exit": "→ нода",
+              "Value #S": "Итог",
+              "Value #P0": "из РФ",
+              "Value #N": "NL · вход",
+              "Value #X": "NL · нода",
+              "Value #R0": "WARP",
+              "Value #R1": "Psiphon",
+              "Value #L": "из РФ, мс"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Итог",
+            "desc": true
+          }
+        ],
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": false,
+            "wrapHeaderText": true,
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "noValue": "—"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Хост"
+            },
+            "properties": [
+              {
+                "id": "custom.minWidth",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Панель"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 105
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "→ нода"
+            },
+            "properties": [
+              {
+                "id": "custom.minWidth",
+                "value": 120
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Итог"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 165
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "работает",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "блокировка в РФ?",
+                        "color": "orange",
+                        "index": 1
+                      },
+                      "2": {
+                        "text": "сломан вход",
+                        "color": "red",
+                        "index": 2
+                      },
+                      "3": {
+                        "text": "нода не отвечает",
+                        "color": "dark-red",
+                        "index": 3
+                      },
+                      "4": {
+                        "text": "вход или блокировка",
+                        "color": "orange",
+                        "index": 4
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "из РФ"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 88
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "OK",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "СБОЙ",
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "·",
+                        "color": "transparent",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "NL · вход"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 88
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "OK",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "СБОЙ",
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "·",
+                        "color": "transparent",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "NL · нода"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 88
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "OK",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "СБОЙ",
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "·",
+                        "color": "transparent",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "WARP"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 88
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "OK",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "СБОЙ",
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "·",
+                        "color": "transparent",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Psiphon"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 88
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "OK",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "СБОЙ",
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "·",
+                        "color": "transparent",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "из РФ, мс"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 85
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 1500
+                    },
+                    {
+                      "color": "red",
+                      "value": 4000
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 14,
+      "type": "state-timeline",
+      "title": "История хостов",
+      "description": "Итог по времени — только хосты, у которых за выбранный период что-то было не так. Цвет — как в таблице «Хосты»",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "rwmon-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 37
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "max by (name) ((rwmon_host{panel_title=~\"$panel\"} * on (name) group_left () max by (name) (rwmon_host_state))) and on (name) (max by (name) (max_over_time(rwmon_host_state[$__range] @ end())) > 0)",
+          "legendFormat": "{{name}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "options": {
+        "showValue": "never",
+        "mergeValues": true,
+        "rowHeight": 0.8,
+        "alignValue": "left",
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "работает",
+                  "color": "green",
+                  "index": 0
+                },
+                "1": {
+                  "text": "блокировка в РФ?",
+                  "color": "orange",
+                  "index": 1
+                },
+                "2": {
+                  "text": "сломан вход",
+                  "color": "red",
+                  "index": 2
+                },
+                "3": {
+                  "text": "нода не отвечает",
+                  "color": "dark-red",
+                  "index": 3
+                },
+                "4": {
+                  "text": "вход или блокировка",
+                  "color": "orange",
+                  "index": 4
+                }
+              }
+            }
+          ],
+          "noValue": "За период все хосты работали"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 15,
       "type": "table",
       "title": "Ноды",
-      "description": "Связь — нода подключена к панели. Подкл./WARP/Psiphon — проверки хостов, которые смотрят на IP этой ноды; «Из РФ» — открывается ли нода с проб в России. Сервер и Xray — сколько работают без перезапуска (жёлтым — Xray перезапускался меньше суток назад). CPU — load average на ядро. Трафик — клиентов за выбранный период, лимит — расход трафика ноды, если он задан в панели.",
+      "description": "Связь — нода подключена к панели. CPU — load average на ядро, RAM — занятая память (по данным панели). RX/TX — сеть сервера сейчас, трафик — клиентов за выбранный период, лимит — расход трафика ноды, если он задан в панели. Сервер и Xray — сколько работают без перезапуска (жёлтым — Xray перезапускался меньше суток назад).",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
@@ -654,7 +2810,7 @@
         "h": 15,
         "w": 24,
         "x": 0,
-        "y": 4
+        "y": 46
       },
       "targets": [
         {
@@ -693,48 +2849,72 @@
           "instant": false
         },
         {
-          "refId": "Kxray",
+          "refId": "G",
           "datasource": {
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (panel_title, node_name) (((min by (ip) (label_replace(max by (name, address) (xray_proxy_status{check=\"xray\"}), \"ip\", \"$1\", \"address\", \"(.+):[0-9]+\"))) * on (ip) group_right () rwmon_node_address{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+          "expr": "sum by (panel_title, node_name) ((rwmon_node_cpu_load5{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
           "format": "table"
         },
         {
-          "refId": "Kwarp",
+          "refId": "H",
           "datasource": {
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (panel_title, node_name) (((min by (ip) (label_replace(max by (name, address) (xray_proxy_status{check=\"warp\"}), \"ip\", \"$1\", \"address\", \"(.+):[0-9]+\"))) * on (ip) group_right () rwmon_node_address{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+          "expr": "sum by (panel_title, node_name) ((rwmon_node_memory_used_ratio{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
           "format": "table"
         },
         {
-          "refId": "Kpsiphon",
+          "refId": "C",
           "datasource": {
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (panel_title, node_name) (((min by (ip) (label_replace(max by (name, address) (xray_proxy_status{check=\"psiphon\"}), \"ip\", \"$1\", \"address\", \"(.+):[0-9]+\"))) * on (ip) group_right () rwmon_node_address{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+          "expr": "sum by (panel_title, node_name) ((rwmon_node_network_rx_bytes_per_second{panel_title=~\"$panel\"} * 8) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
           "format": "table"
         },
         {
-          "refId": "R",
+          "refId": "O",
           "datasource": {
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "sum by (panel_title, node_name) (((min by (ip) (label_replace(max by (address) (probe_success{kind=\"tcp\"}), \"ip\", \"$1\", \"address\", \"(.+):[0-9]+\"))) * on (ip) group_right () rwmon_node_address{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+          "expr": "sum by (panel_title, node_name) ((rwmon_node_network_tx_bytes_per_second{panel_title=~\"$panel\"} * 8) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "sum by (panel_title, node_name) ((sum by (panel, node_uuid) (increase(rwmon_node_inbound_upload_bytes{panel_title=~\"$panel\"}[$__range]) + increase(rwmon_node_inbound_download_bytes{panel_title=~\"$panel\"}[$__range]))) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "L",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "expr": "sum by (panel_title, node_name) ((rwmon_node_traffic_used_bytes{panel_title=~\"$panel\"} / rwmon_node_traffic_limit_bytes{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -775,78 +2955,6 @@
           "range": false,
           "instant": true,
           "format": "table"
-        },
-        {
-          "refId": "G",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "sum by (panel_title, node_name) ((rwmon_node_cpu_load5{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "refId": "H",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "sum by (panel_title, node_name) ((rwmon_node_memory_used_ratio{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "refId": "C",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "sum by (panel_title, node_name) ((rwmon_node_network_rx_bytes_per_second{panel_title=~\"$panel\"} * 8) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "refId": "D",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "sum by (panel_title, node_name) ((rwmon_node_network_tx_bytes_per_second{panel_title=~\"$panel\"} * 8) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "refId": "E",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "sum by (panel_title, node_name) ((sum by (panel, node_uuid) (increase(rwmon_node_inbound_upload_bytes{panel_title=~\"$panel\"}[$__range]) + increase(rwmon_node_inbound_download_bytes{panel_title=~\"$panel\"}[$__range]))) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "refId": "L",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "sum by (panel_title, node_name) ((rwmon_node_traffic_used_bytes{panel_title=~\"$panel\"} / rwmon_node_traffic_limit_bytes{panel_title=~\"$panel\"}) * on (panel, node_uuid) group_left (node_name, panel_title) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
         }
       ],
       "transformations": [
@@ -871,39 +2979,31 @@
               "Value #S": 2,
               "Value #A": 3,
               "Trend #T1": 4,
-              "Value #Kxray": 5,
-              "Value #Kwarp": 6,
-              "Value #Kpsiphon": 7,
-              "Value #R": 8,
-              "Value #U": 9,
-              "Value #X": 10,
-              "xray": 11,
-              "Value #G": 12,
-              "Value #H": 13,
-              "Value #C": 14,
-              "Value #D": 15,
-              "Value #E": 16,
-              "Value #L": 17
+              "Value #G": 5,
+              "Value #H": 6,
+              "Value #C": 7,
+              "Value #O": 8,
+              "Value #E": 9,
+              "Value #L": 10,
+              "Value #U": 11,
+              "Value #X": 12,
+              "xray": 13
             },
             "renameByName": {
               "panel_title": "Панель",
               "node_name": "Нода",
+              "xray": "версия Xray",
               "Value #S": "Связь",
               "Value #A": "Онлайн",
               "Trend #T1": "онлайн за период",
-              "Value #Kxray": "Подкл.",
-              "Value #Kwarp": "WARP",
-              "Value #Kpsiphon": "Psiphon",
-              "Value #R": "Из РФ",
-              "Value #U": "Сервер",
-              "Value #X": "Xray",
-              "xray": "версия",
               "Value #G": "CPU",
               "Value #H": "RAM",
               "Value #C": "↓ RX",
-              "Value #D": "↑ TX",
+              "Value #O": "↑ TX",
               "Value #E": "трафик",
-              "Value #L": "лимит"
+              "Value #L": "лимит",
+              "Value #U": "Сервер",
+              "Value #X": "Xray"
             }
           }
         }
@@ -1023,7 +3123,7 @@
               },
               {
                 "id": "custom.width",
-                "value": 92
+                "value": 70
               },
               {
                 "id": "custom.align",
@@ -1053,331 +3153,7 @@
               },
               {
                 "id": "custom.width",
-                "value": 170
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Подкл."
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 72
-              },
-              {
-                "id": "custom.align",
-                "value": "center"
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "1": {
-                        "text": "OK",
-                        "color": "green",
-                        "index": 0
-                      },
-                      "0": {
-                        "text": "СБОЙ",
-                        "color": "red",
-                        "index": 1
-                      }
-                    }
-                  },
-                  {
-                    "type": "special",
-                    "options": {
-                      "match": "null",
-                      "result": {
-                        "text": "·",
-                        "color": "transparent",
-                        "index": 2
-                      }
-                    }
-                  }
-                ]
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background",
-                  "mode": "basic"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "WARP"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 72
-              },
-              {
-                "id": "custom.align",
-                "value": "center"
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "1": {
-                        "text": "OK",
-                        "color": "green",
-                        "index": 0
-                      },
-                      "0": {
-                        "text": "СБОЙ",
-                        "color": "red",
-                        "index": 1
-                      }
-                    }
-                  },
-                  {
-                    "type": "special",
-                    "options": {
-                      "match": "null",
-                      "result": {
-                        "text": "·",
-                        "color": "transparent",
-                        "index": 2
-                      }
-                    }
-                  }
-                ]
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background",
-                  "mode": "basic"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Psiphon"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 72
-              },
-              {
-                "id": "custom.align",
-                "value": "center"
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "1": {
-                        "text": "OK",
-                        "color": "green",
-                        "index": 0
-                      },
-                      "0": {
-                        "text": "СБОЙ",
-                        "color": "red",
-                        "index": 1
-                      }
-                    }
-                  },
-                  {
-                    "type": "special",
-                    "options": {
-                      "match": "null",
-                      "result": {
-                        "text": "·",
-                        "color": "transparent",
-                        "index": 2
-                      }
-                    }
-                  }
-                ]
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background",
-                  "mode": "basic"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Из РФ"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 72
-              },
-              {
-                "id": "custom.align",
-                "value": "center"
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "1": {
-                        "text": "OK",
-                        "color": "green",
-                        "index": 0
-                      },
-                      "0": {
-                        "text": "СБОЙ",
-                        "color": "red",
-                        "index": 1
-                      }
-                    }
-                  },
-                  {
-                    "type": "special",
-                    "options": {
-                      "match": "null",
-                      "result": {
-                        "text": "·",
-                        "color": "transparent",
-                        "index": 2
-                      }
-                    }
-                  }
-                ]
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background",
-                  "mode": "basic"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Сервер"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "dtdurations"
-              },
-              {
-                "id": "decimals",
-                "value": 0
-              },
-              {
-                "id": "custom.width",
-                "value": 90
-              },
-              {
-                "id": "custom.align",
-                "value": "right"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "text"
-                }
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Xray"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "dtdurations"
-              },
-              {
-                "id": "decimals",
-                "value": 0
-              },
-              {
-                "id": "custom.width",
-                "value": 90
-              },
-              {
-                "id": "custom.align",
-                "value": "right"
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "yellow",
-                      "value": null
-                    },
-                    {
-                      "color": "text",
-                      "value": 86400
-                    }
-                  ]
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "версия"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 75
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "text"
-                }
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
+                "value": 160
               }
             ]
           },
@@ -1534,6 +3310,106 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "Диск"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 58
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 0.8
+                    },
+                    {
+                      "color": "red",
+                      "value": 0.9
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "conntrack"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 0.7
+                    },
+                    {
+                      "color": "red",
+                      "value": 0.9
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "↓ RX"
             },
             "properties": [
@@ -1547,7 +3423,7 @@
               },
               {
                 "id": "custom.width",
-                "value": 95
+                "value": 92
               },
               {
                 "id": "custom.align",
@@ -1571,7 +3447,7 @@
               },
               {
                 "id": "custom.width",
-                "value": 95
+                "value": 92
               },
               {
                 "id": "custom.align",
@@ -1595,106 +3471,35 @@
               },
               {
                 "id": "custom.width",
-                "value": 85
+                "value": 82
               },
               {
                 "id": "custom.align",
                 "value": "right"
               }
             ]
-          }
-        ]
-      }
-    },
-    {
-      "id": 8,
-      "type": "table",
-      "title": "Сейчас не работает",
-      "description": "Хосты, которые не проходят проверку прямо сейчас, и сколько времени назад проверка проходила последний раз (в пределах суток). «из РФ» — ни одна проба в России не может открыть соединение с хостом.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "rwmon-prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 10,
-        "x": 0,
-        "y": 19
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
           },
-          "expr": "(rwmon_host{panel_title=~\"$panel\"} * on (name) group_left (check) ((time() - max by (name, check) (max_over_time(timestamp(xray_proxy_status{check=\"xray\"} == 1)[1d:1m]))) and on (name) (max by (name) (xray_proxy_status{check=\"xray\"}) == 0))) or ((rwmon_host{panel_title=~\"$panel\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"xray\"}) == 0) * 0 + 86400) or (rwmon_host{panel_title=~\"$panel\", warp=\"1\"} * on (name) group_left (check) ((time() - max by (name, check) (max_over_time(timestamp(xray_proxy_status{check=\"warp\"} == 1)[1d:1m]))) and on (name) (max by (name) (xray_proxy_status{check=\"warp\"}) == 0))) or ((rwmon_host{panel_title=~\"$panel\", warp=\"1\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"warp\"}) == 0) * 0 + 86400) or (rwmon_host{panel_title=~\"$panel\", psiphon=\"1\"} * on (name) group_left (check) ((time() - max by (name, check) (max_over_time(timestamp(xray_proxy_status{check=\"psiphon\"} == 1)[1d:1m]))) and on (name) (max by (name) (xray_proxy_status{check=\"psiphon\"}) == 0))) or ((rwmon_host{panel_title=~\"$panel\", psiphon=\"1\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"psiphon\"}) == 0) * 0 + 86400) or (label_replace(rwmon_host{panel_title=~\"$panel\"} * on (address) group_left () (max by (address) (probe_success{kind=\"tcp\"}) == 0), \"check\", \"ru\", \"\", \"\") * 0 + 0)",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "includeByName": {
-              "panel_title": true,
-              "host": true,
-              "check": true,
-              "Value": true
-            },
-            "indexByName": {
-              "panel_title": 0,
-              "host": 1,
-              "check": 2,
-              "Value": 3
-            },
-            "renameByName": {
-              "panel_title": "Панель",
-              "host": "Хост",
-              "check": "Проверка",
-              "Value": "не работает"
-            }
-          }
-        }
-      ],
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "sortBy": [
-          {
-            "displayName": "не работает",
-            "desc": true
-          }
-        ],
-        "footer": {
-          "show": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "filterable": false,
-            "wrapHeaderText": true,
-            "cellOptions": {
-              "type": "auto"
-            }
-          },
-          "noValue": "Всё работает"
-        },
-        "overrides": [
           {
             "matcher": {
               "id": "byName",
-              "options": "Панель"
+              "options": "Сервер"
             },
             "properties": [
               {
+                "id": "unit",
+                "value": "dtdurations"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
                 "id": "custom.width",
-                "value": 100
+                "value": 88
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
               },
               {
                 "id": "color",
@@ -1714,371 +3519,70 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Проверка"
+              "options": "Xray"
             },
             "properties": [
               {
+                "id": "unit",
+                "value": "dtdurations"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
                 "id": "custom.width",
-                "value": 110
+                "value": 88
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
               },
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background"
+                  "type": "color-text"
                 }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "yellow",
+                      "value": null
+                    },
+                    {
+                      "color": "text",
+                      "value": 86400
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "версия Xray"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 85
               },
               {
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "dark-red"
+                  "fixedColor": "text"
                 }
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "xray": {
-                        "text": "Подключение"
-                      },
-                      "warp": {
-                        "text": "WARP"
-                      },
-                      "psiphon": {
-                        "text": "Psiphon"
-                      },
-                      "ru": {
-                        "text": "из РФ"
-                      }
-                    }
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "не работает"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "dtdurations"
-              },
-              {
-                "id": "custom.width",
-                "value": 110
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "0": {
-                        "text": "—"
-                      }
-                    }
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": 9,
-      "type": "table",
-      "title": "Панели",
-      "description": "«Без рестарта» — сколько работает самый «молодой» процесс панели (жёлтым — меньше часа). «Задержка» — насколько подтормаживает самый медленный процесс: до 50 мс норма, от 200 мс админка и подписки начинают подвисать. Подробно — ряд «Здоровье панелей»",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "rwmon-prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 10,
-        "y": 19
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "max by (panel_title) (rwmon_panel_up{panel_title=~\"$panel\"})",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "max by (panel_title, version) (rwmon_panel_info{panel_title=~\"$panel\"})",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "refId": "D",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "sum by (panel_title) (rwmon_users_total{panel_title=~\"$panel\"})",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "refId": "U",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "min by (panel_title) (rwmon_panel_process_uptime_seconds{panel_title=~\"$panel\"})",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "refId": "L",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "max by (panel_title) (rwmon_panel_process_lag_ms{panel_title=~\"$panel\"})",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "merge",
-          "options": {}
-        },
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "Value #B": true
-            },
-            "indexByName": {
-              "panel_title": 0,
-              "Value #A": 1,
-              "version": 2,
-              "Value #D": 3,
-              "Value #U": 4,
-              "Value #L": 5
-            },
-            "renameByName": {
-              "panel_title": "Панель",
-              "Value #A": "API",
-              "version": "версия",
-              "Value #D": "польз.",
-              "Value #U": "без рестарта",
-              "Value #L": "задержка"
-            }
-          }
-        }
-      ],
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "sortBy": [],
-        "footer": {
-          "show": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "filterable": false,
-            "wrapHeaderText": true,
-            "cellOptions": {
-              "type": "auto"
-            }
-          },
-          "noValue": "—"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Панель"
-            },
-            "properties": [
-              {
-                "id": "custom.minWidth",
-                "value": 90
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "версия"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 65
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "API"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 50
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background"
-                }
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "1": {
-                        "text": "OK",
-                        "color": "green"
-                      },
-                      "0": {
-                        "text": "НЕТ",
-                        "color": "red"
-                      }
-                    }
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "польз."
-            },
-            "properties": [
-              {
-                "id": "decimals",
-                "value": 0
-              },
-              {
-                "id": "custom.width",
-                "value": 60
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "без рестарта"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "s"
-              },
-              {
-                "id": "decimals",
-                "value": 0
-              },
-              {
-                "id": "custom.width",
-                "value": 80
               },
               {
                 "id": "custom.cellOptions",
                 "value": {
                   "type": "color-text"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "yellow",
-                      "value": null
-                    },
-                    {
-                      "color": "text",
-                      "value": 3600
-                    }
-                  ]
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "задержка"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "ms"
-              },
-              {
-                "id": "decimals",
-                "value": 0
-              },
-              {
-                "id": "custom.width",
-                "value": 70
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "text",
-                      "value": null
-                    },
-                    {
-                      "color": "yellow",
-                      "value": 50
-                    },
-                    {
-                      "color": "red",
-                      "value": 200
-                    }
-                  ]
                 }
               }
             ]
@@ -2087,350 +3591,7 @@
       }
     },
     {
-      "id": 10,
-      "type": "table",
-      "title": "Сайты",
-      "description": "Сайты из [[site]] в config.toml: проверка с сервера мониторинга и с проб в России, время ответа и сколько осталось до конца сертификата",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "rwmon-prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 19
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "max by (site) (rwmon_site_up)",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "max by (site) (probe_success{kind=\"http\"})",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "refId": "C",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "max by (site) (rwmon_site_response_seconds)",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "refId": "D",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "max by (site) (rwmon_site_cert_expiry_timestamp_seconds - time())",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        },
-        {
-          "refId": "E",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "expr": "max by (site) (rwmon_site_status_code)",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "merge",
-          "options": {}
-        },
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true
-            },
-            "indexByName": {
-              "site": 0,
-              "Value #A": 1,
-              "Value #B": 2,
-              "Value #E": 3,
-              "Value #C": 4,
-              "Value #D": 5
-            },
-            "renameByName": {
-              "site": "Сайт",
-              "Value #A": "открывается",
-              "Value #B": "из РФ",
-              "Value #E": "код",
-              "Value #C": "ответ",
-              "Value #D": "сертификат"
-            }
-          }
-        }
-      ],
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "sortBy": [],
-        "footer": {
-          "show": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "filterable": false,
-            "wrapHeaderText": true,
-            "cellOptions": {
-              "type": "auto"
-            }
-          },
-          "noValue": "Добавьте [[site]] в config.toml"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "открывается"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 90
-              },
-              {
-                "id": "custom.align",
-                "value": "center"
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "1": {
-                        "text": "OK",
-                        "color": "green",
-                        "index": 0
-                      },
-                      "0": {
-                        "text": "СБОЙ",
-                        "color": "red",
-                        "index": 1
-                      }
-                    }
-                  },
-                  {
-                    "type": "special",
-                    "options": {
-                      "match": "null",
-                      "result": {
-                        "text": "·",
-                        "color": "transparent",
-                        "index": 2
-                      }
-                    }
-                  }
-                ]
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background",
-                  "mode": "basic"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "из РФ"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 90
-              },
-              {
-                "id": "custom.align",
-                "value": "center"
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "1": {
-                        "text": "OK",
-                        "color": "green",
-                        "index": 0
-                      },
-                      "0": {
-                        "text": "СБОЙ",
-                        "color": "red",
-                        "index": 1
-                      }
-                    }
-                  },
-                  {
-                    "type": "special",
-                    "options": {
-                      "match": "null",
-                      "result": {
-                        "text": "·",
-                        "color": "transparent",
-                        "index": 2
-                      }
-                    }
-                  }
-                ]
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background",
-                  "mode": "basic"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "код"
-            },
-            "properties": [
-              {
-                "id": "decimals",
-                "value": 0
-              },
-              {
-                "id": "custom.width",
-                "value": 55
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "red",
-                      "value": null
-                    },
-                    {
-                      "color": "text",
-                      "value": 200
-                    },
-                    {
-                      "color": "red",
-                      "value": 400
-                    }
-                  ]
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "ответ"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "s"
-              },
-              {
-                "id": "decimals",
-                "value": 2
-              },
-              {
-                "id": "custom.width",
-                "value": 70
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "сертификат"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "dtdurations"
-              },
-              {
-                "id": "decimals",
-                "value": 0
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "red",
-                      "value": null
-                    },
-                    {
-                      "color": "yellow",
-                      "value": 604800
-                    },
-                    {
-                      "color": "text",
-                      "value": 1209600
-                    }
-                  ]
-                }
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": 11,
+      "id": 16,
       "type": "timeseries",
       "title": "Клиенты онлайн",
       "description": "По панелям, слоями: высота — сколько всего клиентов",
@@ -2442,7 +3603,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 27
+        "y": 61
       },
       "targets": [
         {
@@ -2489,7 +3650,7 @@
       }
     },
     {
-      "id": 12,
+      "id": 17,
       "type": "timeseries",
       "title": "Сеть всех нод",
       "description": "Вверх от нуля — принято серверами (RX), вниз пунктиром — отправлено (TX). Сглажено: среднее за шаг графика",
@@ -2501,7 +3662,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 27
+        "y": 61
       },
       "targets": [
         {
@@ -2587,7 +3748,7 @@
       "interval": "2m"
     },
     {
-      "id": 13,
+      "id": 18,
       "type": "timeseries",
       "title": "Аутбаунды: $outbound",
       "description": "Все ноды вместе. Вверх — ответы из аутбаунда, вниз — запросы в него. Если запросы есть, а ответов нет — аутбаунд сломан",
@@ -2599,7 +3760,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 27
+        "y": 61
       },
       "targets": [
         {
@@ -2684,7 +3845,7 @@
       }
     },
     {
-      "id": 14,
+      "id": 19,
       "type": "row",
       "title": "Каждая нода отдельно",
       "collapsed": false,
@@ -2692,15 +3853,15 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 69
       },
       "panels": []
     },
     {
-      "id": 15,
+      "id": 20,
       "type": "timeseries",
       "title": "$node",
-      "description": "Сеть сервера ноды: вверх (зелёным) — принято, вниз (жёлтым) — отправлено. Сглажено: среднее за шаг графика. Клиентов по нодам — в таблице «Ноды» и в «Сравнении нод». Показываются ноды, выбранные вверху в «Нода».",
+      "description": "Сеть сервера ноды: вверх (зелёным) — принято, вниз (жёлтым) — отправлено. Сглажено: среднее за шаг графика. Показываются ноды, выбранные вверху в «Нода».",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
@@ -2709,7 +3870,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 36
+        "y": 70
       },
       "targets": [
         {
@@ -2806,19 +3967,19 @@
       "maxPerRow": 4
     },
     {
-      "id": 17,
+      "id": 22,
       "type": "row",
-      "title": "Аутбаунды по нодам: $outbound",
+      "title": "Выходы по нодам: $outbound",
       "collapsed": true,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 42
+        "y": 76
       },
       "panels": [
         {
-          "id": 16,
+          "id": 21,
           "type": "timeseries",
           "title": "$node",
           "description": "Трафик ноды через выходы, выбранные вверху в «Аутбаунд»: вверх — ответы из выхода, вниз пунктиром — запросы в него. Psiphon — по правой шкале: через него идёт намного меньше. Запросы есть, а ответов нет — выход на этой ноде сломан. Пусто — через выход на этой ноде никто не ходил.",
@@ -2830,7 +3991,7 @@
             "h": 7,
             "w": 6,
             "x": 0,
-            "y": 43
+            "y": 77
           },
           "targets": [
             {
@@ -2956,7 +4117,7 @@
       ]
     },
     {
-      "id": 24,
+      "id": 28,
       "type": "row",
       "title": "Сравнение нод",
       "collapsed": true,
@@ -2964,11 +4125,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 77
       },
       "panels": [
         {
-          "id": 18,
+          "id": 23,
           "type": "timeseries",
           "title": "Клиенты на нодах",
           "description": "",
@@ -2980,7 +4141,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 44
+            "y": 78
           },
           "targets": [
             {
@@ -3032,7 +4193,7 @@
           }
         },
         {
-          "id": 19,
+          "id": 24,
           "type": "timeseries",
           "title": "Трафик клиентов: к клиентам ↑ / от клиентов ↓",
           "description": "",
@@ -3044,7 +4205,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 44
+            "y": 78
           },
           "targets": [
             {
@@ -3134,7 +4295,7 @@
           }
         },
         {
-          "id": 20,
+          "id": 25,
           "type": "timeseries",
           "title": "CPU: load average на ядро",
           "description": "",
@@ -3146,7 +4307,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 52
+            "y": 86
           },
           "targets": [
             {
@@ -3215,7 +4376,7 @@
           }
         },
         {
-          "id": 21,
+          "id": 26,
           "type": "timeseries",
           "title": "Память",
           "description": "",
@@ -3227,7 +4388,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 52
+            "y": 86
           },
           "targets": [
             {
@@ -3296,7 +4457,7 @@
           }
         },
         {
-          "id": 22,
+          "id": 27,
           "type": "timeseries",
           "title": "Аутбаунды $outbound: ответы ↑ / запросы ↓",
           "description": "",
@@ -3306,9 +4467,9 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 12,
+            "w": 24,
             "x": 0,
-            "y": 60
+            "y": 94
           },
           "targets": [
             {
@@ -3396,21 +4557,259 @@
               }
             ]
           }
-        },
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "type": "row",
+      "title": "Проверки подробно: из РФ и с сервера мониторинга",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 78
+      },
+      "panels": [
         {
-          "id": 23,
-          "type": "timeseries",
-          "title": "Задержка подключения к хостам",
-          "description": "Сколько занимает проверка «Подключение»: подключение к хосту и загрузка страницы",
+          "id": 29,
+          "type": "state-timeline",
+          "title": "Из РФ: что не открывалось",
+          "description": "Хосты, которые хотя бы раз за период не открылись с какой-нибудь пробы в России. Не открывается с одной пробы — скорее всего, проблема у неё самой; со всех — у хоста.",
           "datasource": {
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
           "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 60
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 79
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "max by (name, probe) (rwmon_ru_status) and on (name, probe) (min by (name, probe) (min_over_time(rwmon_ru_status[$__range] @ end())) == 0)",
+              "legendFormat": "{{name}} · {{probe}}",
+              "range": true,
+              "instant": false
+            }
+          ],
+          "options": {
+            "showValue": "never",
+            "mergeValues": true,
+            "rowHeight": 0.8,
+            "alignValue": "left",
+            "legend": {
+              "showLegend": false
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "1": {
+                      "text": "OK",
+                      "color": "green",
+                      "index": 0
+                    },
+                    "0": {
+                      "text": "СБОЙ",
+                      "color": "red",
+                      "index": 1
+                    }
+                  }
+                }
+              ],
+              "noValue": "Сбоев не было"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 30,
+          "type": "timeseries",
+          "title": "Из РФ: время ответа через хост",
+          "description": "Сколько занимает проверка из России: подключение к хосту и загрузка страницы",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 9,
+            "w": 24,
+            "x": 0,
+            "y": 89
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "max by (name, probe) (rwmon_ru_latency_ms > 0)",
+              "legendFormat": "{{name}} · {{probe}}",
+              "range": true,
+              "instant": false
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ],
+              "sortBy": "Last *",
+              "sortDesc": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "min": 0,
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "gradientMode": "opacity",
+                "showPoints": "never",
+                "spanNulls": 120000,
+                "stacking": {
+                  "mode": "none"
+                },
+                "axisSoftMin": 0
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 31,
+          "type": "state-timeline",
+          "title": "С сервера мониторинга: что не проходило",
+          "description": "Проверки с сервера мониторинга, которые хотя бы раз за период не проходили: через вход, напрямую на ноду и проверки маршрутов",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 98
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "label_replace((rwmon_host{panel_title=~\"$panel\", entry=\"1\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"entry\"})) and on (name) (min by (name) (min_over_time(xray_proxy_status{check=\"entry\"}[$__range] @ end())) == 0), \"what\", \"через вход\", \"\", \"\") or label_replace((rwmon_host{panel_title=~\"$panel\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"xray\"})) and on (name) (min by (name) (min_over_time(xray_proxy_status{check=\"xray\"}[$__range] @ end())) == 0), \"what\", \"на ноду\", \"\", \"\") or label_replace((rwmon_host{panel_title=~\"$panel\", warp=\"1\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"warp\"})) and on (name) (min by (name) (min_over_time(xray_proxy_status{check=\"warp\"}[$__range] @ end())) == 0), \"what\", \"WARP\", \"\", \"\") or label_replace((rwmon_host{panel_title=~\"$panel\", psiphon=\"1\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"psiphon\"})) and on (name) (min by (name) (min_over_time(xray_proxy_status{check=\"psiphon\"}[$__range] @ end())) == 0), \"what\", \"Psiphon\", \"\", \"\")",
+              "legendFormat": "{{host}} · {{panel_title}} · {{what}}",
+              "range": true,
+              "instant": false
+            }
+          ],
+          "options": {
+            "showValue": "never",
+            "mergeValues": true,
+            "rowHeight": 0.8,
+            "alignValue": "left",
+            "legend": {
+              "showLegend": false
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "1": {
+                      "text": "OK",
+                      "color": "green",
+                      "index": 0
+                    },
+                    "0": {
+                      "text": "СБОЙ",
+                      "color": "red",
+                      "index": 1
+                    }
+                  }
+                }
+              ],
+              "noValue": "Сбоев не было"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 32,
+          "type": "timeseries",
+          "title": "С сервера мониторинга: время ответа на ноду",
+          "description": "Сколько занимает проверка «на ноду» с сервера мониторинга",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 9,
+            "w": 24,
+            "x": 0,
+            "y": 108
           },
           "targets": [
             {
@@ -3464,7 +4863,7 @@
       ]
     },
     {
-      "id": 28,
+      "id": 37,
       "type": "row",
       "title": "Здоровье панелей",
       "collapsed": true,
@@ -3472,11 +4871,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 79
       },
       "panels": [
         {
-          "id": 25,
+          "id": 34,
           "type": "timeseries",
           "title": "Память процессов панели",
           "description": "Сколько памяти занимает каждый процесс. Норма — ровная линия; если растёт день за днём и не падает — утечка. Красная линия — порог алерта по умолчанию (panel_memory_mb = 1024)",
@@ -3488,7 +4887,7 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 45
+            "y": 80
           },
           "targets": [
             {
@@ -3554,7 +4953,7 @@
           }
         },
         {
-          "id": 26,
+          "id": 35,
           "type": "timeseries",
           "title": "Задержка процессов панели",
           "description": "Насколько процесс не успевает разбирать свою очередь дел (99-й перцентиль). До 50 мс — норма. Красная линия — порог алерта «Панель тормозит» по умолчанию (panel_lag_ms = 200)",
@@ -3566,7 +4965,7 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 45
+            "y": 80
           },
           "targets": [
             {
@@ -3632,7 +5031,7 @@
           }
         },
         {
-          "id": 27,
+          "id": 36,
           "type": "timeseries",
           "title": "Работает без перезапуска",
           "description": "Линия растёт, пока процесс работает; падение в ноль — перезапуск (обновление панели или падение)",
@@ -3644,7 +5043,7 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 45
+            "y": 80
           },
           "targets": [
             {
@@ -3696,647 +5095,7 @@
       ]
     },
     {
-      "id": 33,
-      "type": "row",
-      "title": "Проверки хостов",
-      "collapsed": true,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 45
-      },
-      "panels": [
-        {
-          "id": 29,
-          "type": "table",
-          "title": "Подключение",
-          "description": "Строка — хост, колонка — панель. Одинаковые хосты разных панелей проверяются один раз",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "gridPos": {
-            "h": 12,
-            "w": 8,
-            "x": 0,
-            "y": 46
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "datasource": {
-                "type": "prometheus",
-                "uid": "rwmon-prometheus"
-              },
-              "expr": "max by (panel_title, host) (rwmon_host{panel_title=~\"$panel\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"xray\"}))",
-              "legendFormat": "",
-              "range": false,
-              "instant": true,
-              "format": "table"
-            }
-          ],
-          "transformations": [
-            {
-              "id": "groupingToMatrix",
-              "options": {
-                "columnField": "panel_title",
-                "rowField": "host",
-                "valueField": "Value",
-                "emptyValue": "null"
-              }
-            },
-            {
-              "id": "organize",
-              "options": {
-                "renameByName": {
-                  "host\\panel_title": "Хост"
-                }
-              }
-            }
-          ],
-          "options": {
-            "showHeader": true,
-            "cellHeight": "sm",
-            "sortBy": [
-              {
-                "displayName": "Хост",
-                "desc": false
-              }
-            ],
-            "footer": {
-              "show": false
-            }
-          },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "align": "auto",
-                "filterable": false,
-                "wrapHeaderText": true,
-                "cellOptions": {
-                  "type": "auto"
-                }
-              },
-              "noValue": "—"
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byRegexp",
-                  "options": "^(?!Хост$).*"
-                },
-                "properties": [
-                  {
-                    "id": "custom.cellOptions",
-                    "value": {
-                      "type": "color-background"
-                    }
-                  },
-                  {
-                    "id": "custom.align",
-                    "value": "center"
-                  },
-                  {
-                    "id": "mappings",
-                    "value": [
-                      {
-                        "type": "value",
-                        "options": {
-                          "1": {
-                            "text": "OK",
-                            "color": "green",
-                            "index": 0
-                          },
-                          "0": {
-                            "text": "СБОЙ",
-                            "color": "red",
-                            "index": 1
-                          }
-                        }
-                      },
-                      {
-                        "type": "special",
-                        "options": {
-                          "match": "null",
-                          "result": {
-                            "text": "·",
-                            "color": "transparent",
-                            "index": 2
-                          }
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "id": "custom.width",
-                    "value": 110
-                  }
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "id": 30,
-          "type": "table",
-          "title": "WARP",
-          "description": "Строка — хост, колонка — панель. Одинаковые хосты разных панелей проверяются один раз. Лёгкие (LTE) хосты здесь не проверяются",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "gridPos": {
-            "h": 12,
-            "w": 8,
-            "x": 8,
-            "y": 46
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "datasource": {
-                "type": "prometheus",
-                "uid": "rwmon-prometheus"
-              },
-              "expr": "max by (panel_title, host) (rwmon_host{panel_title=~\"$panel\", warp=\"1\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"warp\"}))",
-              "legendFormat": "",
-              "range": false,
-              "instant": true,
-              "format": "table"
-            }
-          ],
-          "transformations": [
-            {
-              "id": "groupingToMatrix",
-              "options": {
-                "columnField": "panel_title",
-                "rowField": "host",
-                "valueField": "Value",
-                "emptyValue": "null"
-              }
-            },
-            {
-              "id": "organize",
-              "options": {
-                "renameByName": {
-                  "host\\panel_title": "Хост"
-                }
-              }
-            }
-          ],
-          "options": {
-            "showHeader": true,
-            "cellHeight": "sm",
-            "sortBy": [
-              {
-                "displayName": "Хост",
-                "desc": false
-              }
-            ],
-            "footer": {
-              "show": false
-            }
-          },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "align": "auto",
-                "filterable": false,
-                "wrapHeaderText": true,
-                "cellOptions": {
-                  "type": "auto"
-                }
-              },
-              "noValue": "—"
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byRegexp",
-                  "options": "^(?!Хост$).*"
-                },
-                "properties": [
-                  {
-                    "id": "custom.cellOptions",
-                    "value": {
-                      "type": "color-background"
-                    }
-                  },
-                  {
-                    "id": "custom.align",
-                    "value": "center"
-                  },
-                  {
-                    "id": "mappings",
-                    "value": [
-                      {
-                        "type": "value",
-                        "options": {
-                          "1": {
-                            "text": "OK",
-                            "color": "green",
-                            "index": 0
-                          },
-                          "0": {
-                            "text": "СБОЙ",
-                            "color": "red",
-                            "index": 1
-                          }
-                        }
-                      },
-                      {
-                        "type": "special",
-                        "options": {
-                          "match": "null",
-                          "result": {
-                            "text": "·",
-                            "color": "transparent",
-                            "index": 2
-                          }
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "id": "custom.width",
-                    "value": 110
-                  }
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "id": 31,
-          "type": "table",
-          "title": "Psiphon",
-          "description": "Строка — хост, колонка — панель. Одинаковые хосты разных панелей проверяются один раз. Лёгкие (LTE) хосты здесь не проверяются",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "gridPos": {
-            "h": 12,
-            "w": 8,
-            "x": 16,
-            "y": 46
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "datasource": {
-                "type": "prometheus",
-                "uid": "rwmon-prometheus"
-              },
-              "expr": "max by (panel_title, host) (rwmon_host{panel_title=~\"$panel\", psiphon=\"1\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"psiphon\"}))",
-              "legendFormat": "",
-              "range": false,
-              "instant": true,
-              "format": "table"
-            }
-          ],
-          "transformations": [
-            {
-              "id": "groupingToMatrix",
-              "options": {
-                "columnField": "panel_title",
-                "rowField": "host",
-                "valueField": "Value",
-                "emptyValue": "null"
-              }
-            },
-            {
-              "id": "organize",
-              "options": {
-                "renameByName": {
-                  "host\\panel_title": "Хост"
-                }
-              }
-            }
-          ],
-          "options": {
-            "showHeader": true,
-            "cellHeight": "sm",
-            "sortBy": [
-              {
-                "displayName": "Хост",
-                "desc": false
-              }
-            ],
-            "footer": {
-              "show": false
-            }
-          },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "align": "auto",
-                "filterable": false,
-                "wrapHeaderText": true,
-                "cellOptions": {
-                  "type": "auto"
-                }
-              },
-              "noValue": "—"
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byRegexp",
-                  "options": "^(?!Хост$).*"
-                },
-                "properties": [
-                  {
-                    "id": "custom.cellOptions",
-                    "value": {
-                      "type": "color-background"
-                    }
-                  },
-                  {
-                    "id": "custom.align",
-                    "value": "center"
-                  },
-                  {
-                    "id": "mappings",
-                    "value": [
-                      {
-                        "type": "value",
-                        "options": {
-                          "1": {
-                            "text": "OK",
-                            "color": "green",
-                            "index": 0
-                          },
-                          "0": {
-                            "text": "СБОЙ",
-                            "color": "red",
-                            "index": 1
-                          }
-                        }
-                      },
-                      {
-                        "type": "special",
-                        "options": {
-                          "match": "null",
-                          "result": {
-                            "text": "·",
-                            "color": "transparent",
-                            "index": 2
-                          }
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "id": "custom.width",
-                    "value": 110
-                  }
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "id": 32,
-          "type": "state-timeline",
-          "title": "История сбоев",
-          "description": "Только хосты, у которых за выбранный период были сбои",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "gridPos": {
-            "h": 10,
-            "w": 24,
-            "x": 0,
-            "y": 58
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "datasource": {
-                "type": "prometheus",
-                "uid": "rwmon-prometheus"
-              },
-              "expr": "(rwmon_host{panel_title=~\"$panel\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"xray\"})) and on (name) (min by (name) (min_over_time(xray_proxy_status{check=\"xray\"}[$__range] @ end())) == 0) or (rwmon_host{panel_title=~\"$panel\", warp=\"1\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"warp\"})) and on (name) (min by (name) (min_over_time(xray_proxy_status{check=\"warp\"}[$__range] @ end())) == 0) or (rwmon_host{panel_title=~\"$panel\", psiphon=\"1\"} * on (name) group_left (check) max by (name, check) (xray_proxy_status{check=\"psiphon\"})) and on (name) (min by (name) (min_over_time(xray_proxy_status{check=\"psiphon\"}[$__range] @ end())) == 0)",
-              "legendFormat": "{{host}} · {{panel_title}} · {{check}}",
-              "range": true,
-              "instant": false
-            }
-          ],
-          "options": {
-            "showValue": "never",
-            "mergeValues": true,
-            "rowHeight": 0.8,
-            "alignValue": "left",
-            "legend": {
-              "showLegend": false
-            },
-            "tooltip": {
-              "mode": "single"
-            }
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "red",
-                    "value": null
-                  },
-                  {
-                    "color": "green",
-                    "value": 1
-                  }
-                ]
-              },
-              "mappings": [
-                {
-                  "type": "value",
-                  "options": {
-                    "1": {
-                      "text": "OK",
-                      "color": "green",
-                      "index": 0
-                    },
-                    "0": {
-                      "text": "СБОЙ",
-                      "color": "red",
-                      "index": 1
-                    }
-                  }
-                }
-              ],
-              "noValue": "Сбоев не было"
-            },
-            "overrides": []
-          }
-        }
-      ]
-    },
-    {
-      "id": 36,
-      "type": "row",
-      "title": "Проба из РФ",
-      "collapsed": true,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 46
-      },
-      "panels": [
-        {
-          "id": 34,
-          "type": "state-timeline",
-          "title": "Не открывалось из РФ",
-          "description": "Адреса хостов, которые хотя бы раз за период не открылись с какой-нибудь пробы в России. Если сбой на одной пробе — скорее всего, проблема у самой RU-ноды; если на всех — блокировка.",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "gridPos": {
-            "h": 10,
-            "w": 24,
-            "x": 0,
-            "y": 47
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "datasource": {
-                "type": "prometheus",
-                "uid": "rwmon-prometheus"
-              },
-              "expr": "(max by (address, probe) (probe_success{kind=\"tcp\"}) * on (address) group_left (hosts) rwmon_address_info) and on (address, probe) (min by (address, probe) (min_over_time(probe_success{kind=\"tcp\"}[$__range] @ end())) == 0)",
-              "legendFormat": "{{hosts}} ({{address}}) · {{probe}}",
-              "range": true,
-              "instant": false
-            }
-          ],
-          "options": {
-            "showValue": "never",
-            "mergeValues": true,
-            "rowHeight": 0.8,
-            "alignValue": "left",
-            "legend": {
-              "showLegend": false
-            },
-            "tooltip": {
-              "mode": "single"
-            }
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "red",
-                    "value": null
-                  },
-                  {
-                    "color": "green",
-                    "value": 1
-                  }
-                ]
-              },
-              "mappings": [
-                {
-                  "type": "value",
-                  "options": {
-                    "1": {
-                      "text": "OK",
-                      "color": "green",
-                      "index": 0
-                    },
-                    "0": {
-                      "text": "СБОЙ",
-                      "color": "red",
-                      "index": 1
-                    }
-                  }
-                }
-              ],
-              "noValue": "Сбоев не было"
-            },
-            "overrides": []
-          }
-        },
-        {
-          "id": 35,
-          "type": "timeseries",
-          "title": "Время соединения из РФ",
-          "description": "Сколько занимает установка соединения с проб в России до каждого адреса",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 24,
-            "x": 0,
-            "y": 57
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "datasource": {
-                "type": "prometheus",
-                "uid": "rwmon-prometheus"
-              },
-              "expr": "max by (address, probe) (probe_duration_seconds{kind=\"tcp\"}) * on (address) group_left (hosts) rwmon_address_info",
-              "legendFormat": "{{hosts}} · {{probe}}",
-              "range": true,
-              "instant": false
-            }
-          ],
-          "options": {
-            "legend": {
-              "displayMode": "table",
-              "placement": "right",
-              "showLegend": true,
-              "calcs": [
-                "lastNotNull",
-                "max"
-              ]
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "desc"
-            }
-          },
-          "fieldConfig": {
-            "defaults": {
-              "unit": "s",
-              "min": 0,
-              "custom": {
-                "lineWidth": 2,
-                "fillOpacity": 0,
-                "gradientMode": "opacity",
-                "showPoints": "never",
-                "spanNulls": 120000,
-                "stacking": {
-                  "mode": "none"
-                },
-                "axisSoftMin": 0
-              }
-            },
-            "overrides": []
-          }
-        }
-      ]
-    },
-    {
-      "id": 41,
+      "id": 42,
       "type": "row",
       "title": "GeoCheck: как видят ноды",
       "collapsed": true,
@@ -4344,489 +5103,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 47
+        "y": 80
       },
       "panels": [
         {
-          "id": 37,
-          "type": "table",
-          "title": "Как сервисы видят ноды",
-          "description": "Страна, которую определяет каждый сервис (последний GeoCheck). Красным — RU и BY. yes/no — ответы на вопросы вроде «показывает ли Google капчу»",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "gridPos": {
-            "h": 16,
-            "w": 24,
-            "x": 0,
-            "y": 48
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "datasource": {
-                "type": "prometheus",
-                "uid": "rwmon-prometheus"
-              },
-              "expr": "max by (node, service, value) (rwmon_geocheck{group=~\"services\", panel_title=~\"$panel\"} * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
-              "legendFormat": "",
-              "range": false,
-              "instant": true,
-              "format": "table"
-            }
-          ],
-          "transformations": [
-            {
-              "id": "groupingToMatrix",
-              "options": {
-                "columnField": "service",
-                "rowField": "node",
-                "valueField": "value",
-                "emptyValue": "null"
-              }
-            },
-            {
-              "id": "organize",
-              "options": {
-                "renameByName": {
-                  "node\\service": "Нода",
-                  "Google Search captcha": "Google капча",
-                  "YouTube Premium": "YT Premium",
-                  "YouTube Music": "YT Music",
-                  "Spotify signup": "Spotify рег.",
-                  "Reddit guest access": "Reddit гость",
-                  "Ookla Speedtest": "Speedtest",
-                  "Microsoft (Bing)": "Bing",
-                  "Amazon Prime Video": "Prime Video",
-                  "ChatGPT (web)": "ChatGPT сайт",
-                  "ChatGPT (app)": "ChatGPT прил.",
-                  "Cloudflare edge": "CF edge",
-                  "YouTube / GGC edge": "YT GGC",
-                  "Netflix Open Connect": "Netflix OC",
-                  "rdap.db.ripe.net": "RIPE"
-                }
-              }
-            }
-          ],
-          "options": {
-            "showHeader": true,
-            "cellHeight": "sm",
-            "sortBy": [
-              {
-                "displayName": "Нода",
-                "desc": false
-              }
-            ],
-            "footer": {
-              "show": false
-            }
-          },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "align": "auto",
-                "filterable": false,
-                "wrapHeaderText": true,
-                "cellOptions": {
-                  "type": "auto"
-                }
-              },
-              "noValue": "—"
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "Нода"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 190
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byRegexp",
-                  "options": "^(?!Нода$).*"
-                },
-                "properties": [
-                  {
-                    "id": "custom.align",
-                    "value": "center"
-                  },
-                  {
-                    "id": "custom.minWidth",
-                    "value": 58
-                  },
-                  {
-                    "id": "custom.cellOptions",
-                    "value": {
-                      "type": "color-background",
-                      "mode": "basic"
-                    }
-                  },
-                  {
-                    "id": "color",
-                    "value": {
-                      "mode": "fixed",
-                      "fixedColor": "transparent"
-                    }
-                  },
-                  {
-                    "id": "mappings",
-                    "value": [
-                      {
-                        "type": "regex",
-                        "options": {
-                          "pattern": "^(RU|BY)$",
-                          "result": {
-                            "color": "dark-red",
-                            "index": 0
-                          }
-                        }
-                      }
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        },
-        {
           "id": 38,
-          "type": "table",
-          "title": "Доступ к сервисам",
-          "description": "Открывается ли сервис с IP ноды: ✓ — да, ✗ — нет, рядом — регион, который он определил",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "gridPos": {
-            "h": 16,
-            "w": 24,
-            "x": 0,
-            "y": 64
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "datasource": {
-                "type": "prometheus",
-                "uid": "rwmon-prometheus"
-              },
-              "expr": "max by (node, service, value) (rwmon_geocheck{group=~\"stash\", panel_title=~\"$panel\"} * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
-              "legendFormat": "",
-              "range": false,
-              "instant": true,
-              "format": "table"
-            }
-          ],
-          "transformations": [
-            {
-              "id": "groupingToMatrix",
-              "options": {
-                "columnField": "service",
-                "rowField": "node",
-                "valueField": "value",
-                "emptyValue": "null"
-              }
-            },
-            {
-              "id": "organize",
-              "options": {
-                "renameByName": {
-                  "node\\service": "Нода",
-                  "Google Search captcha": "Google капча",
-                  "YouTube Premium": "YT Premium",
-                  "YouTube Music": "YT Music",
-                  "Spotify signup": "Spotify рег.",
-                  "Reddit guest access": "Reddit гость",
-                  "Ookla Speedtest": "Speedtest",
-                  "Microsoft (Bing)": "Bing",
-                  "Amazon Prime Video": "Prime Video",
-                  "ChatGPT (web)": "ChatGPT сайт",
-                  "ChatGPT (app)": "ChatGPT прил.",
-                  "Cloudflare edge": "CF edge",
-                  "YouTube / GGC edge": "YT GGC",
-                  "Netflix Open Connect": "Netflix OC",
-                  "rdap.db.ripe.net": "RIPE"
-                }
-              }
-            }
-          ],
-          "options": {
-            "showHeader": true,
-            "cellHeight": "sm",
-            "sortBy": [
-              {
-                "displayName": "Нода",
-                "desc": false
-              }
-            ],
-            "footer": {
-              "show": false
-            }
-          },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "align": "auto",
-                "filterable": false,
-                "wrapHeaderText": true,
-                "cellOptions": {
-                  "type": "auto"
-                }
-              },
-              "noValue": "—"
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "Нода"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 190
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byRegexp",
-                  "options": "^(?!Нода$).*"
-                },
-                "properties": [
-                  {
-                    "id": "custom.align",
-                    "value": "center"
-                  },
-                  {
-                    "id": "custom.minWidth",
-                    "value": 58
-                  },
-                  {
-                    "id": "custom.cellOptions",
-                    "value": {
-                      "type": "color-background",
-                      "mode": "basic"
-                    }
-                  },
-                  {
-                    "id": "color",
-                    "value": {
-                      "mode": "fixed",
-                      "fixedColor": "transparent"
-                    }
-                  },
-                  {
-                    "id": "mappings",
-                    "value": [
-                      {
-                        "type": "regex",
-                        "options": {
-                          "pattern": "^(?:available|yes|ok)\\s*\\((\\w+)\\)$",
-                          "result": {
-                            "text": "✓ $1",
-                            "color": "dark-green",
-                            "index": 0
-                          }
-                        }
-                      },
-                      {
-                        "type": "regex",
-                        "options": {
-                          "pattern": "^(?:available|yes|ok).*",
-                          "result": {
-                            "text": "✓",
-                            "color": "dark-green",
-                            "index": 1
-                          }
-                        }
-                      },
-                      {
-                        "type": "regex",
-                        "options": {
-                          "pattern": "^(?:blocked|unavailable|no|restricted|denied)\\s*\\((\\w+)\\)$",
-                          "result": {
-                            "text": "✗ $1",
-                            "color": "dark-red",
-                            "index": 2
-                          }
-                        }
-                      },
-                      {
-                        "type": "regex",
-                        "options": {
-                          "pattern": "^(?:blocked|unavailable|no|restricted|denied).*",
-                          "result": {
-                            "text": "✗",
-                            "color": "dark-red",
-                            "index": 3
-                          }
-                        }
-                      }
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "id": 39,
-          "type": "table",
-          "title": "GeoIP-базы и CDN",
-          "description": "Что о стране IP ноды записано в базах GeoIP и что видят CDN",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "rwmon-prometheus"
-          },
-          "gridPos": {
-            "h": 16,
-            "w": 24,
-            "x": 0,
-            "y": 80
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "datasource": {
-                "type": "prometheus",
-                "uid": "rwmon-prometheus"
-              },
-              "expr": "max by (node, service, value) (rwmon_geocheck{group=~\"geoip|cdn\", panel_title=~\"$panel\"} * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
-              "legendFormat": "",
-              "range": false,
-              "instant": true,
-              "format": "table"
-            }
-          ],
-          "transformations": [
-            {
-              "id": "groupingToMatrix",
-              "options": {
-                "columnField": "service",
-                "rowField": "node",
-                "valueField": "value",
-                "emptyValue": "null"
-              }
-            },
-            {
-              "id": "organize",
-              "options": {
-                "renameByName": {
-                  "node\\service": "Нода",
-                  "Google Search captcha": "Google капча",
-                  "YouTube Premium": "YT Premium",
-                  "YouTube Music": "YT Music",
-                  "Spotify signup": "Spotify рег.",
-                  "Reddit guest access": "Reddit гость",
-                  "Ookla Speedtest": "Speedtest",
-                  "Microsoft (Bing)": "Bing",
-                  "Amazon Prime Video": "Prime Video",
-                  "ChatGPT (web)": "ChatGPT сайт",
-                  "ChatGPT (app)": "ChatGPT прил.",
-                  "Cloudflare edge": "CF edge",
-                  "YouTube / GGC edge": "YT GGC",
-                  "Netflix Open Connect": "Netflix OC",
-                  "rdap.db.ripe.net": "RIPE"
-                }
-              }
-            }
-          ],
-          "options": {
-            "showHeader": true,
-            "cellHeight": "sm",
-            "sortBy": [
-              {
-                "displayName": "Нода",
-                "desc": false
-              }
-            ],
-            "footer": {
-              "show": false
-            }
-          },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "align": "auto",
-                "filterable": false,
-                "wrapHeaderText": true,
-                "cellOptions": {
-                  "type": "auto"
-                }
-              },
-              "noValue": "—"
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "Нода"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 190
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byRegexp",
-                  "options": "^(?!Нода$).*"
-                },
-                "properties": [
-                  {
-                    "id": "custom.align",
-                    "value": "center"
-                  },
-                  {
-                    "id": "custom.minWidth",
-                    "value": 58
-                  },
-                  {
-                    "id": "custom.cellOptions",
-                    "value": {
-                      "type": "color-background",
-                      "mode": "basic"
-                    }
-                  },
-                  {
-                    "id": "color",
-                    "value": {
-                      "mode": "fixed",
-                      "fixedColor": "transparent"
-                    }
-                  },
-                  {
-                    "id": "mappings",
-                    "value": [
-                      {
-                        "type": "regex",
-                        "options": {
-                          "pattern": "^(RU|BY)$",
-                          "result": {
-                            "color": "dark-red",
-                            "index": 0
-                          }
-                        }
-                      }
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "id": 40,
           "type": "table",
           "title": "IP нод",
           "description": "IP, сеть и тип IP по последнему GeoCheck. Риск — оценка репутации IP (0–100)",
@@ -4835,10 +5116,10 @@
             "uid": "rwmon-prometheus"
           },
           "gridPos": {
-            "h": 16,
+            "h": 12,
             "w": 24,
             "x": 0,
-            "y": 96
+            "y": 81
           },
           "targets": [
             {
@@ -5031,6 +5312,484 @@
                     "value": {
                       "type": "color-text"
                     }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 39,
+          "type": "table",
+          "title": "Как сервисы видят ноды",
+          "description": "Страна, которую определяет каждый сервис (последний GeoCheck). Красным — RU и BY. yes/no — ответы на вопросы вроде «показывает ли Google капчу»",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 16,
+            "w": 24,
+            "x": 0,
+            "y": 93
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "max by (node, service, value) (rwmon_geocheck{group=~\"services\", panel_title=~\"$panel\"} * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+              "legendFormat": "",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "groupingToMatrix",
+              "options": {
+                "columnField": "service",
+                "rowField": "node",
+                "valueField": "value",
+                "emptyValue": "null"
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "renameByName": {
+                  "node\\service": "Нода",
+                  "Google Search captcha": "Google капча",
+                  "YouTube Premium": "YT Premium",
+                  "YouTube Music": "YT Music",
+                  "Spotify signup": "Spotify рег.",
+                  "Reddit guest access": "Reddit гость",
+                  "Ookla Speedtest": "Speedtest",
+                  "Microsoft (Bing)": "Bing",
+                  "Amazon Prime Video": "Prime Video",
+                  "ChatGPT (web)": "ChatGPT сайт",
+                  "ChatGPT (app)": "ChatGPT прил.",
+                  "Cloudflare edge": "CF edge",
+                  "YouTube / GGC edge": "YT GGC",
+                  "Netflix Open Connect": "Netflix OC",
+                  "rdap.db.ripe.net": "RIPE"
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "sortBy": [
+              {
+                "displayName": "Нода",
+                "desc": false
+              }
+            ],
+            "footer": {
+              "show": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": false,
+                "wrapHeaderText": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              },
+              "noValue": "—"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Нода"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 190
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^(?!Нода$).*"
+                },
+                "properties": [
+                  {
+                    "id": "custom.align",
+                    "value": "center"
+                  },
+                  {
+                    "id": "custom.minWidth",
+                    "value": 58
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "basic"
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "transparent"
+                    }
+                  },
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(RU|BY)$",
+                          "result": {
+                            "color": "dark-red",
+                            "index": 0
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 40,
+          "type": "table",
+          "title": "Доступ к сервисам",
+          "description": "Открывается ли сервис с IP ноды: ✓ — да, ✗ — нет, рядом — регион, который он определил",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 16,
+            "w": 24,
+            "x": 0,
+            "y": 109
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "max by (node, service, value) (rwmon_geocheck{group=~\"stash\", panel_title=~\"$panel\"} * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+              "legendFormat": "",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "groupingToMatrix",
+              "options": {
+                "columnField": "service",
+                "rowField": "node",
+                "valueField": "value",
+                "emptyValue": "null"
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "renameByName": {
+                  "node\\service": "Нода",
+                  "Google Search captcha": "Google капча",
+                  "YouTube Premium": "YT Premium",
+                  "YouTube Music": "YT Music",
+                  "Spotify signup": "Spotify рег.",
+                  "Reddit guest access": "Reddit гость",
+                  "Ookla Speedtest": "Speedtest",
+                  "Microsoft (Bing)": "Bing",
+                  "Amazon Prime Video": "Prime Video",
+                  "ChatGPT (web)": "ChatGPT сайт",
+                  "ChatGPT (app)": "ChatGPT прил.",
+                  "Cloudflare edge": "CF edge",
+                  "YouTube / GGC edge": "YT GGC",
+                  "Netflix Open Connect": "Netflix OC",
+                  "rdap.db.ripe.net": "RIPE"
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "sortBy": [
+              {
+                "displayName": "Нода",
+                "desc": false
+              }
+            ],
+            "footer": {
+              "show": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": false,
+                "wrapHeaderText": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              },
+              "noValue": "—"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Нода"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 190
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^(?!Нода$).*"
+                },
+                "properties": [
+                  {
+                    "id": "custom.align",
+                    "value": "center"
+                  },
+                  {
+                    "id": "custom.minWidth",
+                    "value": 58
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "basic"
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "transparent"
+                    }
+                  },
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(?:available|yes|ok)\\s*\\((\\w+)\\)$",
+                          "result": {
+                            "text": "✓ $1",
+                            "color": "dark-green",
+                            "index": 0
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(?:available|yes|ok).*",
+                          "result": {
+                            "text": "✓",
+                            "color": "dark-green",
+                            "index": 1
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(?:blocked|unavailable|no|restricted|denied)\\s*\\((\\w+)\\)$",
+                          "result": {
+                            "text": "✗ $1",
+                            "color": "dark-red",
+                            "index": 2
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(?:blocked|unavailable|no|restricted|denied).*",
+                          "result": {
+                            "text": "✗",
+                            "color": "dark-red",
+                            "index": 3
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 41,
+          "type": "table",
+          "title": "GeoIP-базы и CDN",
+          "description": "Что о стране IP ноды записано в базах GeoIP и что видят CDN",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "rwmon-prometheus"
+          },
+          "gridPos": {
+            "h": 16,
+            "w": 24,
+            "x": 0,
+            "y": 125
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "rwmon-prometheus"
+              },
+              "expr": "max by (node, service, value) (rwmon_geocheck{group=~\"geoip|cdn\", panel_title=~\"$panel\"} * on (panel, node_uuid) group_left (node) topk by (panel, node_uuid) (1, rwmon_node_info{panel_title=~\"$panel\", node=~\"$node\"}))",
+              "legendFormat": "",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "groupingToMatrix",
+              "options": {
+                "columnField": "service",
+                "rowField": "node",
+                "valueField": "value",
+                "emptyValue": "null"
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "renameByName": {
+                  "node\\service": "Нода",
+                  "Google Search captcha": "Google капча",
+                  "YouTube Premium": "YT Premium",
+                  "YouTube Music": "YT Music",
+                  "Spotify signup": "Spotify рег.",
+                  "Reddit guest access": "Reddit гость",
+                  "Ookla Speedtest": "Speedtest",
+                  "Microsoft (Bing)": "Bing",
+                  "Amazon Prime Video": "Prime Video",
+                  "ChatGPT (web)": "ChatGPT сайт",
+                  "ChatGPT (app)": "ChatGPT прил.",
+                  "Cloudflare edge": "CF edge",
+                  "YouTube / GGC edge": "YT GGC",
+                  "Netflix Open Connect": "Netflix OC",
+                  "rdap.db.ripe.net": "RIPE"
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "sortBy": [
+              {
+                "displayName": "Нода",
+                "desc": false
+              }
+            ],
+            "footer": {
+              "show": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": false,
+                "wrapHeaderText": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              },
+              "noValue": "—"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Нода"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 190
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^(?!Нода$).*"
+                },
+                "properties": [
+                  {
+                    "id": "custom.align",
+                    "value": "center"
+                  },
+                  {
+                    "id": "custom.minWidth",
+                    "value": 58
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "basic"
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "transparent"
+                    }
+                  },
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(RU|BY)$",
+                          "result": {
+                            "color": "dark-red",
+                            "index": 0
+                          }
+                        }
+                      }
+                    ]
                   }
                 ]
               }

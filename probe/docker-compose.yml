@@ -1,6 +1,15 @@
-# Проба из РФ: blackbox exporter на RU-ноде.
-# Мониторинг раз в минуту просит её открыть каждый хост (TCP) и каждый сайт (HTTP)
-# и видит, что доступно изнутри России. Ставится командой ./install.sh (см. README).
+# Проба из РФ: сервер в России, который проверяет хосты так, как их видит клиент из России.
+#   checker — xray-checker: подключается к каждому хосту как приложение клиента
+#             (по адресу из подписки: прокладка, CDN, нода) и открывает страницу;
+#   agent   — раз в минуту берёт у сервера мониторинга список хостов и отправляет ему результаты
+#             (HTTPS, пароль пробы, ключ сертификата мониторинга запомнен при установке);
+#   blackbox — открываются ли из РФ сайты и панели (его опрашивает Prometheus мониторинга).
+# Ставится командой ./install.sh (см. README). Обновление: git pull && ./install.sh <IP мониторинга>.
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
 services:
   blackbox:
     image: prom/blackbox-exporter:v0.29.1
@@ -16,6 +25,58 @@ services:
       - ./blackbox.yml:/etc/blackbox/blackbox.yml:ro
       - ./secret:/etc/blackbox/secret:ro
       - ./web.yml:/etc/blackbox/web.yml:ro
-    logging:
-      driver: json-file
-      options: { max-size: "10m", max-file: "3" }
+    logging: *logging
+
+  agent:
+    image: alpine:3.24
+    container_name: rwmon-probe-agent
+    network_mode: host
+    restart: unless-stopped
+    user: "0:0"                    # читать пароль из secret/ (права 600)
+    entrypoint: ["/bin/sh", "/agent.sh"]
+    environment:
+      MON_URL: ${MON_URL:?запустите ./install.sh <IP мониторинга>}
+      MON_PIN: ${MON_PIN:?запустите ./install.sh <IP мониторинга>}
+      CHECKER_METRICS: http://127.0.0.1:${CHECKER_METRICS_PORT:-2190}/metrics
+    volumes:
+      - ./agent.sh:/agent.sh:ro
+      - ./secret:/secret:ro
+      - links:/links
+    logging: *logging
+
+  checker:
+    # тот же xray-checker с патчами, что на сервере мониторинга (папка checker/ репозитория).
+    # install.sh сначала скачивает готовый образ, а если не вышло — собирает его здесь.
+    image: ghcr.io/3apa3a-3aho3a/rwmon-xray-checker:${CHECKER_TAG:-latest}
+    build:
+      context: ../checker
+      labels: { rwmon: "1" }
+    container_name: rwmon-probe-checker
+    network_mode: host
+    restart: unless-stopped
+    entrypoint: ["/usr/bin/xray-checker"]
+    depends_on: [agent]
+    environment:
+      SUBSCRIPTION_URL: file:///links/ru-hosts.json
+      SUBSCRIPTION_UPDATE: "true"
+      SUBSCRIPTION_UPDATE_INTERVAL: "60"
+      PROXY_CHECK_INTERVAL: ${CHECK_INTERVAL:-300}
+      PROXY_TIMEOUT: "20"
+      PROXY_CHECK_ATTEMPTS: "3"
+      PROXY_CHECK_RETRY_DELAY: "5"
+      PROXY_CHECK_CONCURRENCY: "10"
+      PROXY_CHECK_METHOD: status
+      PROXY_STATUS_CHECK_URL: ${CHECK_URL:-https://www.google.com/generate_204}
+      METRICS_HOST: 127.0.0.1
+      METRICS_PORT: ${CHECKER_METRICS_PORT:-2190}
+      # порты Xray проверок на 127.0.0.1; install.sh закрепляет их, чтобы система
+      # не раздала их исходящим соединениям
+      XRAY_START_PORT: ${CHECKER_XRAY_PORT:-41000}
+      LOG_LEVEL: warn
+      TZ: UTC
+    volumes:
+      - links:/links:ro
+    logging: *logging
+
+volumes:
+  links:

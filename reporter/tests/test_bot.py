@@ -34,7 +34,7 @@ class FakeApi:
 
 class Prom:
     def query(self, expr, at=None):
-        if 'xray_proxy_status{name=' in expr:
+        if 'rwmon_host_state{name=' in expr or 'xray_proxy_status{name=' in expr:
             return [({}, 95.0)]
         if expr == 'sum by (panel) (rwmon_node_connected)':
             return [({'panel': 'main'}, 3.0), ({'panel': 'reserve'}, 2.0)]
@@ -43,11 +43,11 @@ class Prom:
         return []
 
 
-def alert(name='LTE 3', status='firing', rule='Хост не работает из РФ', fp=None, reason='таймаут'):
+def alert(name='LTE 3', status='firing', rule='Хост не работает', fp=None, reason='таймаут'):
     return {'status': status, 'fingerprint': fp or name,
             'labels': {'alertname': rule, 'grafana_folder': 'Remnawave', 'severity': 'critical',
                        'scope': 'all', 'host': name, 'panel_title': 'Основная', 'name': name + ' · Основная'},
-            'annotations': {'summary': rule, 'recovered': 'Снова работает из РФ', 'reason': reason},
+            'annotations': {'summary': rule, 'recovered': 'Хост снова работает', 'reason': reason},
             'startsAt': '2026-11-25T04:15:00.123456789Z',
             'endsAt': '0001-01-01T00:00:00Z' if status == 'firing' else '2026-11-25T05:20:00Z',
             'generatorURL': 'https://grafana.example/alerting/grafana/x/view'}
@@ -88,7 +88,7 @@ class BotTest(unittest.TestCase):
 
     def test_categories(self):
         uids = {r['title']: r['uid'] for g in render.rules(make_cfg())['groups'] for r in g['rules']}
-        self.assertEqual(F.category(uids['Xray не принимает клиентов']), 'nodes')
+        self.assertEqual(F.category(uids['Хост не работает']), 'nodes')
         self.assertEqual(F.category('rwmon-warp-down'), 'nodes')
         self.assertEqual(F.category('rwmon-site-down-ru'), 'ru')
         self.assertEqual(F.category('rwmon-site-down'), 'sites')
@@ -182,7 +182,7 @@ class BotTest(unittest.TestCase):
         q = {'id': 'q', 'from': {'id': 2}, 'message': {'chat': {'id': -100}, 'message_id': 1}}
         b.on_callback({**q, 'data': 'cf:c:ru'})
         self.assertEqual(b.settings['off'], ['ru'])
-        b.on_alert(payload(alert(rule='Хост не открывается из РФ')))   # группа «Проверка из РФ»
+        b.on_alert(payload(alert(rule='Сайт не открывается из РФ')))   # группа «Пробы из РФ»
         self.assertEqual(b.fake.sent, [])
         b.on_callback({**q, 'data': 'cf:c:ru'})
         self.assertEqual(b.settings['off'], [])
@@ -205,7 +205,7 @@ class BotTest(unittest.TestCase):
         self.assertIn('Горит алертов: <b>1</b>', body)
         gid = next(iter(b.state['msgs']))
         d = b.details(gid)
-        self.assertIn('Не проходила за 24 ч', d)
+        self.assertIn('Не работал за 24 ч', d)
         self.assertIn('1 ч 35 мин', d)
         self.assertIn('Что горит', b.firing_body()[0])
 
@@ -216,7 +216,7 @@ class BotTest(unittest.TestCase):
         b.on_alert(payload(alert(status='resolved')))
         self.assertEqual(b.state['firing'], {})
         html = b.fake.sent[-1][1]['rich_message']['html']
-        self.assertIn('Снова работает из РФ', html)
+        self.assertIn('Хост снова работает', html)
         self.assertNotIn('tg-button', html)
 
     def test_commands_addressed_to_other_bot_ignored(self):

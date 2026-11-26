@@ -10,16 +10,17 @@ from .clients import ApiError, Telegram
 from .util import esc, gb, log, minutes, now, promql_regex
 
 def check_names(cfg):
-    """Подписи проверок: «Подключение» и проверки маршрутов из config.toml."""
-    names = {'xray': 'Подключение', **{c.id: c.title for c in cfg.route_checks}}
-    if cfg.ru_via:
-        names['ruclient'] = 'Клиент из РФ'
-    return names
-# хост «не открывается из РФ» (ни одна проба не достучалась) и доля таких хостов
-PROBE_DOWN = '(max by (address) (probe_success{kind="tcp"}) == bool 0)'
-PROBE_SHARE = ('((count(max by (address) (probe_success{kind="tcp"}) == 0) or vector(0))'
-               ' / scalar(count(max by (address) (probe_success{kind="tcp"}))))')
-MASS_SHARE = 0.34
+    """Подписи проверок сервера мониторинга: на ноду, через вход и проверки маршрутов."""
+    return {'xray': 'На ноду', 'entry': 'Через вход', **{c.id: c.title for c in cfg.route_checks}}
+
+
+# Итог по хосту (rwmon_host_state) → как написать в сводке
+STATE_TEXT = {
+    1: 'не открывался из РФ (вход и нода работали)',
+    2: 'не работал вход (прокладка, CDN)',
+    3: 'нода не отвечала',
+    4: 'не открывался из РФ (сломан вход или заблокирован)',
+}
 
 
 def flag(cc):
@@ -62,21 +63,22 @@ def collect(prom, cfg):
                                    '(probe_success{kind="http"}) == bool 0)[24h:1m]))', 'site'),
         'site_cert': _by(prom, '(rwmon_site_cert_expiry_timestamp_seconds - time()) / 86400', 'site'),
         'site_up': _by(prom, 'rwmon_site_up', 'site'),
-        'probe_blocked': [],
-        # минуты, когда из РФ «не открывалась» сразу треть хостов и больше: сбой самой пробы
-        'probe_mass': (_by(prom, f'sum_over_time(({PROBE_SHARE} >= bool {MASS_SHARE})[24h:1m])') or {}).get((), 0),
+        'states': [],
+        # сколько минут за сутки проба из РФ не присылала результаты
+        'probe_silent': _by(prom, 'sum by (probe) (sum_over_time((rwmon_ru_probe_up == bool 0)[24h:1m]))',
+                            'probe'),
     }
-    # минуты массового сбоя пробы отдельным хостам не засчитываем
-    for m, v in prom.query(f'rwmon_host * on (address) group_left () sum by (address) (sum_over_time(('
-                           f'{PROBE_DOWN} * on () group_left () ({PROBE_SHARE} < bool {MASS_SHARE}))[24h:1m]))'):
-        if v > 0:
-            d['probe_blocked'].append((m.get('panel', ''), m.get('host', '?'), m.get('address', ''), v))
+    for code in STATE_TEXT:                      # сколько минут за сутки хост был в этом итоге
+        for m, v in prom.query(f'rwmon_host * on (name) group_left () sum by (name) '
+                               f'(sum_over_time((rwmon_host_state == bool {code})[24h:1m]))'):
+            if v > 0:
+                d['states'].append((m.get('panel', ''), m.get('host', '?'), m.get('name', ''), code, v))
     for m, v in prom.query(
             f'sum by (panel, node_uuid, tag) (increase(rwmon_node_outbound_upload_bytes{{tag=~{tags}}}[24h])'
             f' + increase(rwmon_node_outbound_download_bytes{{tag=~{tags}}}[24h]))'):
         d['outbound'].setdefault((m.get('panel'), m.get('node_uuid')), {})[m.get('tag')] = v
-    for check in check_names(cfg):                # сколько минут за сутки проверка не проходила
-        hosts = 'rwmon_host' if check == 'xray' else f'rwmon_host{{{check}="1"}}'
+    for check in [c.id for c in cfg.route_checks]:   # сколько минут за сутки не проходила проверка маршрута
+        hosts = f'rwmon_host{{{check}="1"}}'
         for m, v in prom.query(
                 f'{hosts} * on (name) group_left () '
                 f'sum by (name) (sum_over_time((xray_proxy_status{{check="{check}"}} == bool 0)[24h:1m]))'):
@@ -136,11 +138,12 @@ def problem_lines(d, cfg):
     for (_, check), c in checks.items():
         add(f'{merged_name(c["hosts"], cfg)} · {check_names(cfg).get(check, check)}', 'не проходила проверка',
             c['mins'])
-    blocked = {}
-    for pid, host, address, mins in d.get('probe_blocked') or []:
-        blocked.setdefault(address or f'{pid}:{host}', {'hosts': [], 'mins': mins})['hosts'].append((pid, host))
-    for b in blocked.values():
-        add(merged_name(b['hosts'], cfg), 'не открывался из РФ', b['mins'])
+    states = {}                     # итог по хосту: один сервер в двух панелях — одной строкой
+    for pid, host, name, code, mins in d.get('states') or []:
+        st = states.setdefault((name or f'{pid}:{host}', code), {'hosts': [], 'mins': mins})
+        st['hosts'].append((pid, host))
+    for (_, code), st in states.items():
+        add(merged_name(st['hosts'], cfg), STATE_TEXT.get(code, 'не работал'), st['mins'])
     for (site,), mins in (d.get('sites_down') or {}).items():
         if mins >= 1:
             add(f'🌐 {site}', 'не открывался', mins)
@@ -148,10 +151,9 @@ def problem_lines(d, cfg):
         if mins >= 1:
             add(f'🌐 {site}', 'не открывался из РФ', mins)
     lines = [text for _, text in sorted(out, key=lambda x: x[0])]
-    mass = d.get('probe_mass') or 0
-    if mass >= 1:
-        lines.append(f'• Пробы из РФ разом не достучались до трети хостов и больше — {minutes(mass)} '
-                     '(сбой самой пробы, хостам не засчитано)')
+    for (probe,), mins in sorted((d.get('probe_silent') or {}).items()):
+        if mins >= 5:
+            lines.append(f'• Проба из РФ «{esc(probe)}» не присылала результаты — {minutes(mins)}')
     return lines, short
 
 
