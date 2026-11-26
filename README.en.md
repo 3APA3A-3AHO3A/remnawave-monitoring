@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation">🚀 Install</a> &nbsp;·&nbsp; <a href="#telegram-alerts">🔔 Alerts</a> &nbsp;·&nbsp; <a href="#grafana-dashboard">📊 Dashboard</a> &nbsp;·&nbsp; <a href="#probe-from-russia">🇷🇺 Probe from Russia</a> &nbsp;·&nbsp; <a href="#configuration">⚙️ Configuration</a> &nbsp;·&nbsp; <a href="README.md">🇷🇺 Русский</a>
+  <a href="#installation">🚀 Install</a> &nbsp;·&nbsp; <a href="#telegram-alerts">🔔 Alerts</a> &nbsp;·&nbsp; <a href="#grafana-dashboard">📊 Dashboard</a> &nbsp;·&nbsp; <a href="#check-from-russia">🇷🇺 Check from Russia</a> &nbsp;·&nbsp; <a href="#configuration">⚙️ Configuration</a> &nbsp;·&nbsp; <a href="README.md">🇷🇺 Русский</a>
 </p>
 
 Monitoring for [Remnawave](https://docs.rw) nodes: Grafana dashboards, alerts and a daily report in Telegram. One installation watches one or several panels. It runs next to any of the panels with `docker compose`.
@@ -30,17 +30,17 @@ Monitoring for [Remnawave](https://docs.rw) nodes: Grafana dashboards, alerts an
 ## What it looks like
 
 <p align="center">
-  <img src="docs/demo.svg" alt="Telegram alert example (in Russian): a host does not accept clients, then a recovery message 6 minutes later" width="100%">
+  <img src="docs/demo.svg" alt="Telegram alert example (in Russian): a host is down (node not responding), then a recovery message 6 minutes later" width="100%">
 </p>
 
 ## Features
 
-- **Telegram alerts** — a host does not accept clients, a route check (WARP, Psiphon, a cascade — whatever you describe in `[[check]]`) is down or exits in the wrong place, clients vanished from a node, a panel is unreachable or slow, a host cannot be reached from Russia, a website is down, a certificate is about to expire, a node is overloaded. When things recover, a recovery message follows. Details — [Alerts](#telegram-alerts).
-- **Grafana dashboard** — key numbers, a node table with "everything in one row", a card per node, outbounds, panel health, GeoCheck. "Panel" and "Node" selectors.
+- **Telegram alerts** — a host is down (with the reason: blocked in Russia, broken entry, node not responding), a route check (WARP, Psiphon, a cascade — whatever you describe in `[[check]]`) is down or exits in the wrong place, clients vanished from a node, a panel is unreachable or slow, a website is down, a certificate is about to expire, a node is overloaded. When things recover, a recovery message follows. Details — [Alerts](#telegram-alerts).
+- **Grafana dashboard** — key numbers, what is broken right now, a host table (verdict and every check in one row), a node table, a card per node, outbounds, Russian blocklists, panel health, GeoCheck. "Panel" and "Node" selectors.
 - **Daily report** — what changed in GeoCheck, failures of the day without duplicates, users and traffic per panel. Plus an HTML GeoCheck table.
 - **Route checks from the config** — `[[check]]` blocks: what to open through a host and where the exit must be (not the node IP, the node IP, a country, a network). Hosts are picked by the node's config profile. Details — [Route checks](#route-checks).
 - **Multiple panels** — each with its own chat and topic. Identical hosts in different panels are checked once.
-- **Probe from Russia** — a blackbox exporter on a Russian node reveals IP blocking that is invisible from Europe.
+- **Check from Russia** — probes on servers in Russia connect to every host like a client app does: you see whether the host works for clients in Russia. The monitoring server checks the same host through its entry and directly on the node — so it is clear where it broke. Details — [Check from Russia](#check-from-russia).
 - **Node servers** — optional: disk, swap, the connection table and real CPU usage from [node_exporter](https://github.com/prometheus/node_exporter) on the nodes. Details — [Node servers](#node-servers).
 - **Russian blocklists** — every few hours all node IPs and the service's domains are checked against Russian blocklists via [cheburcheck.ru](https://cheburcheck.ru): the RKN registry, blocked subnets and CDNs. Details — [Russian blocklists](#russian-blocklists).
 - **Websites and an external watchdog** — checks for your sales site and subscription page, certificate expiry, and a Healthchecks.io ping in case the monitoring server itself goes down.
@@ -50,24 +50,24 @@ Monitoring for [Remnawave](https://docs.rw) nodes: Grafana dashboards, alerts an
 ```mermaid
 flowchart LR
     P["Remnawave panels<br/>API with a token"] --> R["<b>reporter</b><br/>metrics · host list<br/>GeoCheck · report"]
-    X["xray-checker, every 5 min<br/>Connection + [[check]] checks"] -- "as an ordinary client" --> N["Nodes<br/>Xray"]
-    B["Probe from Russia, every minute<br/>blackbox exporter"] -- TCP --> N
+    B["Probes in Russia, every 5 min<br/>xray-checker"] -- "as a client in Russia" --> N["Nodes<br/>Xray"]
+    X["xray-checker, every 5 min<br/>entry · node · [[check]]"] -- "as an ordinary client" --> N
+    B -- "results, HTTPS" --> R
     R --> M["Prometheus<br/>90 days"]
     X --> M
-    B --> M
     M --> G["Grafana<br/>dashboard · alerts"]
     G --> T["Telegram"]
     R -- "report" --> T
 ```
 
-Everything starts with a single `docker compose` and listens on `127.0.0.1` only: the `config` container builds the Prometheus, Grafana and checker configs from `config.toml`, Grafana is exposed through nginx. The probe from Russia is optional, in the `probe/` folder.
+Everything starts with a single `docker compose` and listens on `127.0.0.1` only: the `config` container builds the Prometheus, Grafana and checker configs from `config.toml`, Grafana is exposed through nginx. The only port open to the outside is the one for probes from Russia (9116, HTTPS with the probe's password) — if there are probes. Probes are installed separately, from the `probe/` folder.
 
 - `reporter` gets all panel data through the API with a token, so a second panel needs neither its own domain nor access to its `/metrics`.
 - Host checks are done by [xray-checker](https://github.com/kutovoys/xray-checker). The image is built locally from v1.3.1 with five small patches (see [`checker/Dockerfile`](checker/Dockerfile)):
   - Hysteria2 with Salamander `packetSize` support;
   - retries: a single random failure (e.g. a dropped WARP connection) is not counted as an outage;
   - the exit IP and the failure reason in metrics (`xray_proxy_exit_ip`, `xray_proxy_error_code`): the IP shows that a request went out directly, bypassing WARP or Psiphon, and the reason (timeout, closed connection, refused, TLS, DNS) goes into the alert message;
-  - connecting through a relay host (`dialerProxy`) — for the "Client from Russia" check;
+  - connecting through a relay host (`dialerProxy`) — left from the "Client from Russia" check of 2.x, not used now;
   - an adapter to the new libxray API — to build with current xray-core and libraries free of known vulnerabilities.
 
   The first build takes a few minutes.
@@ -76,7 +76,7 @@ Everything starts with a single `docker compose` and listens on `127.0.0.1` only
 
 **Traffic.**
 
-- A check is just a connection setup and a tiny response. Three checks (Connection and two route checks) every 5 minutes add up to about 100 MB per host per month.
+- A check is just a connection setup and a tiny response: about 30 MB per host per month at one check every 5 minutes. A host is checked from every probe in Russia, from the monitoring server on the node (hosts behind a relay or CDN — also through the entry) and by route checks: a regular host with two probes and WARP + Psiphon comes to about 150 MB per month.
 - GeoCheck once a day takes a few MB per node; that traffic is spent by the node itself.
 
 ## Documentation
@@ -89,15 +89,15 @@ Everything starts with a single `docker compose` and listens on `127.0.0.1` only
 A message is short: what happened, where and why — one line per host or node with the start time and the reason. Once everything is fixed a recovery message arrives. The explanation of an alert is in Grafana, in the rule card.
 
 ```
-🔴 Хост не принимает клиентов
-• 🇷🇺 LTE 3 · FixErrorVPN — с 16:34 UTC · хост не ответил вовремя (таймаут)
+🔴 Хост не работает
+• 🇷🇺 LTE 3 · FixErrorVPN → CDN 1 — с 16:34 UTC · не работает вход (прокладка, CDN), нода отвечает
 ```
 
-The reason in the line: for hosts — timeout, closed connection, refused, TLS or DNS error; for "bypasses ‹check›" — which node's IP the request went out from; for "exits in the wrong place" — the exit country and network; for a website — the response code or "no response"; for a certificate — days left; for "clients vanished" — how many there are now; for "node overloaded" — the CPU or memory percentage. The reason is not part of the alert labels, so a change of reason does not cause extra "recovered" and "down" messages. While something is still down, a reminder comes every `repeat_minutes` (60 min); for certificates — once a day.
+The reason in the line: for a host — the verdict (blocked in Russia, broken entry, node not responding, see [Check from Russia](#check-from-russia)); for route checks — timeout, closed connection, refused, TLS or DNS error; for "bypasses ‹check›" — which node's IP the request went out from; for "exits in the wrong place" — the exit country and network; for a website — the response code or "no response"; for a certificate — days left; for "clients vanished" — how many there are now; for "node overloaded" — the CPU or memory percentage. The reason is not part of the alert labels, so a change of reason does not cause extra "recovered" and "down" messages. While something is still down, a reminder comes every `repeat_minutes` (60 min); for certificates — once a day.
 
 | Alert | How it is detected | Sent to |
 |---|---|---|
-| Host does not accept clients | the check connects to the host like an ordinary client and cannot open a page. After the arrow the message names the node the host leads to: "LTE 3 · OVRO → CDN 1". All hosts of one node down — the node is the problem, one host down — its path to the node | all chats |
+| Host is down | the host's verdict is not "works" for two checks in a row: it does not open from any probe in Russia (hosts of Moscow nodes — from the monitoring server), and the reason comes from the monitoring server's checks through the entry and on the node. After the arrow the message names the node the host leads to: "LTE 3 · OVRO → CDN 1" | all chats |
 | "‹check› is down" (WARP, Psiphon…) | the address of a route check from `[[check]]` does not open through the host | all chats |
 | Traffic bypasses ‹check› | `egress = "other"`: the address opened, but the reply came from the IP of one of the panels' nodes — the request went out directly. Usually the exit is down and the balancer switched to direct. A node that goes online from a different IP than the one in the panel (NAT) is not covered | all chats |
 | ‹Check›: exit not from the node IP | `egress = "node"`: the reply came from a different IP than the node's — the traffic went to another exit | all chats |
@@ -108,9 +108,8 @@ The reason in the line: for hosts — timeout, closed connection, refused, TLS o
 | Panel is slow | a panel process (api, scheduler or processor) responds slower than `panel_lag_ms` (200 ms) for 5 minutes | all chats |
 | Panel process restarted | the process uptime was reset — a panel update or a crash | all chats |
 | Panel uses too much memory | a panel process uses more than `panel_memory_mb` (1024 MB) for 15 minutes | all chats |
-| Host doesn't work from Russia | `[ru]`: from Russia (through the relay host) the host fails, while from the monitoring server straight to the node it works. The server is alive: the entry (relay, CDN) is broken or blocked in Russia. With `[ru]`, "Host does not accept clients" fires only if both from Russia and directly fail | all chats |
 | Russian blocklist: address listed | `[rkn]`: a node IP or a service domain is in the RKN registry, a blocked subnet or a CDN (per cheburcheck.ru). The message says what was found | all chats |
-| Host unreachable from Russia | none of the probes in Russia can connect to the host — looks like IP blocking | all chats |
+| Probe from Russia is silent | a probe has not sent results for 10 minutes: the host verdict is computed without it (without all probes — from the monitoring server only) | all chats |
 | Website down / from Russia | a page from `[[site]]` does not respond from the monitoring server or from the probes in Russia | all chats |
 | Certificate expires soon | the site has less than 14 days left | all chats |
 | Node overloaded | load above 0.9 per core or more than 90% memory used for 15 minutes | all chats |
@@ -133,7 +132,7 @@ Commands (only for `admins`):
 |---|---|
 | `/status` | nodes per panel, hosts per check, websites, blocklists, how many alerts are firing; "What is firing" lists them, muted ones marked |
 | `/mutes` | what is muted, until when and by whom; restore one by one or all |
-| `/settings` | turn alert groups on or off (nodes and hosts, check from Russia, blocklists, panels, websites and certificates, the monitoring itself) and the daily report; how often to remind while it is still broken (30 min – 6 h); quiet hours — messages arrive without sound |
+| `/settings` | turn alert groups on or off (nodes and hosts, probes from Russia, blocklists, panels, websites and certificates, the monitoring itself) and the daily report; how often to remind while it is still broken (30 min – 6 h); quiet hours — messages arrive without sound |
 
 Messages are Telegram rich messages (tables, collapsible blocks, time in the reader's time zone). If the client or Telegram rejects them, the same goes out as a regular message with buttons. Mutes and settings are stored by reporter (`bot.json` in its volume) and survive restarts; Grafana still sees every alert as is.
 
@@ -146,21 +145,22 @@ The bot needs its own token: it receives buttons via `getUpdates`, and two liste
 
 ### Grafana dashboard
 
-"Panel" and "Node" selectors at the top:
+"Panel", "Node" and "Outbound" selectors at the top:
 
-- key numbers: clients, nodes, failing hosts, server network speed, traffic, subscriptions;
-- node table — everything about a node in one row: link to the panel, online users and a sparkline, the checks ("Connection" and the route checks from `[[check]]`) and "from Russia", server and Xray uptime, Xray version, CPU, RAM, RX/TX, traffic and limit;
-- what is broken right now, panel state (API, version, uptime since the last restart, latency) and websites;
+- numbers: users online and subscriptions, nodes connected, hosts working / not working, probes from Russia connected, server network now, client traffic both ways;
+- "Broken right now" — the host, what exactly (blocked in Russia, broken entry, node not responding, WARP down…) and for how long; next to it the probes from Russia (connected, hosts checked, how many did not open) and the panels (API, version, uptime, latency);
+- websites (from the monitoring server and from Russia, code, response time, certificate) and Russian blocklists;
+- "Hosts" — one row per host: verdict, result from every probe in Russia, from the monitoring server through the entry and on the node, route checks, response time from Russia, where the host leads; below it — the verdict history over time;
+- "Nodes" — one row per node: link, online and peak, CPU, RAM, disk and conntrack (with `[node_exporter]`), RX/TX, traffic, limit, server and Xray uptime, Xray version;
 - three shared charts: clients, network of all nodes (receive up, send down), outbounds;
 - "Each node separately" — a card per node: server receive and send;
-- "Outbounds per node" (collapsed) — the same cards, but only traffic through the outbounds from the "Outbound" filter (WARP, Psiphon): you can see on which node an outbound stopped responding;
 - collapsed blocks:
-  - "Node comparison" — all selected nodes on one chart (clients, traffic, CPU, memory, outbounds, latency) to spot the odd one out;
-  - "Node servers" — when `[node_exporter]` is enabled: a table and charts of CPU, memory, swap, disk and the connection table per node;
+  - "Outbounds per node" — the same cards, but only traffic through the outbounds from the "Outbound" filter (WARP, Psiphon): you can see on which node an outbound stopped responding;
+  - "Node comparison" — all selected nodes on one chart (clients, traffic, CPU, memory, outbounds);
+  - "Node servers" — when `[node_exporter]` is enabled: a table and charts of CPU, memory, swap, disk and the connection table;
+  - "Checks in detail" — history and response time from Russia and from the monitoring server per host;
   - "Panel health" — memory, latency and uptime of the panel's own processes;
-  - "Host checks" — "host × panel" tables and failure history;
-  - "Probe from Russia";
-  - "GeoCheck" — which country each service sees, access to Netflix/ChatGPT and so on, GeoIP databases, IP type and risk.
+  - "GeoCheck" — IP, network and risk, which country each service sees, access to Netflix/ChatGPT and so on, GeoIP databases.
 
 The dashboard is generated by [`grafana/dashboard.py`](grafana/dashboard.py): `./apply.sh` builds it for the checks in `config.toml`.
 
@@ -174,7 +174,7 @@ The dashboard is generated by [`grafana/dashboard.py`](grafana/dashboard.py): `.
 At the configured time the daily report goes to all chats:
 
 - what changed in GeoCheck (e.g. "Google used to see the node as FI, now RU"). "Needs attention" lists only what is new since yesterday, everything unchanged is a single line; Russian nodes and services from `routed_services` are not highlighted;
-- failures of the day: one server in two panels — one line, failures shorter than `short_minutes` (2 min) — one line "and N more short ones", minutes when the probe from Russia could not reach a third of the hosts at once count as a probe failure, not a host failure;
+- failures of the day: one server in two panels — one line, failures shorter than `short_minutes` (2 min) — one line "and N more short ones"; for a host — the verdict: did not open from Russia, broken entry, node did not respond; a probe from Russia silent for more than 5 minutes — a separate line;
 - per panel: users, new and expired during the day, peak clients and traffic per node.
 
 With the bot (`[bot]`) the report is short: a table of panels (online, last 24 h, traffic to clients ↓ and from clients ↑), failures in one line with the longest one, websites and the nearest certificate, GeoCheck and blocklists. Details are in collapsible blocks: nodes of each panel (clients now / peak, ↓, ↑, outbounds), failures as a list, GeoCheck and blocklists. A blocklist hit muted in the bot is not counted. The report can be turned off in `/settings`.
@@ -198,7 +198,7 @@ One HTML report for the day is attached: cards with the key numbers, a timeline 
    - Users: Get user by username — the service user the checks run as;
    - Subscriptions: Get Raw Subscription by Short UUID — host tags: which hosts to check;
    - Nodes: Get nodes — nodes, their countries and status;
-   - Hosts: Get hosts and Config Profiles: Get config profiles — a host's node and inbound port: hosts behind a relay or CDN are checked on the node directly (`[ru]`), route checks pick hosts by profile name (`profiles`). Without them hosts are checked only through the entry, and `profiles` take UUIDs;
+   - Hosts: Get hosts and Config Profiles: Get config profiles — a host's node and inbound port: hosts behind a relay or CDN are also checked on the node directly, route checks pick hosts by profile name (`profiles`). Without them hosts are checked only through the entry, and `profiles` take UUIDs;
    - Connections: Request Geocheck for Node, Get Geocheck for Node by Job ID — GeoCheck;
    - System: Get Stats, Get Nodes Metrics, Get Stats Digest — users, node clients and traffic, the report; Get Remnawave Information, Get Remnawave Health — version and health of the panel itself.
 2. **A service user**, e.g. `monitoring`:
@@ -208,13 +208,13 @@ One HTML report for the day is attached: cards with the key numbers, a timeline 
 
    Monitoring takes the hosts from this user's subscription in **Xray JSON** format — the same way apps get it, with host mappers applied. So the hosts to check must be visible and not excluded from the "Xray JSON" type. Base64 is not needed for monitoring.
 3. **Tags on the hosts** to check:
-   - `MONITORING` — "Connection" and the route checks that apply to the host: one direct host per node;
-   - `MONITORING_LITE` — only "Connection", a single light check. Good for hosts with a traffic limit (LTE, CDN chains): 5–15 KB per check, 50–130 MB per month. The tag name is set in `host_tag_lite`.
+   - `MONITORING` — the host check (from Russia, through the entry, on the node) and the route checks that apply to the host: one direct host per node;
+   - `MONITORING_LITE` — only the host check, no route checks. Good for hosts with a traffic limit (LTE, CDN chains): 5–15 KB per check, 50–130 MB per month. The tag name is set in `host_tag_lite`.
    - `MONITORING_NO_<ID>` (e.g. `MONITORING_NO_PSIPHON`) — added **next to** `MONITORING`, removes one route check from a host that does not need it although its node's profile assigns it. The tag name is the check's `skip_tag`. Picking hosts by profile is usually easier (see [Route checks](#route-checks)).
 
    Do not tag balancers and "auto-select" hosts.
 4. **Node routing.** The checks go through the node's real Xray config:
-   - "Connection" opens `https://www.google.com/generate_204` (`url_xray` in `[checks]`), this address must go to `DIRECT`;
+   - the host check opens `https://www.google.com/generate_204` (`url_xray` in `[checks]`), this address must go to `DIRECT`;
    - a route check opens its own `url` — any address your routing already sends to the right exit and that replies with an IP (e.g. `https://icanhazip.com` from `geosite:category-ip-geo-detect` for WARP). If there is no such address, add a rule on the node — e.g. for Psiphon **above** the WARP rule:
      ```json
      { "domain": ["domain:ip-api.com"], "outboundTag": "psiphon-out" }
@@ -229,10 +229,10 @@ One HTML report for the day is attached: cards with the key numbers, a timeline 
 
 #### Preparing the monitoring server
 
-The checks hold one port per host on `127.0.0.1`: "Connection" — 21000+, each route check — the next thousand (22000+, 23000+…). If the system hands out the same ports to outgoing connections, one day a check will fail to start ("address already in use") and stop seeing new hosts. Reserve the ports for the checks — it affects nothing else (example for two route checks; `check` prints the line for yours):
+The checks hold one port per host on `127.0.0.1`: "on the node" — 21000+, each route check — the next thousand (22000+, 23000+…), "through the entry" — 30000+. If the system hands out the same ports to outgoing connections, one day a check will fail to start ("address already in use") and stop seeing new hosts. Reserve the ports for the checks — it affects nothing else (example for two route checks; `check` prints the line for yours):
 
 ```bash
-echo 'net.ipv4.ip_local_reserved_ports = 21000-21999,22000-22999,23000-23999' | sudo tee /etc/sysctl.d/90-rwmon.conf
+echo 'net.ipv4.ip_local_reserved_ports = 21000-21999,22000-22999,23000-23999,30000-30999' | sudo tee /etc/sysctl.d/90-rwmon.conf
 sudo sysctl -p /etc/sysctl.d/90-rwmon.conf
 ```
 
@@ -290,7 +290,7 @@ One panel — one `[[panel]]` block:
 Shared sections:
 
 - `[schedule]` — time of GeoCheck and the report (UTC);
-- `[checks]` — interval, number of attempts, the "Connection" address (`url_xray`);
+- `[checks]` — interval, number of attempts, the host check address (`url_xray`), the port for probes from Russia (`ru_port`, 9116);
 - `[[check]]` — route checks, one block per check (see below);
 - `[alerts]` — thresholds for "clients vanished", "panel is slow / uses too much memory", the outbound list and how often to remind (`repeat_minutes`);
 - `[geocheck]` — which countries to highlight and which services do not use the node's IP (`routed_services`);
@@ -341,7 +341,7 @@ If two panels share a chat, a message arrives there once.
 
 ### Route checks
 
-There is one built-in check — "Connection": the host accepts a client and lets it out to the internet. Everything else — where the traffic must go — is described by `[[check]]` blocks in `config.toml`. Some have WARP and Psiphon, some a cascade through a Moscow node to the USA, some nothing at all: then there are no blocks.
+The built-in host check: does the host accept a client and let it out to the internet (from Russia, through the entry, on the node; see [Check from Russia](#check-from-russia)). Everything else — where the traffic must go — is described by `[[check]]` blocks in `config.toml`. Some have WARP and Psiphon, some a cascade through a Moscow node to the USA, some nothing at all: then there are no blocks.
 
 ```toml
 [[check]]
@@ -404,7 +404,7 @@ url = "https://example.com"
 keyword = "Buy"      # optional
 ```
 
-If the site root is closed and returns 404/502 (typical for a subscription page), add `any_status = true` — then any HTTP response means "the server is alive". More precise is to use the service user's subscription link: then it checks that the subscription is actually served. Probes from Russia use the `http_any` module for `any_status` — after updating, run `git pull && docker compose restart` on the Russian nodes.
+If the site root is closed and returns 404/502 (typical for a subscription page), add `any_status = true` — then any HTTP response means "the server is alive". More precise is to use the service user's subscription link: then it checks that the subscription is actually served. Probes from Russia use the `http_any` module for `any_status`.
 
 **External watchdog.** If the monitoring server itself goes down, it won't tell you. Use [Healthchecks.io](https://healthchecks.io) for that (free):
 
@@ -418,7 +418,51 @@ Healthchecks.io can send notifications to Telegram.
 </details>
 
 <details>
-<summary><b>🇷🇺 Probe from Russia</b></summary>
+<summary><b>🇷🇺 Check from Russia, blocklists, node servers</b></summary>
+
+### Check from Russia
+
+A host works if it opens for a client in Russia. That is what is checked: **probes** run on servers in Russia (the `probe/` folder) and connect to every host like a client app does — at the subscription address (relay, CDN, node), with the same protocol, Hysteria2 over UDP included — and open a page. The monitoring server checks the same hosts in two ways — **through the entry** (the subscription address) and **directly on the node** — and uses these three results to explain where it broke.
+
+**Host verdict** (the "Hosts" table in Grafana, the "Host is down" alert after two checks in a row):
+
+| Verdict | From Russia | Through the entry | On the node |
+|---|---|---|---|
+| works | opens from at least one probe | — | — |
+| blocked in Russia? | opens from none | opens | opens |
+| broken entry (relay, CDN) | does not open | does not open | opens |
+| node not responding | — | — | does not open |
+| entry or blocking | does not open | cannot be checked from abroad* | opens |
+
+\* An entry that has not opened from the monitoring server even once a day (for example, a relay that UDP from abroad does not reach) cannot tell a failure from a block — the verdict says so.
+
+- Hosts that lead to the probe's own server (for example, Moscow 1 and Moscow 2 with probes on them) are not checked from Russia: the monitoring server checks them.
+- If probes are silent, the verdict uses those that are connected, and if all are silent — the monitoring server only. That fires the "Probe from Russia is silent" alert.
+- "Through the entry" is only needed for hosts whose entry is not the node itself. Node and port come from the panel: the host's node and its inbound port; an inbound without encryption (behind nginx or a CDN) cannot be reached directly — such hosts are checked through the entry only. The token needs the right to read hosts and config profiles.
+- Probes also check the websites from `[[site]]` (the "from Russia" column).
+- A probe sits in a data center: mobile whitelists and the behaviour of specific operators cannot be checked this way.
+
+**Installing a probe.** You need a server in Russia with Docker (a Russian node will do). First open port 9116 on the monitoring server for the probe's IP:
+
+```bash
+sudo ufw allow from <probe IP> to any port 9116 proto tcp comment 'rwmon probe'
+```
+
+On the probe server:
+
+```bash
+git clone https://github.com/3APA3A-3AHO3A/remnawave-monitoring.git /opt/rwmon-probe
+cd /opt/rwmon-probe/probe
+sudo ./install.sh <monitoring server IP>
+```
+
+The script creates the probe's certificate and password, remembers the monitoring server's certificate key (the probe talks only to it), reserves the check ports (41000–41999), downloads the checker image (or builds it on the spot), starts the containers and opens port 9115 only for the monitoring IP. At the end it prints a `[[probe]]` block — paste it into the monitoring's `config.toml` and run `./apply.sh`. The certificate key the probe sees must match the "certificate" line of `rwmon check`.
+
+How it works: once a minute the probe's agent takes the host list from the monitoring and sends its check results (HTTPS, the probe's password). The monitoring's Prometheus calls the probe only for websites (blackbox exporter).
+
+- Probe log: `cd /opt/rwmon-probe/probe && docker compose logs -f agent checker`.
+- Update a probe: `cd /opt/rwmon-probe && git pull && cd probe && sudo ./install.sh <monitoring server IP>`.
+- There can be several probes — the more different networks, the fewer false alarms.
 
 ### Russian blocklists
 
@@ -463,40 +507,6 @@ The panel API does not show everything: no disk, swap or kernel connection table
 - Only what the charts need is stored: CPU, memory, swap, the root partition, conntrack, network, disk I/O, uptime — a few hundred series per node.
 - The dashboard gets a collapsed "Node servers" block: a table (metrics available, CPU, RAM, Swap, disk and free space, conntrack, disk I/O, time since reboot) and charts with a 90% line. The "Panel" and "Node" selectors apply.
 - No alerts on these metrics yet.
-
-### Client from Russia
-
-The probe from Russia (below) only checks that a host's port opens. The "Client from Russia" check really connects to the host, like a client app in Russia does: through a relay host in Russia — a chain "monitoring server → relay host → checked host". Nothing to install: the relay is an ordinary panel host, e.g. Moscow.
-
-```toml
-[ru]
-via = ["🇷🇺 Москва 1", "🇷🇺 Москва 2"]
-```
-
-- Each host is checked through the first host in `via` that points to a different address: Moscow 1 goes through Moscow 2. Lite hosts (`MONITORING_LTE`) are checked too. `hosts = [...]` limits this to the listed hosts (by name); without it — all hosts.
-- **Sniffing on the relay.** If the relay's inbound has sniffing without `"routeOnly": true`, Xray replaces the destination with the domain from SNI. A Reality host with a borrowed SNI (e.g. `gateway.example.com` pointing to Cloudflare) is then opened wherever the domain points, not on your server, and the check fails. Hosts whose SNI is their own domain, or whose packets are hidden by Salamander, are not affected. Options: `"routeOnly": true` in the relay inbound's sniffing, or a separate inbound for monitoring; until then list only such hosts in `hosts`.
-- For hosts whose entry is not the node itself (a relay, a CDN), "Connection" from the monitoring server goes straight to the node, bypassing the entry. Node and port come from the panel: the host's node and its inbound port. An inbound without encryption (behind nginx or a CDN) can't be reached directly — such hosts are checked through the entry, as before. The token needs read access to hosts and config profiles; without it everything works as before.
-- Alerts: works from Russia — all is well, even if the monitoring server couldn't reach the host. Fails from Russia but the node answers directly — "Host doesn't work from Russia": the entry is broken or blocked. Both fail — "Host does not accept clients". If the relay itself is down, the Russia check is ignored and only the direct one counts.
-- The chain needs one more xray-checker patch, `checker/rwmon-via.patch`.
-- One more checker process means another thousand Xray ports; `rwmon check` prints the `ip_local_reserved_ports` line.
-
-### Probe from Russia
-
-From Russia you see what is invisible from Europe: for example, a node's IP being blocked. A [blackbox exporter](https://github.com/prometheus/blackbox_exporter) is installed on a Russian node, and the monitoring Prometheus asks it once a minute to open every host (a TCP connection to the IP:port from the subscription) and every website. reporter keeps the address list up to date by itself.
-
-On the Russian node:
-
-```bash
-git clone https://github.com/3APA3A-3AHO3A/remnawave-monitoring.git /opt/rwmon-probe
-cd /opt/rwmon-probe/probe
-./install.sh <monitoring server IP>
-```
-
-The script creates a self-signed certificate and a password, starts the container, opens port 9115 in ufw only for the monitoring IP and prints a `[[probe]]` block — paste it into the monitoring `config.toml` and run `./apply.sh`.
-
-UDP hosts (Hysteria2, TUIC, WireGuard) are not probed: a TCP connection to their port does not open even when everything works.
-
-There can be several probes. The "unreachable from Russia" alert fires only if the host fails from all of them: a random problem on one Russian node does not cause false alarms. Mobile whitelists and the behaviour of specific carriers cannot be checked this way — the probe sits in a data center.
 
 </details>
 
@@ -558,6 +568,8 @@ docker compose logs -f checker                                  # check log, lin
 git pull && ./apply.sh                                          # update
 ```
 
+Probes from Russia are updated separately — see [Check from Russia](#check-from-russia).
+
 What changed in a new version — see [`CHANGELOG.md`](CHANGELOG.md) (in Russian) and the [releases](https://github.com/3APA3A-3AHO3A/remnawave-monitoring/releases) page.
 
 If the containers were started after the report time, today's GeoCheck and report run right after startup. After that — daily on schedule.
@@ -592,7 +604,7 @@ After that `.env` only needs the lines from [`.env.example`](.env.example). The 
 ### Development
 
 - reporter tests: `cd reporter && python -m unittest discover -v tests` (Python 3.13, no external dependencies).
-- The dashboard is not edited by hand: change [`grafana/dashboard.py`](grafana/dashboard.py). On `./apply.sh` the `config` container builds it for the checks in `config.toml`; the JSON in `grafana/dashboards/` is the default (Connection, WARP, Psiphon) and the fallback, rebuilt with `python3 grafana/dashboard.py`. CI checks that it matches the script's output.
+- The dashboard is not edited by hand: change [`grafana/dashboard.py`](grafana/dashboard.py). On `./apply.sh` the `config` container builds it for the checks in `config.toml`; the JSON in `grafana/dashboards/` is the default (WARP, Psiphon, no probes) and the fallback, rebuilt with `python3 grafana/dashboard.py`. CI checks that it matches the script's output.
 - CI ([`tests.yml`](.github/workflows/tests.yml)) on every push and PR: reporter tests, dashboard build, `docker-compose.yml` validation and the xray-checker image build with patches.
 - [Dependabot](.github/dependabot.yml) opens weekly PRs for new image versions (Prometheus, Grafana, blackbox exporter, base images) and GitHub Actions.
 - [`xray-checker-release.yml`](.github/workflows/xray-checker-release.yml) checks xray-checker releases weekly: if the patches apply to a new version it opens a PR, otherwise an issue.

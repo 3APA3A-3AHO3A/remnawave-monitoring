@@ -417,13 +417,16 @@ def main(argv):
         return check(cfg)
     elif cmd == 'links':
         per_panel, checks = links.refresh(cfg, clients)
-        by_name = {c['name']: c for c in checks}
         for p, entries in per_panel:
             print(f'{p.title}:')
             for h in (h for h in links.HOSTS if h['panel'] == p.id):
                 notes = []
+                if cfg.probes and not h.get('ru'):
+                    notes.append('из РФ не проверяется — ведёт на сервер пробы')
+                if h.get('entry'):
+                    notes.append('через вход и на ноду')
                 if h['lite']:
-                    notes.append('только «Подключение»')
+                    notes.append('без проверок маршрутов')
                 else:
                     off = [c.title for c in cfg.route_checks if c.id not in h['checks']]
                     if off:
