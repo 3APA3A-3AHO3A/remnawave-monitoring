@@ -575,8 +575,9 @@ def nl_results(prom, state):
     return now, never
 
 
-def state_lines(hosts, fresh, nl, never, lines):
-    """rwmon_host_state по каждому имени проверки."""
+def state_lines(hosts, fresh, nl, never, lines, urgent=None):
+    """rwmon_host_state по каждому имени проверки. urgent — сюда кладём {IP: имя хоста} тех,
+    что не открываются из РФ (итог 1 или 4): их сканеры cheburcheck проверят вне очереди."""
     done = set()
     for h in hosts:
         name = h['name']
@@ -591,7 +592,11 @@ def state_lines(hosts, fresh, nl, never, lines):
         entry = nl.get(('entry', name)) if h.get('entry') else node
         if ru is None and node is None:
             continue                     # ни одного результата — итог не считаем
-        lines.add('rwmon_host_state', {'name': name}, host_state(h, ru, node, entry, name not in never))
+        st = host_state(h, ru, node, entry, name not in never)
+        lines.add('rwmon_host_state', {'name': name}, st)
+        if urgent is not None and st in (RU_BLOCKED, ENTRY_UNSEEN):
+            for ip in h.get('ips') or []:
+                urgent.setdefault(ip, name)
 
 
 SITE_EVERY = 60     # как часто проверять сайты, секунд
@@ -654,7 +659,10 @@ class Exporter:
         fresh = ru_lines(self.cfg, self.ru, lines)
         nl, never = nl_results(self.prom, self.state)
         if nl is not None:
-            state_lines(links.HOSTS, fresh, nl, never, lines)
+            urgent = {}
+            state_lines(links.HOSTS, fresh, nl, never, lines, urgent)
+            if self.cfg.rkn_token:
+                scan.set_urgent(urgent)
         site_lines(list(self.sites.values()), lines)
         if self.exit_lookup is not None:
             exit_lines(self.prom, self.exit_lookup, lines, self.state)

@@ -406,7 +406,7 @@ def combine(per_panel, route_checks=(), nodes=(), state=None):
             c['checks'] |= mine
             hosts.append({'panel': p.id, 'panel_title': p.title, 'host': e['host'],
                           'name': c['name'], 'lite': e['lite'], 'address': c['address'],
-                          'entry': c['entry'], 'checks': sorted(mine)})
+                          'entry': c['entry'], 'checks': sorted(mine), 'ips': sorted(c['ips'])})
     return list(checks.values()), hosts
 
 

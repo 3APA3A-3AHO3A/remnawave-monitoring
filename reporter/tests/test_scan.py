@@ -95,13 +95,14 @@ def test_step_rotates_oldest_first_and_backs_off(tmp_path, monkeypatch):
 
 def test_step_drops_gone_targets_and_bad_token(tmp_path, monkeypatch):
     c = cfg(tmp_path)
-    data = {'items': {'old': {'ts': time.time(), 'name': 'old'}}}
+    data = {'items': {'old': {'ts': time.time() - 2 * 86400, 'name': 'old'},
+                      'fresh': {'ts': time.time(), 'name': 'fresh'}}}
     monkeypatch.setattr(scan.rkn, 'targets', lambda c, cl: [{'target': 'a', 'kind': 'node', 'name': 'A'}])
 
     def denied(t):
         raise urllib.error.HTTPError('u', 401, 'no', {}, None)
     assert scan.step(c, None, data, denied) == scan.BACKOFF_MAX
-    assert 'old' not in data['items']
+    assert 'old' not in data['items'] and 'fresh' in data['items']   # свежий держим сутки
 
 
 def test_metrics_and_daily(tmp_path):
@@ -148,7 +149,8 @@ def test_render_rule_and_dashboard_column():
                     return q
     on = rkn_panel(dash.build(scanners=True))
     off = rkn_panel(dash.build())
-    assert len(on['targets']) == 3 and len(off['targets']) == 1
+    assert len(on['targets']) == 7 and len(off['targets']) == 1
+    assert on['gridPos']['w'] == 24 and off['gridPos']['w'] == 12
     assert on['transformations'][0]['id'] == 'merge'
     assert any('rwmon_rkn_scan_blocked' in t['expr'] for t in on['targets'])
 
@@ -162,3 +164,37 @@ def test_render_rule_only_with_token():
     without = json.dumps(render.rules(make_cfg(rkn={'interval_hours': 6})), ensure_ascii=False)
     assert 'rwmon-rkn-scan' in with_t and 'rwmon-rkn-scan' not in without
     assert 'rwmon-rkn-blocked' in with_t
+
+
+def test_urgent_goes_first_once_per_cache(tmp_path, monkeypatch):
+    tg = [{'target': 'a', 'kind': 'node', 'name': 'A'}, {'target': '9.9.9.9', 'kind': 'node', 'name': 'N'}]
+    monkeypatch.setattr(scan.rkn, 'targets', lambda c, cl: tg)
+    c, data, seen = cfg(tmp_path), {}, []
+
+    def ok(t):
+        seen.append(t)
+        return {'online': 1, 'results': [{'provider': 'P', 'region': '', 'verdicts': ['ok']}]}
+    scan.WAKE.clear()
+    scan.set_urgent({'9.9.9.9': 'Хост X', '5.5.5.5': 'Хост Y'})
+    assert scan.WAKE.is_set()
+    scan.step(c, None, data, ok)
+    scan.step(c, None, data, ok)
+    assert sorted(seen) == ['5.5.5.5', '9.9.9.9']         # оба срочных — раньше очереди
+    assert data['items']['9.9.9.9']['name'] == 'N'        # адрес из списка — со своей подписью
+    assert data['items']['5.5.5.5']['name'] == 'Хост Y'   # IP входа вне списка — с именем хоста
+    scan.step(c, None, data, ok)
+    assert seen[-1] == 'a'                                # недавно проверенные — не повторяем
+    scan.WAKE.clear()
+    scan.set_urgent({'9.9.9.9': 'Хост X'})                # старый адрес — будить незачем
+    assert not scan.WAKE.is_set()
+    scan.set_urgent({})
+
+
+def test_state_lines_collect_urgent():
+    lines, urgent = exporter.Lines(), {}
+    hosts = [{'name': 'H', 'ru': True, 'entry': False, 'ips': ['1.1.1.1']},
+             {'name': 'G', 'ru': True, 'entry': False, 'ips': ['2.2.2.2']}]
+    fresh = {'msk-1': {'H': {'status': 0}, 'G': {'status': 1}}}
+    nl = {('xray', 'H'): 1, ('xray', 'G'): 1}
+    exporter.state_lines(hosts, fresh, nl, set(), lines, urgent)
+    assert urgent == {'1.1.1.1': 'H'}
