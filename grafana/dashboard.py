@@ -245,21 +245,21 @@ def build(checks=None, servers=False, probes=()):
     ], overrides=[by_ref('B', thresholds={'mode': 'absolute', 'steps': red_if_positive()})], w=4,
         desc='Итог по хостам с тегами проверки: работает — открывается из РФ (а хосты МСК-нод — '
              'с сервера мониторинга). Почему не работает — в таблице «Хосты»'))
-    p.append(stat('Пробы из РФ', 11, [
+    p.append(stat('Пробы РФ', 11, [
         target('sum(rwmon_ru_probe_up) or vector(0)', 'A', 'на связи', instant=True),
         target('count(rwmon_ru_probe_up == 0) or vector(0)', 'B', 'молчат', instant=True),
     ], overrides=[by_ref('B', thresholds={'mode': 'absolute', 'steps': red_if_positive()})], w=3,
         desc='Серверы в России, которые проверяют хосты как клиент из РФ ([[probe]], папка probe/)'))
-    p.append(stat('Сеть нод сейчас', 14, [
+    p.append(stat('Сеть нод', 14, [
         target(f'sum(rwmon_node_network_rx_bytes_per_second{{{F}}}) * 8', 'A', '↓ RX', instant=True),
         target(f'sum(rwmon_node_network_tx_bytes_per_second{{{F}}}) * 8', 'B', '↑ TX', instant=True),
     ], unit='bps', decimals=1, steps=[{'color': BLUE, 'value': None}], w=4,
         desc='Скорость сетевых интерфейсов всех серверов нод: RX — принято сервером, TX — отправлено'))
-    p.append(stat('Трафик клиентов', 18, [target(
+    p.append(stat('Трафик', 18, [target(
         f'sum(increase(rwmon_node_inbound_upload_bytes{{{F}}}[$__range]) '
         f'+ increase(rwmon_node_inbound_download_bytes{{{F}}}[$__range]))', 'A', instant=True)],
         unit='decbytes', decimals=1, steps=[{'color': GREY, 'value': None}], w=3,
-        desc='Сколько клиенты скачали и отправили через все ноды за выбранный период'))
+        desc='Трафик клиентов: сколько скачали и отправили через все ноды за выбранный период'))
     p.append(stat('Подписки', 21, [
         target(f'sum(rwmon_users{{status="ACTIVE", {F}}})', 'A', 'активных', instant=True),
         target(f'sum(rwmon_users_online{{period="lastDay", {F}}})', 'B', 'за сутки', instant=True),
@@ -326,15 +326,14 @@ def build(checks=None, servers=False, probes=()):
             'renameByName': {'probe': 'Проба', 'Value #A': 'связь', 'Value #B': 'хостов',
                              'Value #C': 'не открылось', 'Value #D': 'данные'}}},
     ], [
-        by_name('связь', custom__width=62, custom__align='center',
-                custom__cellOptions={'type': 'color-background', 'mode': 'basic'},
+        by_name('связь', custom__align='center', custom__cellOptions={'type': 'color-text'},
                 mappings=[{'type': 'value', 'options': {'1': {'text': 'OK', 'color': GREEN},
                                                         '0': {'text': 'молчит', 'color': RED}}}]),
-        by_name('хостов', decimals=0, custom__width=62, custom__align='right'),
-        by_name('не открылось', decimals=0, custom__width=95, custom__align='right',
+        by_name('хостов', decimals=0, custom__align='right'),
+        by_name('не открылось', decimals=0, custom__align='right',
                 custom__cellOptions={'type': 'color-text'},
                 thresholds={'mode': 'absolute', 'steps': red_if_positive()}),
-        by_name('данные', unit='s', decimals=0, custom__width=70, custom__align='right',
+        by_name('данные', unit='s', decimals=0, custom__align='right',
                 custom__cellOptions={'type': 'color-text'},
                 thresholds={'mode': 'absolute', 'steps': [{'color': 'text', 'value': None},
                                                           {'color': YELLOW, 'value': 120},
@@ -362,17 +361,15 @@ def build(checks=None, servers=False, probes=()):
                              'Value #D': 'польз.', 'Value #U': 'без рестарта', 'Value #L': 'задержка'}}},
     ], [
         by_name('Панель', custom__minWidth=90),
-        by_name('версия', custom__width=62),
-        by_name('API', custom__width=48, custom__align='center',
-                custom__cellOptions={'type': 'color-background', 'mode': 'basic'},
+        by_name('API', custom__align='center', custom__cellOptions={'type': 'color-text'},
                 mappings=[{'type': 'value', 'options': {'1': {'text': 'OK', 'color': GREEN},
                                                         '0': {'text': 'НЕТ', 'color': RED}}}]),
-        by_name('польз.', decimals=0, custom__width=58, custom__align='right'),
-        by_name('без рестарта', unit='dtdurations', decimals=0, custom__width=90, custom__align='right',
+        by_name('польз.', decimals=0, custom__align='right'),
+        by_name('без рестарта', unit='dtdurations', decimals=0, custom__align='right',
                 custom__cellOptions={'type': 'color-text'},
                 thresholds={'mode': 'absolute', 'steps': [{'color': YELLOW, 'value': None},
                                                           {'color': 'text', 'value': 3600}]}),
-        by_name('задержка', unit='ms', decimals=0, custom__width=68, custom__align='right',
+        by_name('задержка', unit='ms', decimals=0, custom__align='right',
                 custom__cellOptions={'type': 'color-text'},
                 thresholds={'mode': 'absolute', 'steps': [{'color': 'text', 'value': None},
                                                           {'color': YELLOW, 'value': 50},
@@ -399,7 +396,7 @@ def build(checks=None, servers=False, probes=()):
     ], [
         by_name('Сайт', custom__minWidth=150),
         *[by_name(n, custom__width=92, custom__align='center', mappings=OK_MAP,
-                  custom__cellOptions={'type': 'color-background', 'mode': 'basic'})
+                  custom__cellOptions={'type': 'color-text'})
           for n in ('открывается', 'из РФ')],
         by_name('код', decimals=0, custom__width=52, custom__align='right', custom__cellOptions={'type': 'color-text'},
                 thresholds={'mode': 'absolute', 'steps': [{'color': RED, 'value': None},
@@ -423,8 +420,8 @@ def build(checks=None, servers=False, probes=()):
             'indexByName': {'Value': 0, 'name': 1, 'kind': 2, 'why': 3},
             'renameByName': {'Value': 'статус', 'name': 'Что', 'kind': 'тип', 'why': 'причина'}}},
     ], [
-        by_name('статус', custom__width=105, custom__align='center',
-                custom__cellOptions={'type': 'color-background', 'mode': 'basic'},
+        by_name('статус', custom__width=95, custom__align='center',
+                custom__cellOptions={'type': 'color-text'},
                 mappings=[{'type': 'value', 'options': {'1': {'text': 'в списках', 'color': RED, 'index': 0},
                                                         '0': {'text': 'чисто', 'color': GREEN, 'index': 1}}}]),
         by_name('Что', custom__minWidth=150),
@@ -465,12 +462,12 @@ def build(checks=None, servers=False, probes=()):
         by_name('Хост', custom__minWidth=150),
         by_name('Панель', custom__width=105, color={'mode': 'fixed', 'fixedColor': GREY},
                 custom__cellOptions={'type': 'color-text'}),
-        by_name('→ нода', custom__minWidth=120, color={'mode': 'fixed', 'fixedColor': GREY},
+        by_name('→ нода', custom__minWidth=170, color={'mode': 'fixed', 'fixedColor': GREY},
                 custom__cellOptions={'type': 'color-text'}),
         by_name('Итог', custom__width=165, custom__align='center',
                 custom__cellOptions={'type': 'color-background', 'mode': 'basic'}, mappings=STATE_MAP),
-        *[by_name(n, custom__width=88, custom__align='center', mappings=OK_MAP,
-                  custom__cellOptions={'type': 'color-background', 'mode': 'basic'}) for n in ok_cols],
+        *[by_name(n, custom__width=82, custom__align='center', mappings=OK_MAP,
+                  custom__cellOptions={'type': 'color-text'}) for n in ok_cols],
         by_name('из РФ, мс', unit='ms', decimals=0, custom__width=85, custom__align='right',
                 custom__cellOptions={'type': 'color-text'},
                 thresholds={'mode': 'absolute', 'steps': [{'color': 'text', 'value': None},
@@ -485,12 +482,11 @@ def build(checks=None, servers=False, probes=()):
         sort=[{'displayName': 'Итог', 'desc': True}]))
     y += 18
 
-    p.append(state_history('История хостов', {'h': 9, 'w': 24, 'x': 0, 'y': y},
-                           f'max by (name) ({host_state}) and on (name) '
-                           f'(max by (name) (max_over_time(rwmon_host_state[$__range] @ end())) > 0)', '{{name}}',
-                           'Итог по времени — только хосты, у которых за выбранный период что-то было не так. '
-                           'Цвет — как в таблице «Хосты»'))
-    y += 9
+    p.append(state_history('История хостов', {'h': 14, 'w': 24, 'x': 0, 'y': y},
+                           f'max by (name) ({host_state})', '{{name}}',
+                           'Итог по каждому хосту во времени: зелёным — работал, цветом — что было не так '
+                           '(как в таблице «Хосты»). Наведите на полосу — увидите, когда и сколько'))
+    y += 14
 
     # ── 5. Ноды: всё про ноду в одной строке ──
     def node_q(expr, ref, instant=True):

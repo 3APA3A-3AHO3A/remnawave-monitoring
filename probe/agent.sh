@@ -36,7 +36,7 @@ while :; do
     say "мониторинг не отдал список: $(cat /tmp/err)"
     ok=0
   fi
-  if curl -s --fail --max-time 10 -o /tmp/metrics "$CHECKER_METRICS"; then
+  if curl -s --fail --max-time 10 -o /tmp/metrics "$CHECKER_METRICS" && [ -s /tmp/metrics ]; then
     if mon /ru/metrics --data-binary @/tmp/metrics -H 'Content-Type: text/plain' 2>/tmp/err; then
       [ $ok = 1 ] && say "работает"
     else

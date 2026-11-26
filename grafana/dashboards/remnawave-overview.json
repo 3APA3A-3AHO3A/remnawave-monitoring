@@ -387,7 +387,7 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "Пробы из РФ",
+      "title": "Пробы РФ",
       "description": "Серверы в России, которые проверяют хосты как клиент из РФ ([[probe]], папка probe/)",
       "datasource": {
         "type": "prometheus",
@@ -491,7 +491,7 @@
     {
       "id": 5,
       "type": "stat",
-      "title": "Сеть нод сейчас",
+      "title": "Сеть нод",
       "description": "Скорость сетевых интерфейсов всех серверов нод: RX — принято сервером, TX — отправлено",
       "datasource": {
         "type": "prometheus",
@@ -570,8 +570,8 @@
     {
       "id": 6,
       "type": "stat",
-      "title": "Трафик клиентов",
-      "description": "Сколько клиенты скачали и отправили через все ноды за выбранный период",
+      "title": "Трафик",
+      "description": "Трафик клиентов: сколько скачали и отправили через все ноды за выбранный период",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
@@ -1067,18 +1067,13 @@
             },
             "properties": [
               {
-                "id": "custom.width",
-                "value": 62
-              },
-              {
                 "id": "custom.align",
                 "value": "center"
               },
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "basic"
+                  "type": "color-text"
                 }
               },
               {
@@ -1112,10 +1107,6 @@
                 "value": 0
               },
               {
-                "id": "custom.width",
-                "value": 62
-              },
-              {
                 "id": "custom.align",
                 "value": "right"
               }
@@ -1130,10 +1121,6 @@
               {
                 "id": "decimals",
                 "value": 0
-              },
-              {
-                "id": "custom.width",
-                "value": 95
               },
               {
                 "id": "custom.align",
@@ -1176,10 +1163,6 @@
               {
                 "id": "decimals",
                 "value": 0
-              },
-              {
-                "id": "custom.width",
-                "value": 70
               },
               {
                 "id": "custom.align",
@@ -1360,25 +1343,9 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "версия"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 62
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
               "options": "API"
             },
             "properties": [
-              {
-                "id": "custom.width",
-                "value": 48
-              },
               {
                 "id": "custom.align",
                 "value": "center"
@@ -1386,8 +1353,7 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "basic"
+                  "type": "color-text"
                 }
               },
               {
@@ -1421,10 +1387,6 @@
                 "value": 0
               },
               {
-                "id": "custom.width",
-                "value": 58
-              },
-              {
                 "id": "custom.align",
                 "value": "right"
               }
@@ -1443,10 +1405,6 @@
               {
                 "id": "decimals",
                 "value": 0
-              },
-              {
-                "id": "custom.width",
-                "value": 90
               },
               {
                 "id": "custom.align",
@@ -1489,10 +1447,6 @@
               {
                 "id": "decimals",
                 "value": 0
-              },
-              {
-                "id": "custom.width",
-                "value": 68
               },
               {
                 "id": "custom.align",
@@ -1717,8 +1671,7 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "basic"
+                  "type": "color-text"
                 }
               }
             ]
@@ -1771,8 +1724,7 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "basic"
+                  "type": "color-text"
                 }
               }
             ]
@@ -1985,7 +1937,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 105
+                "value": 95
               },
               {
                 "id": "custom.align",
@@ -1994,8 +1946,7 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "basic"
+                  "type": "color-text"
                 }
               },
               {
@@ -2302,7 +2253,7 @@
             "properties": [
               {
                 "id": "custom.minWidth",
-                "value": 120
+                "value": 170
               },
               {
                 "id": "color",
@@ -2385,7 +2336,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 88
+                "value": 82
               },
               {
                 "id": "custom.align",
@@ -2425,8 +2376,7 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "basic"
+                  "type": "color-text"
                 }
               }
             ]
@@ -2439,7 +2389,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 88
+                "value": 82
               },
               {
                 "id": "custom.align",
@@ -2479,8 +2429,7 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "basic"
+                  "type": "color-text"
                 }
               }
             ]
@@ -2493,7 +2442,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 88
+                "value": 82
               },
               {
                 "id": "custom.align",
@@ -2533,8 +2482,7 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "basic"
+                  "type": "color-text"
                 }
               }
             ]
@@ -2547,7 +2495,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 88
+                "value": 82
               },
               {
                 "id": "custom.align",
@@ -2587,8 +2535,7 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "basic"
+                  "type": "color-text"
                 }
               }
             ]
@@ -2601,7 +2548,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 88
+                "value": 82
               },
               {
                 "id": "custom.align",
@@ -2641,8 +2588,7 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "basic"
+                  "type": "color-text"
                 }
               }
             ]
@@ -2704,13 +2650,13 @@
       "id": 14,
       "type": "state-timeline",
       "title": "История хостов",
-      "description": "Итог по времени — только хосты, у которых за выбранный период что-то было не так. Цвет — как в таблице «Хосты»",
+      "description": "Итог по каждому хосту во времени: зелёным — работал, цветом — что было не так (как в таблице «Хосты»). Наведите на полосу — увидите, когда и сколько",
       "datasource": {
         "type": "prometheus",
         "uid": "rwmon-prometheus"
       },
       "gridPos": {
-        "h": 9,
+        "h": 14,
         "w": 24,
         "x": 0,
         "y": 37
@@ -2722,7 +2668,7 @@
             "type": "prometheus",
             "uid": "rwmon-prometheus"
           },
-          "expr": "max by (name) ((rwmon_host{panel_title=~\"$panel\"} * on (name) group_left () max by (name) (rwmon_host_state))) and on (name) (max by (name) (max_over_time(rwmon_host_state[$__range] @ end())) > 0)",
+          "expr": "max by (name) ((rwmon_host{panel_title=~\"$panel\"} * on (name) group_left () max by (name) (rwmon_host_state)))",
           "legendFormat": "{{name}}",
           "range": true,
           "instant": false
@@ -2810,7 +2756,7 @@
         "h": 15,
         "w": 24,
         "x": 0,
-        "y": 46
+        "y": 51
       },
       "targets": [
         {
@@ -3603,7 +3549,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 61
+        "y": 66
       },
       "targets": [
         {
@@ -3662,7 +3608,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 61
+        "y": 66
       },
       "targets": [
         {
@@ -3760,7 +3706,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 61
+        "y": 66
       },
       "targets": [
         {
@@ -3853,7 +3799,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 69
+        "y": 74
       },
       "panels": []
     },
@@ -3870,7 +3816,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 70
+        "y": 75
       },
       "targets": [
         {
@@ -3975,7 +3921,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 76
+        "y": 81
       },
       "panels": [
         {
@@ -3991,7 +3937,7 @@
             "h": 7,
             "w": 6,
             "x": 0,
-            "y": 77
+            "y": 82
           },
           "targets": [
             {
@@ -4125,7 +4071,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 77
+        "y": 82
       },
       "panels": [
         {
@@ -4141,7 +4087,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 78
+            "y": 83
           },
           "targets": [
             {
@@ -4205,7 +4151,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 78
+            "y": 83
           },
           "targets": [
             {
@@ -4307,7 +4253,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 86
+            "y": 91
           },
           "targets": [
             {
@@ -4388,7 +4334,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 86
+            "y": 91
           },
           "targets": [
             {
@@ -4469,7 +4415,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 94
+            "y": 99
           },
           "targets": [
             {
@@ -4569,7 +4515,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 78
+        "y": 83
       },
       "panels": [
         {
@@ -4585,7 +4531,7 @@
             "h": 10,
             "w": 24,
             "x": 0,
-            "y": 79
+            "y": 84
           },
           "targets": [
             {
@@ -4665,7 +4611,7 @@
             "h": 9,
             "w": 24,
             "x": 0,
-            "y": 89
+            "y": 94
           },
           "targets": [
             {
@@ -4729,7 +4675,7 @@
             "h": 10,
             "w": 24,
             "x": 0,
-            "y": 98
+            "y": 103
           },
           "targets": [
             {
@@ -4809,7 +4755,7 @@
             "h": 9,
             "w": 24,
             "x": 0,
-            "y": 108
+            "y": 113
           },
           "targets": [
             {
@@ -4871,7 +4817,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 79
+        "y": 84
       },
       "panels": [
         {
@@ -4887,7 +4833,7 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 80
+            "y": 85
           },
           "targets": [
             {
@@ -4965,7 +4911,7 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 80
+            "y": 85
           },
           "targets": [
             {
@@ -5043,7 +4989,7 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 80
+            "y": 85
           },
           "targets": [
             {
@@ -5103,7 +5049,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 80
+        "y": 85
       },
       "panels": [
         {
@@ -5119,7 +5065,7 @@
             "h": 12,
             "w": 24,
             "x": 0,
-            "y": 81
+            "y": 86
           },
           "targets": [
             {
@@ -5331,7 +5277,7 @@
             "h": 16,
             "w": 24,
             "x": 0,
-            "y": 93
+            "y": 98
           },
           "targets": [
             {
@@ -5479,7 +5425,7 @@
             "h": 16,
             "w": 24,
             "x": 0,
-            "y": 109
+            "y": 114
           },
           "targets": [
             {
@@ -5661,7 +5607,7 @@
             "h": 16,
             "w": 24,
             "x": 0,
-            "y": 125
+            "y": 130
           },
           "targets": [
             {
