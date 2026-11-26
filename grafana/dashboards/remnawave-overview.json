@@ -2690,6 +2690,20 @@
                 }
               },
               {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "—",
+                        "index": 0
+                      }
+                    }
+                  }
+                ]
+              },
+              {
                 "id": "thresholds",
                 "value": {
                   "mode": "absolute",

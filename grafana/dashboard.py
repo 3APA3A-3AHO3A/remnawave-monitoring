@@ -493,6 +493,7 @@ def build(checks=None, servers=False, probes=(), scanners=False):
         pct('CPU', 0.7), pct('RAM', 0.8),
         by_name('перегр.', unit='m', decimals=0, custom__width=72, custom__align='right',
                 custom__cellOptions={'type': 'color-text'},
+                mappings=[{'type': 'value', 'options': {'0': {'text': '—', 'index': 0}}}],
                 thresholds={'mode': 'absolute', 'steps': [{'color': 'text', 'value': None},
                                                           {'color': YELLOW, 'value': 15},
                                                           {'color': RED, 'value': 60}]}), pct('лимит', 0.8), pct('Диск', 0.8), pct('conntrack', 0.7, 80),
